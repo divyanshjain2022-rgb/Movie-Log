@@ -80,7 +80,7 @@ export default function AspectsPage() {
                 user_id: user.id,
                 name: formData.get("name") as string,
                 category: (formData.get("category") as string) || "technical",
-            } as never).select().single();
+            } as any).select().single();
 
             if (error) throw error;
             setAspects([...aspects, data as Aspect]);

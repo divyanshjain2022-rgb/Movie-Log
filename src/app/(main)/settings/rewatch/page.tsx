@@ -65,8 +65,8 @@ export default function RewatchPage() {
                 user_id: user.id,
                 name: formData.get("name") as string,
                 value: parseInt(formData.get("value") as string) || 0,
-                sort_order: options.length,
-            } as never).select().single();
+                sort_order: options.length + 1,
+            } as any).select().single();
 
             if (error) throw error;
             setOptions([...options, data as RewatchOption]);

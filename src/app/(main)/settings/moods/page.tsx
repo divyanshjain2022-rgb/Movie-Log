@@ -78,7 +78,7 @@ export default function MoodsPage() {
                 emoji: (formData.get("emoji") as string) || null,
                 sentiment: formData.get("sentiment") as "positive" | "negative" | "neutral",
                 sort_order: moods.length + 1,
-            }).select().single();
+            } as any).select().single();
 
             if (error) throw error;
             setMoods([...moods, data as Mood]);
