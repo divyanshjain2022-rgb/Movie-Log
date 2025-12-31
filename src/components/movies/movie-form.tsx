@@ -169,7 +169,7 @@ export function MovieForm({
           <div>
             <Label htmlFor="theater_id">Theater</Label>
             <Select
-              value={watch("theater_id") || undefined}
+              value={(watch("theater_id") || undefined) || undefined}
               onValueChange={(value) => setValue("theater_id", value)}
             >
               <SelectTrigger className="mt-1">
@@ -193,7 +193,7 @@ export function MovieForm({
             <div>
               <Label htmlFor="format_id">Format</Label>
               <Select
-                value={watch("format_id") || undefined}
+                value={(watch("format_id") || undefined) || undefined}
                 onValueChange={(value) => setValue("format_id", value)}
               >
                 <SelectTrigger className="mt-1">
@@ -275,7 +275,7 @@ export function MovieForm({
           <div>
             <Label htmlFor="mood_id">Mood *</Label>
             <Select
-              value={watch("mood_id") || undefined}
+              value={(watch("mood_id") || undefined) || undefined}
               onValueChange={(value) => setValue("mood_id", value)}
             >
               <SelectTrigger className="mt-1">
@@ -296,7 +296,7 @@ export function MovieForm({
             <div>
               <Label htmlFor="strongest_part_id">Strongest Part</Label>
               <Select
-                value={watch("strongest_part_id") || undefined}
+                value={(watch("strongest_part_id") || undefined) || undefined}
                 onValueChange={(value) => setValue("strongest_part_id", value)}
               >
                 <SelectTrigger className="mt-1">
@@ -314,7 +314,7 @@ export function MovieForm({
             <div>
               <Label htmlFor="weakest_part_id">Weakest Part</Label>
               <Select
-                value={watch("weakest_part_id") || undefined}
+                value={(watch("weakest_part_id") || undefined) || undefined}
                 onValueChange={(value) => setValue("weakest_part_id", value)}
               >
                 <SelectTrigger className="mt-1">
@@ -334,7 +334,7 @@ export function MovieForm({
           <div>
             <Label htmlFor="rewatch_id">Rewatch Value</Label>
             <Select
-              value={watch("rewatch_id") || undefined}
+              value={(watch("rewatch_id") || undefined) || undefined}
               onValueChange={(value) => setValue("rewatch_id", value)}
             >
               <SelectTrigger className="mt-1">
@@ -397,7 +397,7 @@ export function MovieForm({
           <div>
             <Label htmlFor="gc_id">Gift Card Used</Label>
             <Select
-              value={watch("gc_id") || "none"}
+              value={(watch("gc_id") || "none") || "none"}
               onValueChange={(value) => setValue("gc_id", value === "none" ? "" : value)}
             >
               <SelectTrigger className="mt-1">

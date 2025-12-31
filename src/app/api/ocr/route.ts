@@ -147,10 +147,11 @@ function parseTicketText(text: string): TicketData {
   for (const pattern of moviePatterns) {
     const match = originalText.match(pattern);
     if (match) {
-      let title = match[1].trim();
-      // Clean up common prefixes that get attached
-      title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "").trim();
-      title = title.replace(/\s*\(.*$/, "").trim();
+      // Clean up specific PVR artifacts
+      title = title.replace(/^Lucknow\s*\d+\s*/i, ""); // Remove Lucknow pin code prefix
+      title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "");
+      title = title.replace(/\s*\(.*$/, "").trim(); // Remove (3D...)
+
       if (title.length > 2 && title.length < 100) {
         result.movie_title = title;
         break;
@@ -161,10 +162,11 @@ function parseTicketText(text: string): TicketData {
   // Fallback: look for uppercase lines that aren't headers
   if (!result.movie_title) {
     for (const line of lines) {
-      // Skip common headers
+      // Skip common headers and address lines
       if (line === line.toUpperCase() &&
         line.length > 3 &&
         line.length < 60 &&
+        !line.match(/Lucknow|Phoenix|Pallasio|Road|Floor|Mall/i) &&
         !line.includes("PVR") &&
         !line.includes("INOX") &&
         !line.includes("SCREEN") &&
@@ -175,6 +177,7 @@ function parseTicketText(text: string): TicketData {
         !line.includes("LIMITED") &&
         !line.includes("TERMS") &&
         !line.includes("CONDITIONS")) {
+
         let title = line.replace(/\s*\(.*$/, "").trim();
         title = title.replace(/^(?:TAX\s*INVOICE|INVOICE)\s*/i, "").trim();
         if (title.length > 2) {
@@ -290,10 +293,12 @@ function parseTicketText(text: string): TicketData {
 
   // === COSTS ===
   const ticketCostPatterns = [
+    // Specific "Total Ticket Price"
+    /total\s*ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
     // AMOUNT PAID pattern (PVR INOX)
     /amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
     // Total patterns
-    /(?:total\s*(?:amount|paid|ticket\s*price)?)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    /(?:total\s*(?:amount|paid)?)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
     // Direct rupee symbol with 3+ digit amount
     /[₹]\s*([\d,]+\.\d{2})/,
   ];
