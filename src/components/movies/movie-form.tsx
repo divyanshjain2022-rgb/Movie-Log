@@ -62,6 +62,7 @@ interface MovieFormProps {
   giftCards: GiftCardWithUsage[];
   onSubmit: (data: MovieFormData) => Promise<void>;
   isLoading?: boolean;
+  isEditing?: boolean;
 }
 
 export function MovieForm({
@@ -74,6 +75,7 @@ export function MovieForm({
   giftCards,
   onSubmit,
   isLoading = false,
+  isEditing = false,
 }: MovieFormProps) {
   const {
     register,
@@ -428,7 +430,7 @@ export function MovieForm({
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Saving..." : "Save Entry"}
+        {isLoading ? "Saving..." : isEditing ? "Save Changes" : "Save Entry"}
       </Button>
     </form>
   );
