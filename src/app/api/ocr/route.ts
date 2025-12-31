@@ -465,93 +465,105 @@ function extractCosts(text: string): { ticketCost: number | null; convenienceFee
   let ticketCost: number | null = null;
   let convenienceFee: number | null = null;
 
-  // Extract base ticket price (before GST and convenience fees)
-  // Look for specific patterns from PVR INOX tickets
-  const baseTicketPatterns = [
-    /ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /base\s*(?:ticket\s*)?(?:price|amount)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /sub\s*total[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-  ];
+  // Parse line by line for more accurate extraction
+  const lines = text.split('\n').map(l => l.trim());
 
-  for (const pattern of baseTicketPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      const cost = parseFloat(match[1].replace(/,/g, ""));
-      if (cost >= 50 && cost <= 5000) {
-        ticketCost = cost;
-        break;
-      }
-    }
-  }
+  // Detect if this is a "blue ticket" (app ticket) - look for specific patterns
+  const isBlueTicket = /amount\s*paid|pay\s*now|payment\s*mode/i.test(text) &&
+                       !/total\s*ticket\s*price/i.test(text);
 
-  // If no base ticket found, try "Amount Paid" or "Total" patterns
-  if (!ticketCost) {
-    const totalPatterns = [
-      /amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-      /total\s*amount[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-      /grand\s*total[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    ];
-
-    for (const pattern of totalPatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        const cost = parseFloat(match[1].replace(/,/g, ""));
-        if (cost >= 100 && cost <= 10000) {
+  // === TICKET COST ===
+  // For blue tickets (app tickets), "Amount Paid" is the total cost
+  if (isBlueTicket) {
+    for (const line of lines) {
+      const amountPaidMatch = line.match(/amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+      if (amountPaidMatch) {
+        const cost = parseFloat(amountPaidMatch[1].replace(/,/g, ""));
+        if (cost >= 50 && cost <= 10000) {
           ticketCost = cost;
           break;
         }
       }
     }
+    // For blue tickets, convenience fee is already included in amount paid
+    // so we return 0 for convenience fee
+    return { ticketCost, convenienceFee: 0 };
   }
 
-  // If still no cost found, look for rupee amounts in reasonable range
+  // For standard tickets (e.g., e-ticket with breakdown)
+  for (const line of lines) {
+    // Pattern: "Total Ticket Price ₹400.00" or "Ticket Price: ₹400"
+    const ticketMatch = line.match(/(?:total\s+)?ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+    if (ticketMatch) {
+      const cost = parseFloat(ticketMatch[1].replace(/,/g, ""));
+      if (cost >= 50 && cost <= 5000) {
+        ticketCost = cost;
+        break;
+      }
+    }
+
+    // Pattern: "Base Amount" or "Sub Total" for ticket
+    const baseMatch = line.match(/(?:base\s*amount|sub\s*total)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+    if (baseMatch && !ticketCost) {
+      const cost = parseFloat(baseMatch[1].replace(/,/g, ""));
+      if (cost >= 50 && cost <= 5000) {
+        ticketCost = cost;
+      }
+    }
+  }
+
+  // Fallback: Look for "Amount Paid" if no ticket price found
   if (!ticketCost) {
-    const amounts = [...text.matchAll(/[₹]\s*([\d,]+(?:\.\d{2})?)/g)]
-      .map(m => parseFloat(m[1].replace(/,/g, "")))
-      .filter(a => a >= 100 && a <= 5000)
-      .sort((a, b) => b - a);
-
-    if (amounts.length > 0) {
-      ticketCost = amounts[0];
+    const amountPaidMatch = text.match(/amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+    if (amountPaidMatch) {
+      ticketCost = parseFloat(amountPaidMatch[1].replace(/,/g, ""));
     }
   }
 
-  // Convenience fee - include GST on convenience fee
+  // === CONVENIENCE FEE ===
+  // Look specifically for convenience fee line
   let convFee = 0;
-  let gstOnConv = 0;
+  let igst = 0;
 
-  // Look for convenience fee
-  const convFeeMatch = text.match(/convenience\s*(?:fee|fees)?[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-  if (convFeeMatch) {
-    convFee = parseFloat(convFeeMatch[1].replace(/,/g, ""));
-  }
+  for (const line of lines) {
+    // Pattern: "Convenience fees ₹43.22" - exact match for convenience
+    const convMatch = line.match(/^convenience\s*(?:fee|fees)?[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+    if (convMatch) {
+      convFee = parseFloat(convMatch[1].replace(/,/g, ""));
+      continue;
+    }
 
-  // Look for GST/IGST on convenience fee or general service tax
-  const gstPatterns = [
-    /(?:i?gst|tax)\s*(?:on\s*)?(?:conv|convenience|service)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /(?:i?gst|cgst|sgst)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /service\s*(?:tax|charge)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-  ];
-
-  for (const pattern of gstPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      gstOnConv += parseFloat(match[1].replace(/,/g, ""));
+    // Pattern: "IGST ₹7.78" - look for IGST specifically (GST on convenience fee)
+    const igstMatch = line.match(/^i?gst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+    if (igstMatch) {
+      const gstAmount = parseFloat(igstMatch[1].replace(/,/g, ""));
+      // Only count small GST amounts (typically < ₹50 for convenience fee GST)
+      if (gstAmount < 50) {
+        igst = gstAmount;
+      }
     }
   }
 
-  // If we have CGST and SGST separately, they might be listed twice
+  // Also check for CGST + SGST pattern (each is half of total GST)
   const cgstMatch = text.match(/cgst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
   const sgstMatch = text.match(/sgst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
 
   if (cgstMatch && sgstMatch) {
-    // Reset gstOnConv and use CGST + SGST
-    gstOnConv = parseFloat(cgstMatch[1].replace(/,/g, "")) +
-                parseFloat(sgstMatch[1].replace(/,/g, ""));
+    const cgst = parseFloat(cgstMatch[1].replace(/,/g, ""));
+    const sgst = parseFloat(sgstMatch[1].replace(/,/g, ""));
+    // Only use if both are small (< ₹25 each)
+    if (cgst < 25 && sgst < 25) {
+      igst = cgst + sgst;
+    }
   }
 
-  // Total convenience fee = base + GST
-  convenienceFee = convFee + gstOnConv > 0 ? convFee + gstOnConv : (convFee || null);
+  // Total convenience fee = base fee + GST (only if we found a reasonable conv fee)
+  if (convFee > 0 && convFee < 200) {
+    convenienceFee = convFee + igst;
+  } else if (convFee > 0) {
+    // If conv fee seems too high, it might already include GST
+    convenienceFee = convFee;
+  }
 
   return { ticketCost, convenienceFee };
 }

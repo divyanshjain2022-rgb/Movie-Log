@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLookupData, useGiftCards, useCreateMovie } from "@/hooks";
 import { cn } from "@/lib/utils";
-import type { MovieFormData, TicketOCRData } from "@/types";
+import type { MovieFormData, TicketOCRData, GiftCardUsageEntry } from "@/types";
 
 interface TMDBMovieDetails {
   tmdb_id: number;
@@ -149,7 +149,7 @@ export default function NewMoviePage() {
     toast.success("Movie details loaded from TMDB!");
   };
 
-  const handleSubmit = async (data: MovieFormData) => {
+  const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     try {
       await createMovie({
         user_id: "",
@@ -178,11 +178,10 @@ export default function NewMoviePage() {
         rewatch_id: mode === "advance" ? null : data.rewatch_id || null,
         review: mode === "advance" ? null : data.review || null,
         remarks: data.remarks || null,
-        gc_id: data.gc_id === "none" ? null : data.gc_id || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
         status: mode === "advance" ? "upcoming" : "watched",
-      });
+      }, giftCardUsage);
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
       router.push("/movies");

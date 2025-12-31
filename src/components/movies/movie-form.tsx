@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { RatingSlider } from "./rating-slider";
+import { Plus, X } from "lucide-react";
+import { formatCurrency } from "@/lib/formula";
 import type {
   Format,
   Theater,
@@ -24,6 +26,7 @@ import type {
   RewatchOption,
   GiftCardWithUsage,
   MovieFormData,
+  GiftCardUsageEntry,
 } from "@/types";
 
 const movieFormSchema = z.object({
@@ -46,7 +49,6 @@ const movieFormSchema = z.object({
   rewatch_id: z.string().optional(),
   review: z.string().optional(),
   remarks: z.string().optional(),
-  gc_id: z.string().optional(),
   other_expenses: z.coerce.number().min(0).optional(),
   passport_savings: z.coerce.number().min(0).optional(),
 });
@@ -61,10 +63,11 @@ interface MovieFormProps {
   aspects: Aspect[];
   rewatchOptions: RewatchOption[];
   giftCards: GiftCardWithUsage[];
-  onSubmit: (data: MovieFormData) => Promise<void>;
+  onSubmit: (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => Promise<void>;
   isLoading?: boolean;
   isEditing?: boolean;
   isAdvanceBooking?: boolean;
+  initialGiftCardUsage?: GiftCardUsageEntry[];
 }
 
 export function MovieForm({
@@ -79,6 +82,7 @@ export function MovieForm({
   isLoading = false,
   isEditing = false,
   isAdvanceBooking = false,
+  initialGiftCardUsage = [],
 }: MovieFormProps) {
   const {
     register,
@@ -108,13 +112,37 @@ export function MovieForm({
       rewatch_id: initialData?.rewatch_id || "",
       review: initialData?.review || "",
       remarks: initialData?.remarks || "",
-      gc_id: initialData?.gc_id || "",
       other_expenses: initialData?.other_expenses || 0,
       passport_savings: initialData?.passport_savings || 0,
     },
   });
 
   const rating = watch("rating") || 5;
+
+  // State for multiple gift card selection
+  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>(initialGiftCardUsage);
+
+  // Filter out already selected gift cards
+  const availableGiftCards = giftCards.filter(
+    gc => gc.status === "active" && !giftCardUsage.some(u => u.gift_card_id === gc.id)
+  );
+
+  const addGiftCard = (gcId: string) => {
+    const gc = giftCards.find(g => g.id === gcId);
+    if (gc) {
+      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
+    }
+  };
+
+  const removeGiftCard = (gcId: string) => {
+    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
+  };
+
+  const updateGiftCardAmount = (gcId: string, amount: number) => {
+    setGiftCardUsage(prev =>
+      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
+    );
+  };
 
   // Sync form with initialData changes (e.g., when TMDB or OCR updates data)
   useEffect(() => {
@@ -134,7 +162,7 @@ export function MovieForm({
   }, [initialData, setValue]);
 
   const onFormSubmit = async (data: MovieFormValues) => {
-    await onSubmit(data as MovieFormData);
+    await onSubmit(data as MovieFormData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
   };
 
   return (
@@ -408,25 +436,71 @@ export function MovieForm({
             />
           </div>
 
+          {/* Gift Cards - Multi Select */}
           <div>
-            <Label htmlFor="gc_id">Gift Card Used</Label>
-            <Select
-              value={watch("gc_id")}
-              onValueChange={(value) => setValue("gc_id", value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {giftCards.map((gc) => (
-                  <SelectItem key={gc.id} value={gc.id}>
-                    {gc.platform?.name || "Gift Card"} - Balance:{" "}
-                    {gc.balance?.toFixed(0) || gc.face_value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Gift Cards Used</Label>
+            {giftCardUsage.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {giftCardUsage.map((usage) => {
+                  const gc = giftCards.find(g => g.id === usage.gift_card_id);
+                  if (!gc) return null;
+                  return (
+                    <div key={usage.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {gc.platform?.name || "Gift Card"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Balance: {formatCurrency(gc.balance)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">₹</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={usage.amount_used}
+                          onChange={(e) => updateGiftCardAmount(usage.gift_card_id, parseFloat(e.target.value) || 0)}
+                          className="h-8 w-20 text-right"
+                          max={gc.balance}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeGiftCard(usage.gift_card_id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {availableGiftCards.length > 0 && (
+              <Select onValueChange={addGiftCard} value="">
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Add gift card..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableGiftCards.map((gc) => (
+                    <SelectItem key={gc.id} value={gc.id}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{gc.platform?.name || "Gift Card"}</span>
+                        <span className="text-muted-foreground">
+                          {formatCurrency(gc.balance)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {giftCardUsage.length === 0 && availableGiftCards.length === 0 && (
+              <p className="mt-2 text-sm text-muted-foreground">No active gift cards available</p>
+            )}
           </div>
 
           {!isAdvanceBooking && (

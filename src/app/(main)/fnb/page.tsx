@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Coffee, MoreHorizontal, Pencil, Trash2, Link2 } from "lucide-react";
+import { Plus, Coffee, MoreHorizontal, Pencil, Trash2, Link2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,16 +44,18 @@ import {
   useDeleteFnbPurchase,
   useLookupData,
   useMovies,
+  useGiftCards,
 } from "@/hooks";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { FnbPurchaseWithRelations } from "@/types";
+import type { FnbPurchaseWithRelations, GiftCardUsageEntry, GiftCardWithUsage } from "@/types";
 
 export default function FnbPage() {
   const { fnbPurchases, isLoading, refetch } = useFnbPurchases();
   const { theaters } = useLookupData();
   const { movies } = useMovies();
+  const { giftCards } = useGiftCards();
   const { createFnbPurchase, isLoading: isCreating } = useCreateFnbPurchase();
   const { updateFnbPurchase, isLoading: isUpdating } = useUpdateFnbPurchase();
   const { deleteFnbPurchase, isLoading: isDeleting } = useDeleteFnbPurchase();
@@ -62,6 +64,33 @@ export default function FnbPage() {
   const [editingPurchase, setEditingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
   const [deletingPurchase, setDeletingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
   const [linkingPurchase, setLinkingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
+  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>([]);
+
+  const activeGiftCards = giftCards.filter(gc => gc.status === "active");
+  const availableGiftCards = activeGiftCards.filter(
+    gc => !giftCardUsage.some(u => u.gift_card_id === gc.id)
+  );
+
+  const addGiftCard = (gcId: string) => {
+    const gc = giftCards.find(g => g.id === gcId);
+    if (gc) {
+      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
+    }
+  };
+
+  const removeGiftCard = (gcId: string) => {
+    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
+  };
+
+  const updateGiftCardAmount = (gcId: string, amount: number) => {
+    setGiftCardUsage(prev =>
+      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
+    );
+  };
+
+  const resetGiftCardUsage = () => {
+    setGiftCardUsage([]);
+  };
 
   const handleCreateFnbPurchase = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -77,10 +106,11 @@ export default function FnbPage() {
         cost: parseFloat(formData.get("cost") as string),
         remarks: (formData.get("remarks") as string) || null,
         movie_id: null,
-      });
+      }, giftCardUsage.length > 0 ? giftCardUsage : undefined);
 
       toast.success("F&B purchase added!");
       setIsAddDialogOpen(false);
+      resetGiftCardUsage();
       refetch();
     } catch (error) {
       toast.error("Failed to add F&B purchase");
@@ -211,6 +241,69 @@ export default function FnbPage() {
           className="mt-1"
         />
       </div>
+
+      {/* Gift Cards Selection */}
+      <div>
+        <Label>Gift Cards Used</Label>
+        {giftCardUsage.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {giftCardUsage.map((usage) => {
+              const gc = giftCards.find(g => g.id === usage.gift_card_id);
+              if (!gc) return null;
+              return (
+                <div key={usage.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {gc.platform?.name || "Gift Card"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Balance: {formatCurrency(gc.balance)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">₹</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={usage.amount_used}
+                      onChange={(e) => updateGiftCardAmount(usage.gift_card_id, parseFloat(e.target.value) || 0)}
+                      className="h-8 w-20 text-right"
+                      max={gc.balance}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeGiftCard(usage.gift_card_id)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {availableGiftCards.length > 0 && (
+          <Select onValueChange={addGiftCard} value="">
+            <SelectTrigger className="mt-2">
+              <SelectValue placeholder="Add gift card..." />
+            </SelectTrigger>
+            <SelectContent>
+              {availableGiftCards.map((gc) => (
+                <SelectItem key={gc.id} value={gc.id}>
+                  {gc.platform?.name || "Gift Card"} - {formatCurrency(gc.balance)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {giftCardUsage.length === 0 && availableGiftCards.length === 0 && (
+          <p className="mt-2 text-sm text-muted-foreground">No active gift cards available</p>
+        )}
+      </div>
+
       <div>
         <Label htmlFor="remarks">Notes</Label>
         <Input
