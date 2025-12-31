@@ -66,9 +66,19 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Google API Error (${response.status}):`, errorText);
+
+      // Parse Google's error for display
+      let errorDetail = response.statusText;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorDetail = errorJson.error?.message || errorText.substring(0, 200);
+      } catch {
+        errorDetail = errorText.substring(0, 200);
+      }
+
       return NextResponse.json(
-        { error: `OCR Provider Error: ${response.statusText} (${response.status}). Check API key quotas.` },
-        { status: response.status } // Pass 4xx/5xx status through
+        { error: `OCR Error: ${errorDetail}` },
+        { status: response.status }
       );
     }
 
