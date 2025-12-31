@@ -48,7 +48,7 @@ export function useLookupData() {
         supabase.from("aspects").select("*").order("name"),
         supabase.from("rewatch_options").select("*").order("sort_order"),
         supabase.from("platforms").select("*").order("name"),
-        supabase.from("formula_configs").select("*").eq("is_active", true).single(),
+        supabase.from("formula_configs").select("*").eq("is_active", true).maybeSingle(),
       ]);
 
       if (formatsRes.error) throw formatsRes.error;

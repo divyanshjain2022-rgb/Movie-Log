@@ -176,11 +176,15 @@ export function MovieForm({
                 <SelectValue placeholder="Select theater" />
               </SelectTrigger>
               <SelectContent>
-                {theaters.filter(t => t.id).map((theater) => (
-                  <SelectItem key={theater.id} value={theater.id}>
-                    {theater.name}
-                  </SelectItem>
-                ))}
+                {theaters?.length > 0 ? (
+                  theaters.filter(t => t.id).map((theater) => (
+                    <SelectItem key={theater.id} value={theater.id}>
+                      {theater.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <div className="p-2 text-sm text-muted-foreground">No theaters found</div>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -196,11 +200,15 @@ export function MovieForm({
                   <SelectValue placeholder="Select format" />
                 </SelectTrigger>
                 <SelectContent>
-                  {formats.filter(f => f.id).map((format) => (
-                    <SelectItem key={format.id} value={format.id}>
-                      {format.name}
-                    </SelectItem>
-                  ))}
+                  {formats?.length > 0 ? (
+                    formats.filter(f => f.id).map((format) => (
+                      <SelectItem key={format.id} value={format.id}>
+                        {format.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-sm text-muted-foreground">No formats found</div>
+                  )}
                 </SelectContent>
               </Select>
             </div>

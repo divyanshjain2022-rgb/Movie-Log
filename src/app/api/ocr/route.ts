@@ -19,50 +19,45 @@ interface TicketData {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("OCR Request received");
-
+    // 1. Config Check
     if (!GOOGLE_API_KEY) {
-      console.error("GOOGLE_CLOUD_API_KEY is missing");
+      console.error("OCR Check Failed: GOOGLE_CLOUD_API_KEY is missing");
       return NextResponse.json(
-        { error: "Server configuration error: API key missing" },
+        { error: "Server configuration error: OCR API key is missing. Please check Vercel env vars." },
         { status: 500 }
       );
     }
 
-    const body = await request.json().catch(e => {
-      console.error("Failed to parse request body:", e);
-      return null;
-    });
-
-    if (!body || !body.image) {
-      console.error("No image in request body");
+    // 2. Request Parsing Check
+    let body;
+    try {
+      body = await request.json();
+    } catch (e) {
+      console.error("OCR Body Parse Failed:", e);
       return NextResponse.json(
-        { error: "No image provided" },
+        { error: "Invalid request format: Body must be JSON" },
         { status: 400 }
       );
     }
 
-    console.log("Calling Google Vision API...");
-    const { image } = body;
+    if (!body || !body.image) {
+      console.error("OCR Validation Failed: No image provided");
+      return NextResponse.json(
+        { error: "No image data provided in request" },
+        { status: 400 }
+      );
+    }
 
-    // Call Google Cloud Vision API
+    // 3. Google API Call
+    console.log("Calling Google Vision API...");
     const response = await fetch(`${VISION_API_URL}?key=${GOOGLE_API_KEY}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         requests: [
           {
-            image: {
-              content: image, // base64 encoded image
-            },
-            features: [
-              {
-                type: "DOCUMENT_TEXT_DETECTION",
-                maxResults: 1,
-              },
-            ],
+            image: { content: body.image },
+            features: [{ type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 }],
           },
         ],
       }),
@@ -70,40 +65,43 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Google Vision API error:", response.status, errorText);
+      console.error(`Google API Error (${response.status}):`, errorText);
       return NextResponse.json(
-        { error: `Google API Error: ${response.statusText}` },
-        { status: 500 }
+        { error: `OCR Provider Error: ${response.statusText} (${response.status}). Check API key quotas.` },
+        { status: response.status } // Pass 4xx/5xx status through
       );
     }
 
     const data = await response.json();
-    console.log("Google Vision API response received");
-
     const textAnnotations = data.responses?.[0]?.textAnnotations;
 
     if (!textAnnotations || textAnnotations.length === 0) {
-      console.log("No text found in image");
+      console.warn("OCR Success but no text found");
       return NextResponse.json(
-        { error: "No text found in image" },
-        { status: 400 }
+        { error: "No text text detected in this image. Please ensure image is clear and contains text." },
+        { status: 422 } // Unprocessable Entity
       );
     }
 
-    // Get the full text from the first annotation (contains all text)
+    // 4. Parsing Logic
     const fullText = textAnnotations[0].description || "";
-    console.log("Extracted text length:", fullText.length);
-    console.log("Extracted text (first 100 chars):", fullText.substring(0, 100).replace(/\n/g, "\\n"));
+    console.log("OCR Success. Extracted chars:", fullText.length);
 
-    // Parse the extracted text to find ticket information
-    const ticketData = parseTicketText(fullText);
-    console.log("Parsed ticket data:", JSON.stringify(ticketData));
+    try {
+      const ticketData = parseTicketText(fullText);
+      return NextResponse.json(ticketData);
+    } catch (parseError) {
+      console.error("OCR Parsing Logic Failed:", parseError);
+      return NextResponse.json(
+        { error: "Failed to parse ticket data from extracted text." },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json(ticketData);
   } catch (error) {
-    console.error("OCR internal error:", error);
+    console.error("OCR Critical Failure:", error);
     return NextResponse.json(
-      { error: "Internal server error: " + (error instanceof Error ? error.message : String(error)) },
+      { error: "Internal Server Error during OCR processing." },
       { status: 500 }
     );
   }
