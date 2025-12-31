@@ -169,7 +169,7 @@ export default function GiftCardsPage() {
             <SelectValue placeholder="Select platform" />
           </SelectTrigger>
           <SelectContent>
-            {platforms.map((platform) => (
+            {platforms.filter(p => p.id).map((platform) => (
               <SelectItem key={platform.id} value={platform.id}>
                 {platform.name}
               </SelectItem>
