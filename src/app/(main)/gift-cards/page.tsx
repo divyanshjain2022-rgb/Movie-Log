@@ -170,7 +170,7 @@ export default function GiftCardsPage() {
       </div>
       <div>
         <Label htmlFor="platform_id">Platform</Label>
-        <Select name="platform_id" defaultValue={card?.platform?.id || ""}>
+        <Select name="platform_id" defaultValue={card?.platform?.id || undefined}>
           <SelectTrigger className="mt-1">
             <SelectValue placeholder="Select platform" />
           </SelectTrigger>
