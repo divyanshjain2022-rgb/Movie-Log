@@ -1,0 +1,137 @@
+"use client";
+
+import { use } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { PageHeader } from "@/components/shared";
+import { MovieForm } from "@/components/movies";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useMovie, useLookupData, useGiftCards, useUpdateMovie } from "@/hooks";
+import type { MovieFormData } from "@/types";
+
+interface EditMoviePageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function EditMoviePage({ params }: EditMoviePageProps) {
+  const { id } = use(params);
+  const router = useRouter();
+  const { movie, isLoading: movieLoading } = useMovie(id);
+  const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
+  const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
+  const { updateMovie, isLoading: isSubmitting } = useUpdateMovie();
+
+  const handleSubmit = async (data: MovieFormData) => {
+    try {
+      await updateMovie(id, {
+        title: data.title,
+        date: data.date,
+        showtime: data.showtime || null,
+        theater_id: data.theater_id || null,
+        audi: data.audi || null,
+        format_id: data.format_id || null,
+        seat: data.seat || null,
+        ticket_cost: data.ticket_cost,
+        convenience_fee: data.convenience_fee,
+        booking_id: data.booking_id || null,
+        tmdb_id: data.tmdb_id || null,
+        runtime_minutes: data.runtime_minutes || null,
+        genres: data.genres || null,
+        language: data.language || null,
+        director: data.director || null,
+        poster_url: data.poster_url || null,
+        rating: data.rating || null,
+        mood_id: data.mood_id || null,
+        fnb_cost: data.fnb_cost || null,
+        fnb_items: data.fnb_items || null,
+        strongest_part_id: data.strongest_part_id || null,
+        weakest_part_id: data.weakest_part_id || null,
+        rewatch_id: data.rewatch_id || null,
+        review: data.review || null,
+        remarks: data.remarks || null,
+        gc_id: data.gc_id || null,
+        other_expenses: data.other_expenses || null,
+        passport_savings: data.passport_savings || 0,
+      });
+
+      toast.success("Movie updated successfully!");
+      router.push(`/movies/${id}`);
+    } catch (error) {
+      toast.error("Failed to update movie");
+      console.error(error);
+    }
+  };
+
+  const isLoading = movieLoading || lookupLoading || giftCardsLoading;
+
+  // Convert movie data to form data format
+  const initialData: Partial<MovieFormData> = movie
+    ? {
+        title: movie.title,
+        date: movie.date,
+        showtime: movie.showtime || undefined,
+        theater_id: movie.theater_id || undefined,
+        audi: movie.audi || undefined,
+        format_id: movie.format_id || undefined,
+        seat: movie.seat || undefined,
+        ticket_cost: movie.ticket_cost,
+        convenience_fee: movie.convenience_fee,
+        booking_id: movie.booking_id || undefined,
+        tmdb_id: movie.tmdb_id || undefined,
+        runtime_minutes: movie.runtime_minutes || undefined,
+        genres: movie.genres || undefined,
+        language: movie.language || undefined,
+        director: movie.director || undefined,
+        poster_url: movie.poster_url || undefined,
+        rating: movie.rating || undefined,
+        mood_id: movie.mood_id || undefined,
+        fnb_cost: movie.fnb_cost || undefined,
+        fnb_items: movie.fnb_items || undefined,
+        strongest_part_id: movie.strongest_part_id || undefined,
+        weakest_part_id: movie.weakest_part_id || undefined,
+        rewatch_id: movie.rewatch_id || undefined,
+        review: movie.review || undefined,
+        remarks: movie.remarks || undefined,
+        gc_id: movie.gc_id || undefined,
+        other_expenses: movie.other_expenses || undefined,
+        passport_savings: movie.passport_savings || undefined,
+      }
+    : {};
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <PageHeader title="Edit Movie" showBack />
+
+      <ScrollArea className="flex-1">
+        <div className="p-4">
+          {isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : !movie ? (
+            <div className="flex min-h-[50vh] items-center justify-center">
+              <p className="text-muted-foreground">Movie not found</p>
+            </div>
+          ) : (
+            <MovieForm
+              initialData={initialData}
+              formats={formats}
+              theaters={theaters}
+              moods={moods}
+              aspects={aspects}
+              rewatchOptions={rewatchOptions}
+              giftCards={giftCards.filter((gc) => gc.status === "active")}
+              onSubmit={handleSubmit}
+              isLoading={isSubmitting}
+              isEditing
+            />
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
