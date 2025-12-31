@@ -147,9 +147,10 @@ function parseTicketText(text: string): TicketData {
   for (const pattern of moviePatterns) {
     const match = originalText.match(pattern);
     if (match) {
+      let title = match[1].trim();
       // Clean up specific PVR artifacts
       title = title.replace(/^Lucknow\s*\d+\s*/i, ""); // Remove Lucknow pin code prefix
-      title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "");
+      title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "").trim();
       title = title.replace(/\s*\(.*$/, "").trim(); // Remove (3D...)
 
       if (title.length > 2 && title.length < 100) {
