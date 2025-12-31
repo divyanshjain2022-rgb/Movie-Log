@@ -8,6 +8,7 @@ import { TicketUpload, MovieForm } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLookupData, useGiftCards, useCreateMovie } from "@/hooks";
+import { createClient } from "@/lib/supabase/client";
 import type { MovieFormData, TicketOCRData } from "@/types";
 
 export default function NewMoviePage() {
@@ -71,15 +72,26 @@ export default function NewMoviePage() {
 
   const handleSubmit = async (data: MovieFormData) => {
     try {
-      // Get user_id from session (this will be handled by RLS in production)
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        toast.error("You must be logged in to add a movie");
+        return;
+      }
+
+      // Helper to clean UUIDs
+      const cleanUUID = (val?: string | null) =>
+        !val || val === "none" || val === "" ? null : val;
+
       await createMovie({
-        user_id: "", // Will be set by Supabase RLS
+        user_id: user.id,
         title: data.title,
         date: data.date,
         showtime: data.showtime || null,
-        theater_id: data.theater_id || null,
+        theater_id: cleanUUID(data.theater_id),
         audi: data.audi || null,
-        format_id: data.format_id || null,
+        format_id: cleanUUID(data.format_id),
         seat: data.seat || null,
         ticket_cost: data.ticket_cost,
         convenience_fee: data.convenience_fee,
@@ -91,15 +103,15 @@ export default function NewMoviePage() {
         director: data.director || null,
         poster_url: data.poster_url || null,
         rating: data.rating || null,
-        mood_id: data.mood_id || null,
+        mood_id: cleanUUID(data.mood_id),
         fnb_cost: data.fnb_cost || null,
         fnb_items: data.fnb_items || null,
-        strongest_part_id: data.strongest_part_id || null,
-        weakest_part_id: data.weakest_part_id || null,
-        rewatch_id: data.rewatch_id || null,
+        strongest_part_id: cleanUUID(data.strongest_part_id),
+        weakest_part_id: cleanUUID(data.weakest_part_id),
+        rewatch_id: cleanUUID(data.rewatch_id),
         review: data.review || null,
         remarks: data.remarks || null,
-        gc_id: data.gc_id || null,
+        gc_id: cleanUUID(data.gc_id),
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
       });
@@ -107,7 +119,7 @@ export default function NewMoviePage() {
       toast.success("Movie logged successfully!");
       router.push("/movies");
     } catch (error) {
-      toast.error("Failed to save movie");
+      toast.error(error instanceof Error ? error.message : "Failed to save movie");
       console.error(error);
     }
   };

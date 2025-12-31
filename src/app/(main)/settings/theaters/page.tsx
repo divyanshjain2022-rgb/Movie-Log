@@ -41,9 +41,18 @@ export default function TheatersPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (!user) {
+            toast.error("You must be logged in to add data");
+            setIsSubmitting(false);
+            return;
+        }
+
         try {
             await addTheater({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 city: (formData.get("city") as string) || null,
                 has_imax: formData.get("has_imax") === "on",

@@ -36,6 +36,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Aspect } from "@/types";
 
+
 const CATEGORIES = [
     { value: "narrative", label: "Narrative" },
     { value: "technical", label: "Technical" },
@@ -65,11 +66,20 @@ export default function AspectsPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (!user) {
+            toast.error("Authentication required");
+            setIsSubmitting(false);
+            return;
+        }
+
         try {
             const { data, error } = await supabase.from("aspects").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
-                category: formData.get("category") as string,
+                category: (formData.get("category") as string) || "technical",
             } as never).select().single();
 
             if (error) throw error;
