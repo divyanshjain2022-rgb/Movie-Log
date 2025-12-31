@@ -19,21 +19,31 @@ interface TicketData {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("OCR Request received");
+
     if (!GOOGLE_API_KEY) {
+      console.error("GOOGLE_CLOUD_API_KEY is missing");
       return NextResponse.json(
-        { error: "GOOGLE_CLOUD_API_KEY not configured" },
+        { error: "Server configuration error: API key missing" },
         { status: 500 }
       );
     }
 
-    const { image } = await request.json();
+    const body = await request.json().catch(e => {
+      console.error("Failed to parse request body:", e);
+      return null;
+    });
 
-    if (!image) {
+    if (!body || !body.image) {
+      console.error("No image in request body");
       return NextResponse.json(
         { error: "No image provided" },
         { status: 400 }
       );
     }
+
+    console.log("Calling Google Vision API...");
+    const { image } = body;
 
     // Call Google Cloud Vision API
     const response = await fetch(`${VISION_API_URL}?key=${GOOGLE_API_KEY}`, {
@@ -59,18 +69,21 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error("Google Vision API error:", error);
+      const errorText = await response.text();
+      console.error("Google Vision API error:", response.status, errorText);
       return NextResponse.json(
-        { error: "Failed to process image" },
+        { error: `Google API Error: ${response.statusText}` },
         { status: 500 }
       );
     }
 
     const data = await response.json();
+    console.log("Google Vision API response received");
+
     const textAnnotations = data.responses?.[0]?.textAnnotations;
 
     if (!textAnnotations || textAnnotations.length === 0) {
+      console.log("No text found in image");
       return NextResponse.json(
         { error: "No text found in image" },
         { status: 400 }
@@ -79,15 +92,18 @@ export async function POST(request: NextRequest) {
 
     // Get the full text from the first annotation (contains all text)
     const fullText = textAnnotations[0].description || "";
+    console.log("Extracted text length:", fullText.length);
+    console.log("Extracted text (first 100 chars):", fullText.substring(0, 100).replace(/\n/g, "\\n"));
 
     // Parse the extracted text to find ticket information
     const ticketData = parseTicketText(fullText);
+    console.log("Parsed ticket data:", JSON.stringify(ticketData));
 
     return NextResponse.json(ticketData);
   } catch (error) {
-    console.error("OCR error:", error);
+    console.error("OCR internal error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error: " + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
     );
   }
@@ -112,19 +128,14 @@ function parseTicketText(text: string): TicketData {
   };
 
   // === MOVIE TITLE ===
-  // PVR INOX format: "ZOOTOPIA 2 (3D ENGLISH IMAX WITH" or full title in booking details
-  // Look for movie title patterns - usually in ALL CAPS with format info
   const moviePatterns = [
-    // Matches "MOVIE NAME (FORMAT INFO)" pattern
     /([A-Z][A-Z0-9\s]+(?:\d)?)\s*\((?:\d*D?\s*)?[A-Z]+/,
-    // Matches movie titles after specific labels
     /(?:movie|film|title)[:\s]*([^\n]+)/i,
   ];
 
   for (const pattern of moviePatterns) {
     const match = originalText.match(pattern);
     if (match) {
-      // Clean up the title - remove format info in parentheses
       let title = match[1].trim();
       title = title.replace(/\s*\(.*$/, "").trim();
       if (title.length > 2 && title.length < 100) {
@@ -134,7 +145,6 @@ function parseTicketText(text: string): TicketData {
     }
   }
 
-  // Fallback: Look for lines that look like movie titles (ALL CAPS, reasonable length)
   if (!result.movie_title) {
     for (const line of lines) {
       if (line === line.toUpperCase() &&
@@ -152,13 +162,9 @@ function parseTicketText(text: string): TicketData {
   }
 
   // === DATE ===
-  // PVR INOX formats: "Fri, 28 Nov 2025" or "Fri, 28 Nov, 4:00 PM" or "26-11-25"
   const datePatterns = [
-    // "Fri, 28 Nov 2025" or "Fri, 28 Nov"
     /(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s*(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*,?\s*(\d{4})?/i,
-    // "28 Nov 2025"
     /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*,?\s*(\d{4})/i,
-    // DD-MM-YY or DD-MM-YYYY
     /(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/,
   ];
 
@@ -171,7 +177,6 @@ function parseTicketText(text: string): TicketData {
   }
 
   // === SHOWTIME ===
-  // PVR INOX format: "4:00 PM" or "04:00 PM"
   const timePatterns = [
     /(\d{1,2}:\d{2})\s*(am|pm)/i,
     /(\d{1,2}:\d{2})/,
@@ -186,7 +191,6 @@ function parseTicketText(text: string): TicketData {
   }
 
   // === THEATER ===
-  // Look for PVR INOX specific patterns
   const theaterPatterns = [
     /inox\s+(?:megaplex\s+)?([^\n,]+(?:mall|cinema)?[^\n,]*)/i,
     /pvr\s+([^\n,]+(?:mall|cinema)?[^\n,]*)/i,
@@ -203,14 +207,12 @@ function parseTicketText(text: string): TicketData {
   }
 
   // === SCREEN/AUDI ===
-  // PVR INOX format: "SCREEN 4" or "Screen 4"
   const screenMatch = text.match(/screen\s*(\d+)/i);
   if (screenMatch) {
     result.audi = `Screen ${screenMatch[1]}`;
   }
 
   // === FORMAT ===
-  // Detect from text: "3D ENGLISH IMAX", "(3D IMAX)", "IMAX 2D"
   const formatPatterns = [
     { regex: /3d\s*(?:english\s*)?imax/i, format: "IMAX 3D" },
     { regex: /imax\s*3d/i, format: "IMAX 3D" },
@@ -230,7 +232,6 @@ function parseTicketText(text: string): TicketData {
   }
 
   // === SEAT ===
-  // PVR INOX format: "A-14", "A14", "ROYAL A-14"
   const seatPatterns = [
     /(?:seat|seats?)[:\s]*([A-Z]-?\d+)/i,
     /\b([A-Z]-?\d{1,2})\b(?!\s*(?:nov|dec|jan|feb|mar|apr|may|jun|jul|aug|sep|oct))/i,
@@ -245,7 +246,6 @@ function parseTicketText(text: string): TicketData {
   }
 
   // === COSTS ===
-  // PVR INOX patterns: "AMOUNT PAID ₹400.00", "Total Ticket Price ₹400.00", "₹400.00"
   const ticketCostPatterns = [
     /(?:amount\s*paid|total\s*ticket\s*price|total)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
     /[₹]\s*([\d,]+(?:\.\d{2})?)/,
@@ -255,21 +255,19 @@ function parseTicketText(text: string): TicketData {
     const match = text.match(pattern);
     if (match) {
       const cost = parseFloat(match[1].replace(/,/g, ""));
-      if (cost > 50 && cost < 10000) { // Reasonable ticket price range
+      if (cost > 50 && cost < 10000) {
         result.ticket_cost = cost;
         break;
       }
     }
   }
 
-  // Convenience fee
   const convFeeMatch = text.match(/convenience\s*(?:fee|fees)?[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
   if (convFeeMatch) {
     result.convenience_fee = parseFloat(convFeeMatch[1].replace(/,/g, ""));
   }
 
   // === BOOKING ID ===
-  // PVR INOX format: "TMAZJS3", "Booking ID: TMAZJS3"
   const bookingPatterns = [
     /(?:booking\s*(?:id|no)?|ticket\s*id)[:\s]*([A-Z0-9]+)/i,
     /\(ticketid[:\s]*([A-Z0-9]+)\)/i,
@@ -293,7 +291,6 @@ function normalizeDate(dateStr: string): string | null {
       jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
     };
 
-    // Handle "Fri, 28 Nov 2025" or "28 Nov 2025"
     const monthNameMatch = dateStr.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*,?\s*(\d{4})?/i);
     if (monthNameMatch) {
       const day = monthNameMatch[1].padStart(2, "0");
@@ -302,7 +299,6 @@ function normalizeDate(dateStr: string): string | null {
       return `${year}-${month}-${day}`;
     }
 
-    // Handle DD-MM-YY or DD-MM-YYYY
     const numericMatch = dateStr.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
     if (numericMatch) {
       const day = numericMatch[1].padStart(2, "0");
