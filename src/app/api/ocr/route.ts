@@ -149,41 +149,45 @@ function parseTicketText(text: string): TicketData {
 }
 
 function extractMovieTitle(lines: string[], fullText: string): string | null {
-  // PVR INOX Pattern 1: "MOVIE NAME (FORMAT INFO) (RATING)"
-  // e.g., "ZOOTOPIA 2 (3D ENGLISH IMAX WITH ENGLISH SUBTITLE) (UA 7+)"
-  const pvrPattern = /^([A-Z][A-Z0-9\s:'-]+?)(?:\s*\((?:\d*D?\s*)?[A-Z]|\s+UA\s|\s+[UAP]\/A)/m;
-  const pvrMatch = fullText.match(pvrPattern);
-  if (pvrMatch) {
-    const title = cleanMovieTitle(pvrMatch[1]);
+  // Pattern 1: Look for title followed by (LANGUAGE FORMAT) (RATING)
+  // e.g., "KANTARA A LEGEND CHAPTER 1 (HINDI IMAX) (UA 16+)"
+  // Use greedy matching to get the full title
+  const titleWithParens = fullText.match(/^([A-Z][A-Z0-9\s:'-]+)\s*\([A-Z]+[^)]*\)\s*\([UA]/m);
+  if (titleWithParens) {
+    const title = cleanMovieTitle(titleWithParens[1]);
     if (isValidTitle(title)) return title;
   }
 
-  // Pattern 2: Look for movie title on its own line (ALL CAPS, before format info)
+  // Pattern 2: Title before format keywords (IMAX, 3D, etc.)
+  const beforeFormat = fullText.match(/^([A-Z][A-Z0-9\s:'-]+?)(?:\s*\((?:HINDI|ENGLISH|TAMIL|TELUGU|3D|IMAX))/mi);
+  if (beforeFormat) {
+    const title = cleanMovieTitle(beforeFormat[1]);
+    if (isValidTitle(title)) return title;
+  }
+
+  // Pattern 3: Look for movie title on its own line (ALL CAPS)
   for (let i = 0; i < Math.min(lines.length, 15); i++) {
     const line = lines[i];
-
-    // Skip common non-title lines
     if (shouldSkipLine(line)) continue;
 
-    // Check if line looks like a movie title
-    // Movie titles are usually in CAPS, may contain numbers, spaces, colons
-    if (/^[A-Z][A-Z0-9\s:'-]+\d*$/.test(line) && line.length >= 3 && line.length <= 50) {
-      const title = cleanMovieTitle(line);
-      if (isValidTitle(title)) return title;
-    }
-
-    // Also check for title with format info on same line
+    // Title with format info on same line
     const withFormat = line.match(/^([A-Z][A-Z0-9\s:'-]+?)(?:\s*\(|\s+\d+D|\s+IMAX)/);
     if (withFormat) {
       const title = cleanMovieTitle(withFormat[1]);
       if (isValidTitle(title)) return title;
     }
+
+    // Pure title line (ALL CAPS, reasonable length)
+    if (/^[A-Z][A-Z0-9\s:'-]+\d*$/.test(line) && line.length >= 3 && line.length <= 50) {
+      const title = cleanMovieTitle(line);
+      if (isValidTitle(title)) return title;
+    }
   }
 
-  // Pattern 3: Find title before common keywords
-  const beforeKeywords = fullText.match(/^([A-Z][A-Z0-9\s:'-]+?)(?=\s*(?:UA|English|Hindi|Tamil|Telugu|\(|IMAX|3D|2D))/m);
-  if (beforeKeywords) {
-    const title = cleanMovieTitle(beforeKeywords[1]);
+  // Pattern 4: Find title before rating (UA, U/A, etc.)
+  const beforeRating = fullText.match(/^([A-Z][A-Z0-9\s:'-]+?)(?=\s*\([^)]*\)\s*\(?UA|\s+UA\s)/m);
+  if (beforeRating) {
+    const title = cleanMovieTitle(beforeRating[1]);
     if (isValidTitle(title)) return title;
   }
 
