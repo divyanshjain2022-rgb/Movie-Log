@@ -120,6 +120,27 @@ async function parseTicketText(text: string): Promise<TicketOCRData> {
       title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "").trim();
       title = title.replace(/\s*\(.*$/, "").trim();
 
+      // Deduplicate overlapping/doubled titles (e.g. "ZOOTOPIA 2ZOOTOPIA 2")
+      // Check exact repeat (len/2)
+      if (title.length > 4) {
+        const mid = Math.floor(title.length / 2);
+        if (title.substring(0, mid).trim() === title.substring(mid).trim()) {
+          title = title.substring(0, mid).trim();
+        } else {
+          // Check with space "ZOOTOPIA 2 ZOOTOPIA 2"
+          const words = title.split(/\s+/);
+          const half = Math.floor(words.length / 2);
+          if (half > 0) {
+            const firstHalf = words.slice(0, half).join(" ");
+            const secondHalf = words.slice(half).join(" ");
+            if (firstHalf === secondHalf) {
+              title = firstHalf;
+            }
+            // Handle "ZOOTOPIA 2 ZOOTOPIA 2" where length is odd (impossible for exact duplication but just in case)
+          }
+        }
+      }
+
       if (title.length > 2 && title.length < 100) {
         result.movie_title = title;
         break;
@@ -134,16 +155,7 @@ async function parseTicketText(text: string): Promise<TicketOCRData> {
         line.length > 3 &&
         line.length < 60 &&
         !line.match(/Lucknow|Phoenix|Pallasio|Road|Floor|Mall/i) &&
-        !line.includes("PVR") &&
-        !line.includes("INOX") &&
-        !line.includes("SCREEN") &&
-        !line.includes("SEAT") &&
-        !line.includes("BOOKING") &&
-        !line.includes("TAX") &&
-        !line.includes("INVOICE") &&
-        !line.includes("LIMITED") &&
-        !line.includes("TERMS") &&
-        !line.includes("CONDITIONS")) {
+        !line.match(/PVR|INOX|SCREEN|SEAT|BOOKING|TAX|INVOICE|LIMITED|TERMS|CONDITIONS/)) {
 
         let title = line.replace(/\s*\(.*$/, "").trim();
         title = title.replace(/^(?:TAX\s*INVOICE|INVOICE)\s*/i, "").trim();
@@ -157,6 +169,7 @@ async function parseTicketText(text: string): Promise<TicketOCRData> {
 
   // === DATE ===
   const datePatterns = [
+    // Pattern without year group first to catch it
     /(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s*(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*,?\s*(\d{4})?/i,
     /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*,?\s*(\d{4})/i,
     /(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/,
@@ -165,21 +178,29 @@ async function parseTicketText(text: string): Promise<TicketOCRData> {
   for (const pattern of datePatterns) {
     const match = text.match(pattern);
     if (match) {
-      result.date = normalizeDate(match[0]);
+      let dateString = match[0];
+      // If regex has 4 digits at end, assume year present.
+      // If not, append current year.
+      // Only for first 2 patterns which use text months
+      if (!/\d{4}/.test(dateString) && /[a-z]+/i.test(match[0])) {
+        dateString += ` ${new Date().getFullYear()}`;
+      }
+
+      result.date = normalizeDate(dateString);
       if (result.date) break;
     }
   }
 
   // === SHOWTIME ===
   const timePatterns = [
-    /(\d{1,2}:\d{2})\s*(am|pm)/i,
-    /(\d{1,2}:\d{2})/,
+    /(\d{1,2}[:.]\d{2})\s*(am|pm)/i, // Allow dot separator
+    /(\d{1,2}[:.]\d{2})/,
   ];
 
   for (const pattern of timePatterns) {
     const match = text.match(pattern);
     if (match) {
-      result.showtime = match[0].toUpperCase();
+      result.showtime = match[0].toUpperCase().replace(".", ":");
       break;
     }
   }
