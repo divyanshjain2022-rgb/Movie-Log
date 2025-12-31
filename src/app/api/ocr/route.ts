@@ -136,8 +136,11 @@ function parseTicketText(text: string): TicketData {
   };
 
   // === MOVIE TITLE ===
+  // Look for pattern like "MOVIE NAME (3D ENGLISH IMAX WITH" or movie name before format indicators
   const moviePatterns = [
-    /([A-Z][A-Z0-9\s]+(?:\d)?)\s*\((?:\d*D?\s*)?[A-Z]+/,
+    // PVR INOX format: MOVIE NAME (3D ENGLISH IMAX WITH
+    /([A-Z][A-Z0-9\s]+\d?)\s*\((?:3D|2D|IMAX|ENGLISH|HINDI|TELUGU|TAMIL)/i,
+    // Standard patterns
     /(?:movie|film|title)[:\s]*([^\n]+)/i,
   ];
 
@@ -145,6 +148,8 @@ function parseTicketText(text: string): TicketData {
     const match = originalText.match(pattern);
     if (match) {
       let title = match[1].trim();
+      // Clean up common prefixes that get attached
+      title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "").trim();
       title = title.replace(/\s*\(.*$/, "").trim();
       if (title.length > 2 && title.length < 100) {
         result.movie_title = title;
@@ -153,8 +158,10 @@ function parseTicketText(text: string): TicketData {
     }
   }
 
+  // Fallback: look for uppercase lines that aren't headers
   if (!result.movie_title) {
     for (const line of lines) {
+      // Skip common headers
       if (line === line.toUpperCase() &&
         line.length > 3 &&
         line.length < 60 &&
@@ -162,9 +169,18 @@ function parseTicketText(text: string): TicketData {
         !line.includes("INOX") &&
         !line.includes("SCREEN") &&
         !line.includes("SEAT") &&
-        !line.includes("BOOKING")) {
-        result.movie_title = line.replace(/\s*\(.*$/, "").trim();
-        break;
+        !line.includes("BOOKING") &&
+        !line.includes("TAX") &&
+        !line.includes("INVOICE") &&
+        !line.includes("LIMITED") &&
+        !line.includes("TERMS") &&
+        !line.includes("CONDITIONS")) {
+        let title = line.replace(/\s*\(.*$/, "").trim();
+        title = title.replace(/^(?:TAX\s*INVOICE|INVOICE)\s*/i, "").trim();
+        if (title.length > 2) {
+          result.movie_title = title;
+          break;
+        }
       }
     }
   }
@@ -200,17 +216,36 @@ function parseTicketText(text: string): TicketData {
 
   // === THEATER ===
   const theaterPatterns = [
+    // PVR INOX combined format
+    /pvr\s*inox\s*(?:limited)?[^\n]*?([^\n]*(?:mall|cinema|phoenix|pallasio)[^\n]*)/i,
+    // Address line with location
+    /(?:floor|rd|nd|st)\s+([^\n]*(?:mall|phoenix|pallasio)[^\n]*)/i,
+    // Standard patterns
     /inox\s+(?:megaplex\s+)?([^\n,]+(?:mall|cinema)?[^\n,]*)/i,
     /pvr\s+([^\n,]+(?:mall|cinema)?[^\n,]*)/i,
     /(phoenix\s+pallass?io[^\n,]*)/i,
     /(cinepolis[^\n,]*)/i,
+    // Lucknow specific
+    /lucknow[^\n]*phoenix[^\n]*/i,
   ];
 
   for (const pattern of theaterPatterns) {
     const match = text.match(pattern);
     if (match) {
-      result.theater = match[0].trim().replace(/\s+/g, " ");
-      break;
+      let theater = (match[1] || match[0]).trim().replace(/\s+/g, " ");
+      // Clean up
+      theater = theater.replace(/^\d+\s*/, "").trim();
+      if (theater.length > 5) {
+        result.theater = theater;
+        break;
+      }
+    }
+  }
+
+  // If no theater found but we see LUCKNOW/PHOENIX, construct it
+  if (!result.theater) {
+    if (fullText.includes("phoenix") && fullText.includes("pallasio")) {
+      result.theater = "Phoenix Pallasio Mall, Lucknow";
     }
   }
 
@@ -255,24 +290,35 @@ function parseTicketText(text: string): TicketData {
 
   // === COSTS ===
   const ticketCostPatterns = [
-    /(?:amount\s*paid|total\s*ticket\s*price|total)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /[₹]\s*([\d,]+(?:\.\d{2})?)/,
+    // AMOUNT PAID pattern (PVR INOX)
+    /amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    // Total patterns
+    /(?:total\s*(?:amount|paid|ticket\s*price)?)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    // Direct rupee symbol with 3+ digit amount
+    /[₹]\s*([\d,]+\.\d{2})/,
   ];
 
   for (const pattern of ticketCostPatterns) {
     const match = text.match(pattern);
     if (match) {
       const cost = parseFloat(match[1].replace(/,/g, ""));
-      if (cost > 50 && cost < 10000) {
+      if (cost >= 50 && cost < 50000) {
         result.ticket_cost = cost;
         break;
       }
     }
   }
 
-  const convFeeMatch = text.match(/convenience\s*(?:fee|fees)?[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-  if (convFeeMatch) {
-    result.convenience_fee = parseFloat(convFeeMatch[1].replace(/,/g, ""));
+  // Service charge / convenience fee
+  const convFeePatterns = [
+    /(?:service\s*charge|convenience\s*(?:fee|fees)?)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+  ];
+  for (const pattern of convFeePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      result.convenience_fee = parseFloat(match[1].replace(/,/g, ""));
+      break;
+    }
   }
 
   // === BOOKING ID ===

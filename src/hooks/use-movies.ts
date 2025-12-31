@@ -100,10 +100,11 @@ export function useCreateMovie() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || "Database error");
       return data;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to create movie");
+      const errorMsg = err instanceof Error ? err.message : "Failed to create movie";
+      const error = new Error(errorMsg);
       setError(error);
       throw error;
     } finally {
