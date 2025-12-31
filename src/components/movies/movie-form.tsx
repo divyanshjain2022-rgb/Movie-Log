@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -63,6 +64,7 @@ interface MovieFormProps {
   onSubmit: (data: MovieFormData) => Promise<void>;
   isLoading?: boolean;
   isEditing?: boolean;
+  isAdvanceBooking?: boolean;
 }
 
 export function MovieForm({
@@ -76,6 +78,7 @@ export function MovieForm({
   onSubmit,
   isLoading = false,
   isEditing = false,
+  isAdvanceBooking = false,
 }: MovieFormProps) {
   const {
     register,
@@ -112,6 +115,23 @@ export function MovieForm({
   });
 
   const rating = watch("rating") || 5;
+
+  // Sync form with initialData changes (e.g., when TMDB or OCR updates data)
+  useEffect(() => {
+    if (initialData) {
+      // Only update fields that have changed
+      if (initialData.title !== undefined) setValue("title", initialData.title);
+      if (initialData.date !== undefined) setValue("date", initialData.date);
+      if (initialData.showtime !== undefined) setValue("showtime", initialData.showtime);
+      if (initialData.theater_id !== undefined) setValue("theater_id", initialData.theater_id);
+      if (initialData.format_id !== undefined) setValue("format_id", initialData.format_id);
+      if (initialData.audi !== undefined) setValue("audi", initialData.audi);
+      if (initialData.seat !== undefined) setValue("seat", initialData.seat);
+      if (initialData.ticket_cost !== undefined) setValue("ticket_cost", initialData.ticket_cost);
+      if (initialData.convenience_fee !== undefined) setValue("convenience_fee", initialData.convenience_fee);
+      if (initialData.booking_id !== undefined) setValue("booking_id", initialData.booking_id);
+    }
+  }, [initialData, setValue]);
 
   const onFormSubmit = async (data: MovieFormValues) => {
     await onSubmit(data as MovieFormData);
@@ -250,99 +270,101 @@ export function MovieForm({
         </div>
       </div>
 
-      {/* User Experience Section */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Separator className="flex-1" />
-          <span className="text-xs text-muted-foreground">Your experience</span>
-          <Separator className="flex-1" />
-        </div>
-
+      {/* User Experience Section - Hidden in Advance Booking Mode */}
+      {!isAdvanceBooking && (
         <div className="space-y-4">
-          <RatingSlider
-            value={rating}
-            onChange={(value) => setValue("rating", value)}
-          />
-
-          <div>
-            <Label htmlFor="mood_id">Mood *</Label>
-            <Select
-              value={watch("mood_id")}
-              onValueChange={(value) => setValue("mood_id", value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="How did you feel?" />
-              </SelectTrigger>
-              <SelectContent>
-                {moods.map((mood) => (
-                  <SelectItem key={mood.id} value={mood.id}>
-                    {mood.emoji && `${mood.emoji} `}
-                    {mood.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-2">
+            <Separator className="flex-1" />
+            <span className="text-xs text-muted-foreground">Your experience</span>
+            <Separator className="flex-1" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4">
+            <RatingSlider
+              value={rating}
+              onChange={(value) => setValue("rating", value)}
+            />
+
             <div>
-              <Label htmlFor="strongest_part_id">Strongest Part</Label>
+              <Label htmlFor="mood_id">Mood *</Label>
               <Select
-                value={watch("strongest_part_id")}
-                onValueChange={(value) => setValue("strongest_part_id", value)}
+                value={watch("mood_id")}
+                onValueChange={(value) => setValue("mood_id", value)}
               >
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select" />
+                  <SelectValue placeholder="How did you feel?" />
                 </SelectTrigger>
                 <SelectContent>
-                  {aspects.map((aspect) => (
-                    <SelectItem key={aspect.id} value={aspect.id}>
-                      {aspect.name}
+                  {moods.map((mood) => (
+                    <SelectItem key={mood.id} value={mood.id}>
+                      {mood.emoji && `${mood.emoji} `}
+                      {mood.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="strongest_part_id">Strongest Part</Label>
+                <Select
+                  value={watch("strongest_part_id")}
+                  onValueChange={(value) => setValue("strongest_part_id", value)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aspects.map((aspect) => (
+                      <SelectItem key={aspect.id} value={aspect.id}>
+                        {aspect.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="weakest_part_id">Weakest Part</Label>
+                <Select
+                  value={watch("weakest_part_id")}
+                  onValueChange={(value) => setValue("weakest_part_id", value)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aspects.map((aspect) => (
+                      <SelectItem key={aspect.id} value={aspect.id}>
+                        {aspect.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div>
-              <Label htmlFor="weakest_part_id">Weakest Part</Label>
+              <Label htmlFor="rewatch_id">Rewatch Value</Label>
               <Select
-                value={watch("weakest_part_id")}
-                onValueChange={(value) => setValue("weakest_part_id", value)}
+                value={watch("rewatch_id")}
+                onValueChange={(value) => setValue("rewatch_id", value)}
               >
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select" />
+                  <SelectValue placeholder="Would you watch again?" />
                 </SelectTrigger>
                 <SelectContent>
-                  {aspects.map((aspect) => (
-                    <SelectItem key={aspect.id} value={aspect.id}>
-                      {aspect.name}
+                  {rewatchOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="rewatch_id">Rewatch Value</Label>
-            <Select
-              value={watch("rewatch_id")}
-              onValueChange={(value) => setValue("rewatch_id", value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Would you watch again?" />
-              </SelectTrigger>
-              <SelectContent>
-                {rewatchOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Additional Info Section */}
       <div className="space-y-4">
@@ -407,22 +429,24 @@ export function MovieForm({
             </Select>
           </div>
 
-          <div>
-            <Label htmlFor="review">Review</Label>
-            <textarea
-              id="review"
-              {...register("review")}
-              placeholder="Your thoughts on the movie..."
-              className="mt-1 min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+          {!isAdvanceBooking && (
+            <div>
+              <Label htmlFor="review">Review</Label>
+              <textarea
+                id="review"
+                {...register("review")}
+                placeholder="Your thoughts on the movie..."
+                className="mt-1 min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          )}
 
           <div>
             <Label htmlFor="remarks">Remarks</Label>
             <textarea
               id="remarks"
               {...register("remarks")}
-              placeholder="Any additional notes..."
+              placeholder={isAdvanceBooking ? "Booking notes..." : "Any additional notes..."}
               className="mt-1 min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
@@ -430,7 +454,7 @@ export function MovieForm({
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Saving..." : isEditing ? "Save Changes" : "Save Entry"}
+        {isLoading ? "Saving..." : isEditing ? "Save Changes" : isAdvanceBooking ? "Save Advance Booking" : "Save Entry"}
       </Button>
     </form>
   );

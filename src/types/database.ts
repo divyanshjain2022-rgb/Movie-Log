@@ -45,6 +45,7 @@ export interface Database {
           passport_savings: number;
           total_cost: number;
           value_score: number | null;
+          status: "upcoming" | "watched";
         };
         Insert: {
           id?: string;
@@ -80,6 +81,7 @@ export interface Database {
           other_expenses?: number | null;
           passport_savings?: number;
           value_score?: number | null;
+          status?: "upcoming" | "watched";
         };
         Update: {
           id?: string;
@@ -115,6 +117,91 @@ export interface Database {
           other_expenses?: number | null;
           passport_savings?: number;
           value_score?: number | null;
+          status?: "upcoming" | "watched";
+        };
+      };
+      fnb_purchases: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          date: string;
+          theater_id: string | null;
+          items: string;
+          cost: number;
+          remarks: string | null;
+          movie_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          date: string;
+          theater_id?: string | null;
+          items: string;
+          cost: number;
+          remarks?: string | null;
+          movie_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          date?: string;
+          theater_id?: string | null;
+          items?: string;
+          cost?: number;
+          remarks?: string | null;
+          movie_id?: string | null;
+        };
+      };
+      movie_gift_cards: {
+        Row: {
+          id: string;
+          movie_id: string;
+          gift_card_id: string;
+          amount_used: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          movie_id: string;
+          gift_card_id: string;
+          amount_used: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          movie_id?: string;
+          gift_card_id?: string;
+          amount_used?: number;
+          created_at?: string;
+        };
+      };
+      fnb_gift_cards: {
+        Row: {
+          id: string;
+          fnb_purchase_id: string;
+          gift_card_id: string;
+          amount_used: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          fnb_purchase_id: string;
+          gift_card_id: string;
+          amount_used: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          fnb_purchase_id?: string;
+          gift_card_id?: string;
+          amount_used?: number;
+          created_at?: string;
         };
       };
       gift_cards: {
@@ -356,4 +443,31 @@ export interface GiftCardWithUsage extends GiftCard {
   balance: number;
   status: "active" | "exhausted" | "expired";
   platform?: Platform | null;
+}
+
+// F&B types
+export type FnbPurchase = Database["public"]["Tables"]["fnb_purchases"]["Row"];
+export type FnbPurchaseInsert = Database["public"]["Tables"]["fnb_purchases"]["Insert"];
+export type FnbPurchaseUpdate = Database["public"]["Tables"]["fnb_purchases"]["Update"];
+
+export type MovieGiftCard = Database["public"]["Tables"]["movie_gift_cards"]["Row"];
+export type MovieGiftCardInsert = Database["public"]["Tables"]["movie_gift_cards"]["Insert"];
+
+export type FnbGiftCard = Database["public"]["Tables"]["fnb_gift_cards"]["Row"];
+export type FnbGiftCardInsert = Database["public"]["Tables"]["fnb_gift_cards"]["Insert"];
+
+// Extended F&B type with relations
+export interface FnbPurchaseWithRelations extends FnbPurchase {
+  theater?: Theater | null;
+  movie?: Movie | null;
+  gift_cards?: Array<{
+    gift_card: GiftCardWithUsage;
+    amount_used: number;
+  }>;
+}
+
+// Gift card usage entry
+export interface GiftCardUsageEntry {
+  gift_card_id: string;
+  amount_used: number;
 }

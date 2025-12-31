@@ -109,12 +109,12 @@ function parseTicketText(text: string): TicketData {
     ticket_cost: null,
     convenience_fee: null,
     booking_id: null,
+    raw_text: text, // Include raw text for debugging
   };
 
   // Detect ticket provider for specialized parsing
   const isPVRINOX = /pvr|inox/i.test(text);
   const isCinepolis = /cinepolis/i.test(text);
-  const isBookMyShow = /bookmyshow/i.test(text);
 
   // === MOVIE TITLE ===
   result.movie_title = extractMovieTitle(lines, text);
@@ -137,7 +137,7 @@ function parseTicketText(text: string): TicketData {
   // === SEAT ===
   result.seat = extractSeat(text, lines);
 
-  // === COSTS ===
+  // === COSTS (including GST) ===
   const costs = extractCosts(text);
   result.ticket_cost = costs.ticketCost;
   result.convenience_fee = costs.convenienceFee;
@@ -191,12 +191,24 @@ function extractMovieTitle(lines: string[], fullText: string): string | null {
 }
 
 function cleanMovieTitle(title: string): string {
-  return title
+  let cleaned = title
     .replace(/\s*\(.*$/, "") // Remove parenthetical info
     .replace(/\s+(?:3D|2D|IMAX|4DX|DOLBY|ATMOS).*$/i, "") // Remove format suffixes
     .replace(/\s+(?:UA|U\/A|U|A|S)(?:\s+\d+\+?)?$/i, "") // Remove rating suffixes
     .replace(/\s+$/g, "") // Trim trailing spaces
     .trim();
+
+  // Add space before trailing number if missing (e.g., "ZOOTOPIA2" -> "ZOOTOPIA 2")
+  cleaned = cleaned.replace(/([A-Za-z])(\d+)$/, "$1 $2");
+
+  // Title case: "ZOOTOPIA 2" -> "Zootopia 2"
+  cleaned = cleaned
+    .toLowerCase()
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+  return cleaned;
 }
 
 function isValidTitle(title: string): boolean {
@@ -338,38 +350,59 @@ function normalizeTime(hours: string, minutes: string, period: string): string {
 }
 
 function extractTheater(text: string, isPVRINOX: boolean, isCinepolis: boolean): string | null {
-  // PVR INOX specific patterns
+  // Common mall names in India - these are what users will have saved
+  const mallNames = [
+    "phoenix palassio", "phoenix palladium", "phoenix marketcity", "phoenix mall",
+    "forum mall", "nexus mall", "orion mall", "ambience mall", "select citywalk",
+    "dlf mall", "dlf promenade", "elante mall", "vr mall", "lulu mall",
+    "inorbit mall", "oberoi mall", "infinity mall", "high street phoenix",
+    "seawoods grand central", "growels 101", "viviana mall", "r city mall",
+    "pacific mall", "gaur city mall", "wave mall", "sahara mall", "fun republic",
+    "pvr icon", "pvr gold", "pvr ecx", "pvr plaza",
+  ];
+
+  const textLower = text.toLowerCase();
+
+  // First, try to find known mall names
+  for (const mall of mallNames) {
+    if (textLower.includes(mall)) {
+      // Title case the mall name
+      return mall.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    }
+  }
+
+  // PVR INOX specific patterns - extract mall name
   if (isPVRINOX) {
-    // "INOX Megaplex Phoenix Palassio Mall Lucknow"
-    const inoxPattern = text.match(/inox\s+(?:megaplex\s+)?([A-Za-z\s]+(?:mall|cinema|city)?[A-Za-z\s]*?)(?:\n|lucknow|delhi|mumbai|bangalore|hyderabad|chennai|kolkata|pune)/i);
-    if (inoxPattern) {
-      return `INOX ${inoxPattern[1].trim()}`;
+    // Pattern: "PHOENIX PALASSIO" or similar mall names in all caps
+    const mallPattern = text.match(/(PHOENIX|FORUM|NEXUS|ORION|AMBIENCE|SELECT|DLF|ELANTE|VR|LULU|INORBIT|OBEROI|INFINITY|PACIFIC|WAVE|SAHARA)\s+([A-Z]+(?:\s+[A-Z]+)?)/i);
+    if (mallPattern) {
+      const mallName = `${mallPattern[1]} ${mallPattern[2]}`.toLowerCase();
+      return mallName.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
     }
 
-    // "LUCKNOW PHOENIX PALASSIO" pattern from e-ticket
-    const locationPattern = text.match(/([A-Z]+)\s+(PHOENIX|FORUM|NEXUS|ORION|AMBIENCE|SELECT|DLF|ELANTE|VR|LULU)\s+([A-Z]+)/i);
-    if (locationPattern) {
-      return `PVR INOX ${locationPattern[2]} ${locationPattern[3]}, ${locationPattern[1]}`;
-    }
-
-    // Generic PVR/INOX
-    const pvrGeneric = text.match(/(?:pvr|inox)[:\s]+([^\n]+?)(?:\n|$)/i);
-    if (pvrGeneric) {
-      return pvrGeneric[0].trim().replace(/\s+/g, " ");
+    // Pattern: Extract from "INOX Megaplex Phoenix Palassio Mall"
+    const inoxMallPattern = text.match(/(?:pvr|inox)\s+(?:megaplex\s+)?([A-Za-z\s]+?)(?:\s+mall|\s+cinema|\n|,)/i);
+    if (inoxMallPattern) {
+      const extracted = inoxMallPattern[1].trim();
+      // Only use if it looks like a mall name (not a city)
+      if (extracted.length > 3 && !/^(lucknow|delhi|mumbai|bangalore|hyderabad|chennai|kolkata|pune|noida|gurgaon|gurugram)$/i.test(extracted)) {
+        return extracted;
+      }
     }
   }
 
   if (isCinepolis) {
-    const cinepolisPattern = text.match(/cinepolis[:\s]+([^\n]+)/i);
-    if (cinepolisPattern) {
-      return cinepolisPattern[0].trim();
+    // Pattern: "Cinepolis VR Mall" or similar
+    const cinepolisMallPattern = text.match(/cinepolis\s+([A-Za-z\s]+?)(?:\s+mall|\n|,)/i);
+    if (cinepolisMallPattern) {
+      return cinepolisMallPattern[1].trim();
     }
   }
 
-  // Generic theater detection - look for "Mall" or common theater names
-  const genericTheater = text.match(/([A-Za-z\s]+(?:mall|cinema|multiplex|theatre|theater)[A-Za-z\s]*)/i);
-  if (genericTheater) {
-    return genericTheater[1].trim().replace(/\s+/g, " ");
+  // Last resort: look for "XXX Mall" pattern
+  const genericMallPattern = text.match(/([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+mall/i);
+  if (genericMallPattern) {
+    return genericMallPattern[1].trim();
   }
 
   return null;
@@ -432,45 +465,93 @@ function extractCosts(text: string): { ticketCost: number | null; convenienceFee
   let ticketCost: number | null = null;
   let convenienceFee: number | null = null;
 
-  // Ticket cost patterns - prioritize "AMOUNT PAID" and "Total Ticket Price"
-  const costPatterns = [
-    /amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /total\s*ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /total[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    /net\s*(?:price|amount)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+  // Extract base ticket price (before GST and convenience fees)
+  // Look for specific patterns from PVR INOX tickets
+  const baseTicketPatterns = [
+    /ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    /base\s*(?:ticket\s*)?(?:price|amount)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    /sub\s*total[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
   ];
 
-  for (const pattern of costPatterns) {
+  for (const pattern of baseTicketPatterns) {
     const match = text.match(pattern);
     if (match) {
       const cost = parseFloat(match[1].replace(/,/g, ""));
-      // Reasonable ticket price range (INR 100 - 5000)
-      if (cost >= 100 && cost <= 5000) {
+      if (cost >= 50 && cost <= 5000) {
         ticketCost = cost;
         break;
       }
     }
   }
 
-  // If no labeled cost found, look for standalone amounts but be more careful
+  // If no base ticket found, try "Amount Paid" or "Total" patterns
   if (!ticketCost) {
-    // Find all rupee amounts
+    const totalPatterns = [
+      /amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+      /total\s*amount[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+      /grand\s*total[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    ];
+
+    for (const pattern of totalPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const cost = parseFloat(match[1].replace(/,/g, ""));
+        if (cost >= 100 && cost <= 10000) {
+          ticketCost = cost;
+          break;
+        }
+      }
+    }
+  }
+
+  // If still no cost found, look for rupee amounts in reasonable range
+  if (!ticketCost) {
     const amounts = [...text.matchAll(/[₹]\s*([\d,]+(?:\.\d{2})?)/g)]
       .map(m => parseFloat(m[1].replace(/,/g, "")))
       .filter(a => a >= 100 && a <= 5000)
-      .sort((a, b) => b - a); // Sort descending
+      .sort((a, b) => b - a);
 
-    // Take the largest reasonable amount as ticket cost
     if (amounts.length > 0) {
       ticketCost = amounts[0];
     }
   }
 
-  // Convenience fee
+  // Convenience fee - include GST on convenience fee
+  let convFee = 0;
+  let gstOnConv = 0;
+
+  // Look for convenience fee
   const convFeeMatch = text.match(/convenience\s*(?:fee|fees)?[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
   if (convFeeMatch) {
-    convenienceFee = parseFloat(convFeeMatch[1].replace(/,/g, ""));
+    convFee = parseFloat(convFeeMatch[1].replace(/,/g, ""));
   }
+
+  // Look for GST/IGST on convenience fee or general service tax
+  const gstPatterns = [
+    /(?:i?gst|tax)\s*(?:on\s*)?(?:conv|convenience|service)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    /(?:i?gst|cgst|sgst)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+    /service\s*(?:tax|charge)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+  ];
+
+  for (const pattern of gstPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      gstOnConv += parseFloat(match[1].replace(/,/g, ""));
+    }
+  }
+
+  // If we have CGST and SGST separately, they might be listed twice
+  const cgstMatch = text.match(/cgst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+  const sgstMatch = text.match(/sgst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+
+  if (cgstMatch && sgstMatch) {
+    // Reset gstOnConv and use CGST + SGST
+    gstOnConv = parseFloat(cgstMatch[1].replace(/,/g, "")) +
+                parseFloat(sgstMatch[1].replace(/,/g, ""));
+  }
+
+  // Total convenience fee = base + GST
+  convenienceFee = convFee + gstOnConv > 0 ? convFee + gstOnConv : (convFee || null);
 
   return { ticketCost, convenienceFee };
 }

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Calendar, Film } from "lucide-react";
 import { PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLookupData, useGiftCards, useCreateMovie } from "@/hooks";
+import { cn } from "@/lib/utils";
 import type { MovieFormData, TicketOCRData } from "@/types";
 
 interface TMDBMovieDetails {
@@ -22,32 +24,80 @@ interface TMDBMovieDetails {
   overview?: string;
 }
 
+type BookingMode = "watched" | "advance";
+
+// Fuzzy match helper - finds best matching item by name
+function fuzzyMatch<T extends { id: string; name: string }>(
+  items: T[],
+  searchText: string | null
+): string | undefined {
+  if (!searchText || !items.length) return undefined;
+
+  const search = searchText.toLowerCase();
+
+  // Try exact match first
+  const exact = items.find(item => item.name.toLowerCase() === search);
+  if (exact) return exact.id;
+
+  // Try contains match
+  const contains = items.find(item =>
+    item.name.toLowerCase().includes(search) ||
+    search.includes(item.name.toLowerCase())
+  );
+  if (contains) return contains.id;
+
+  // Try partial word match
+  const searchWords = search.split(/\s+/);
+  const partial = items.find(item => {
+    const itemWords = item.name.toLowerCase().split(/\s+/);
+    return searchWords.some(sw => itemWords.some(iw => iw.includes(sw) || sw.includes(iw)));
+  });
+
+  return partial?.id;
+}
+
 export default function NewMoviePage() {
   const router = useRouter();
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { createMovie, isLoading: isSubmitting } = useCreateMovie();
 
+  const [mode, setMode] = useState<BookingMode>("watched");
   const [isUploading, setIsUploading] = useState(false);
   const [extractedData, setExtractedData] = useState<Partial<MovieFormData>>({});
   const [showForm, setShowForm] = useState(false);
   const [tmdbData, setTmdbData] = useState<TMDBMovieDetails | null>(null);
+  const [ocrRawData, setOcrRawData] = useState<TicketOCRData | null>(null);
+
+  // Match theater and format once lookup data is loaded
+  useEffect(() => {
+    if (ocrRawData && !lookupLoading) {
+      const matchedTheaterId = fuzzyMatch(theaters, ocrRawData.theater);
+      const matchedFormatId = fuzzyMatch(formats, ocrRawData.format);
+
+      if (matchedTheaterId || matchedFormatId) {
+        setExtractedData(prev => ({
+          ...prev,
+          ...(matchedTheaterId && { theater_id: matchedTheaterId }),
+          ...(matchedFormatId && { format_id: matchedFormatId }),
+        }));
+      }
+    }
+  }, [ocrRawData, theaters, formats, lookupLoading]);
 
   const handleTicketUpload = async (file: File) => {
     setIsUploading(true);
     try {
-      // Convert file to base64
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           const result = reader.result as string;
-          resolve(result.split(",")[1]); // Remove data:image/...;base64, prefix
+          resolve(result.split(",")[1]);
         };
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
 
-      // Call OCR API
       const response = await fetch("/api/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,6 +109,7 @@ export default function NewMoviePage() {
       }
 
       const data: TicketOCRData = await response.json();
+      setOcrRawData(data); // Store raw data for theater/format matching
 
       setExtractedData({
         title: data.movie_title || "",
@@ -76,7 +127,7 @@ export default function NewMoviePage() {
     } catch (error) {
       toast.error("Failed to extract ticket data. Try entering manually.");
       console.error(error);
-      setShowForm(true); // Show form anyway so user can enter manually
+      setShowForm(true);
     } finally {
       setIsUploading(false);
     }
@@ -84,9 +135,10 @@ export default function NewMoviePage() {
 
   const handleTMDBSelect = (movie: TMDBMovieDetails) => {
     setTmdbData(movie);
+    // Only update TMDB-specific fields, don't duplicate title
     setExtractedData((prev) => ({
       ...prev,
-      title: movie.title,
+      title: movie.title, // Replace title with TMDB title (properly formatted)
       tmdb_id: movie.tmdb_id,
       runtime_minutes: movie.runtime_minutes,
       genres: movie.genres,
@@ -99,9 +151,8 @@ export default function NewMoviePage() {
 
   const handleSubmit = async (data: MovieFormData) => {
     try {
-      // Get user_id from session (this will be handled by RLS in production)
       await createMovie({
-        user_id: "", // Will be set by Supabase RLS
+        user_id: "",
         title: data.title,
         date: data.date,
         showtime: data.showtime || null,
@@ -118,21 +169,22 @@ export default function NewMoviePage() {
         language: tmdbData?.language || data.language || null,
         director: tmdbData?.director || data.director || null,
         poster_url: tmdbData?.poster_url || data.poster_url || null,
-        rating: data.rating || null,
-        mood_id: data.mood_id || null,
+        rating: mode === "advance" ? null : data.rating || null,
+        mood_id: mode === "advance" ? null : data.mood_id || null,
         fnb_cost: data.fnb_cost || null,
         fnb_items: data.fnb_items || null,
-        strongest_part_id: data.strongest_part_id || null,
-        weakest_part_id: data.weakest_part_id || null,
-        rewatch_id: data.rewatch_id || null,
-        review: data.review || null,
+        strongest_part_id: mode === "advance" ? null : data.strongest_part_id || null,
+        weakest_part_id: mode === "advance" ? null : data.weakest_part_id || null,
+        rewatch_id: mode === "advance" ? null : data.rewatch_id || null,
+        review: mode === "advance" ? null : data.review || null,
         remarks: data.remarks || null,
         gc_id: data.gc_id === "none" ? null : data.gc_id || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
+        status: mode === "advance" ? "upcoming" : "watched",
       });
 
-      toast.success("Movie logged successfully!");
+      toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
       router.push("/movies");
     } catch (error) {
       toast.error("Failed to save movie");
@@ -151,7 +203,41 @@ export default function NewMoviePage() {
       <PageHeader title="Add Movie" showBack />
 
       <ScrollArea className="flex-1">
-        <div className="p-4">
+        <div className="p-4 space-y-6">
+          {/* Mode Toggle */}
+          <div className="flex rounded-xl bg-secondary/50 p-1">
+            <button
+              onClick={() => setMode("watched")}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-all",
+                mode === "watched"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Film className="h-4 w-4" />
+              Watched Movie
+            </button>
+            <button
+              onClick={() => setMode("advance")}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-all",
+                mode === "advance"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Calendar className="h-4 w-4" />
+              Advance Booking
+            </button>
+          </div>
+
+          {mode === "advance" && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+              Advance booking mode: Only ticket details required. Add your rating and review after watching!
+            </div>
+          )}
+
           {!showForm ? (
             <div className="space-y-6">
               <TicketUpload onUpload={handleTicketUpload} isLoading={isUploading} />
@@ -197,6 +283,7 @@ export default function NewMoviePage() {
                 giftCards={giftCards.filter((gc) => gc.status === "active")}
                 onSubmit={handleSubmit}
                 isLoading={isSubmitting}
+                isAdvanceBooking={mode === "advance"}
               />
             </div>
           )}
