@@ -202,8 +202,14 @@ export default function GiftCardsPage() {
         </div>
       </div>
       <div>
-        <Label htmlFor="code">Code (optional)</Label>
-        <Input id="code" name="code" defaultValue={card?.code || ""} className="mt-1" />
+        <Label htmlFor="code">Card ID / PIN</Label>
+        <Input
+          id="code"
+          name="code"
+          defaultValue={card?.code || ""}
+          placeholder="e.g., 1234567890 | PIN: 1234"
+          className="mt-1 font-mono"
+        />
       </div>
       <div>
         <Label htmlFor="notes">Notes (optional)</Label>
@@ -355,10 +361,16 @@ function GiftCardItem({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [showCode, setShowCode] = useState(false);
   const daysUntilExpiry = Math.ceil(
     (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   );
   const isExpiringSoon = gc.status === "active" && daysUntilExpiry <= 30;
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard!");
+  };
 
   return (
     <Card className={cn(gc.status !== "active" && "opacity-60")}>
@@ -387,6 +399,36 @@ function GiftCardItem({
             <p className="text-sm text-muted-foreground">
               Expires {formatDate(gc.expiry_date)}
             </p>
+
+            {/* Code/PIN Display */}
+            {gc.code && (
+              <div className="mt-3 space-y-1">
+                <button
+                  onClick={() => setShowCode(!showCode)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {showCode ? "Hide" : "Show"} Card ID/PIN
+                </button>
+                {showCode && (
+                  <div className="rounded-lg bg-secondary/50 p-2 font-mono text-sm">
+                    <button
+                      onClick={() => copyToClipboard(gc.code!)}
+                      className="w-full text-left hover:text-primary transition-colors"
+                      title="Click to copy"
+                    >
+                      {gc.code}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Notes */}
+            {gc.notes && (
+              <p className="mt-2 text-xs text-muted-foreground italic">
+                {gc.notes}
+              </p>
+            )}
           </div>
           <div className="flex items-start gap-2">
             <div className="text-right">
