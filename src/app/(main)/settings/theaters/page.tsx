@@ -28,6 +28,7 @@ import { PageHeader } from "@/components/shared";
 import { useTheaters } from "@/hooks";
 import { toast } from "sonner";
 import type { Theater } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 
 export default function TheatersPage() {
     const { theaters, isLoading, addTheater, updateTheater, deleteTheater } = useTheaters();
