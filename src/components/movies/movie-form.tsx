@@ -396,7 +396,7 @@ export function MovieForm({
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 {giftCards.map((gc) => (
                   <SelectItem key={gc.id} value={gc.id}>
                     {gc.platform?.name || "Gift Card"} - Balance:{" "}

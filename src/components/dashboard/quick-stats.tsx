@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { PiggyBank, ThumbsUp, Meh } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
@@ -15,31 +15,50 @@ export function QuickStats({ saved, greatCount, mehCount }: QuickStatsProps) {
     {
       label: "Saved",
       value: formatCurrency(saved),
-      className: "text-positive",
+      icon: PiggyBank,
+      gradient: "from-emerald-500/20 to-emerald-500/5",
+      iconBg: "bg-emerald-500/20",
+      iconColor: "text-emerald-400",
+      valueColor: "text-emerald-400",
     },
     {
-      label: "Great",
+      label: "Great Films",
       value: greatCount.toString(),
-      className: "text-primary",
+      icon: ThumbsUp,
+      gradient: "from-primary/20 to-primary/5",
+      iconBg: "bg-primary/20",
+      iconColor: "text-primary",
+      valueColor: "text-primary",
     },
     {
       label: "Meh",
       value: mehCount.toString(),
-      className: "text-muted-foreground",
+      icon: Meh,
+      gradient: "from-secondary to-secondary/50",
+      iconBg: "bg-secondary",
+      iconColor: "text-muted-foreground",
+      valueColor: "text-muted-foreground",
     },
   ];
 
   return (
     <div className="grid grid-cols-3 gap-3">
       {stats.map((stat) => (
-        <Card key={stat.label} className="bg-card border-border">
-          <CardContent className="p-3 text-center">
-            <div className={cn("text-xl font-bold", stat.className)}>
-              {stat.value}
-            </div>
-            <div className="text-xs text-muted-foreground">{stat.label}</div>
-          </CardContent>
-        </Card>
+        <div
+          key={stat.label}
+          className={cn(
+            "relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br p-4",
+            stat.gradient
+          )}
+        >
+          <div className={cn("mb-2 flex h-8 w-8 items-center justify-center rounded-lg", stat.iconBg)}>
+            <stat.icon className={cn("h-4 w-4", stat.iconColor)} />
+          </div>
+          <div className={cn("text-xl font-bold", stat.valueColor)}>
+            {stat.value}
+          </div>
+          <div className="text-xs text-muted-foreground">{stat.label}</div>
+        </div>
       ))}
     </div>
   );

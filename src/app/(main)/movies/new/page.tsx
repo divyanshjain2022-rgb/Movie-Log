@@ -4,11 +4,23 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared";
-import { TicketUpload, MovieForm } from "@/components/movies";
+import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLookupData, useGiftCards, useCreateMovie } from "@/hooks";
 import type { MovieFormData, TicketOCRData } from "@/types";
+
+interface TMDBMovieDetails {
+  tmdb_id: number;
+  title: string;
+  runtime_minutes?: number;
+  genres?: string[];
+  language?: string;
+  director?: string;
+  poster_url?: string;
+  release_date?: string;
+  overview?: string;
+}
 
 export default function NewMoviePage() {
   const router = useRouter();
@@ -19,6 +31,7 @@ export default function NewMoviePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [extractedData, setExtractedData] = useState<Partial<MovieFormData>>({});
   const [showForm, setShowForm] = useState(false);
+  const [tmdbData, setTmdbData] = useState<TMDBMovieDetails | null>(null);
 
   const handleTicketUpload = async (file: File) => {
     setIsUploading(true);
@@ -69,6 +82,21 @@ export default function NewMoviePage() {
     }
   };
 
+  const handleTMDBSelect = (movie: TMDBMovieDetails) => {
+    setTmdbData(movie);
+    setExtractedData((prev) => ({
+      ...prev,
+      title: movie.title,
+      tmdb_id: movie.tmdb_id,
+      runtime_minutes: movie.runtime_minutes,
+      genres: movie.genres,
+      language: movie.language,
+      director: movie.director,
+      poster_url: movie.poster_url,
+    }));
+    toast.success("Movie details loaded from TMDB!");
+  };
+
   const handleSubmit = async (data: MovieFormData) => {
     try {
       // Get user_id from session (this will be handled by RLS in production)
@@ -84,12 +112,12 @@ export default function NewMoviePage() {
         ticket_cost: data.ticket_cost,
         convenience_fee: data.convenience_fee,
         booking_id: data.booking_id || null,
-        tmdb_id: data.tmdb_id || null,
-        runtime_minutes: data.runtime_minutes || null,
-        genres: data.genres || null,
-        language: data.language || null,
-        director: data.director || null,
-        poster_url: data.poster_url || null,
+        tmdb_id: tmdbData?.tmdb_id || data.tmdb_id || null,
+        runtime_minutes: tmdbData?.runtime_minutes || data.runtime_minutes || null,
+        genres: tmdbData?.genres || data.genres || null,
+        language: tmdbData?.language || data.language || null,
+        director: tmdbData?.director || data.director || null,
+        poster_url: tmdbData?.poster_url || data.poster_url || null,
         rating: data.rating || null,
         mood_id: data.mood_id || null,
         fnb_cost: data.fnb_cost || null,
@@ -99,7 +127,7 @@ export default function NewMoviePage() {
         rewatch_id: data.rewatch_id || null,
         review: data.review || null,
         remarks: data.remarks || null,
-        gc_id: data.gc_id || null,
+        gc_id: data.gc_id === "none" ? null : data.gc_id || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
       });
@@ -119,20 +147,22 @@ export default function NewMoviePage() {
   const isLoading = lookupLoading || giftCardsLoading;
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col pb-20">
       <PageHeader title="Add Movie" showBack />
 
       <ScrollArea className="flex-1">
         <div className="p-4">
           {!showForm ? (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <TicketUpload onUpload={handleTicketUpload} isLoading={isUploading} />
-              <button
-                onClick={handleSkipOCR}
-                className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
-              >
-                Or enter details manually
-              </button>
+              <div className="text-center">
+                <button
+                  onClick={handleSkipOCR}
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Or enter details manually
+                </button>
+              </div>
             </div>
           ) : isLoading ? (
             <div className="space-y-4">
@@ -142,17 +172,33 @@ export default function NewMoviePage() {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : (
-            <MovieForm
-              initialData={extractedData}
-              formats={formats}
-              theaters={theaters}
-              moods={moods}
-              aspects={aspects}
-              rewatchOptions={rewatchOptions}
-              giftCards={giftCards.filter((gc) => gc.status === "active")}
-              onSubmit={handleSubmit}
-              isLoading={isSubmitting}
-            />
+            <div className="space-y-6">
+              {/* TMDB Search */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Search Movie</label>
+                <TMDBSearch
+                  initialTitle={extractedData.title || ""}
+                  onSelect={handleTMDBSelect}
+                  selectedTmdbId={tmdbData?.tmdb_id}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Search to auto-fill movie details and poster
+                </p>
+              </div>
+
+              {/* Movie Form */}
+              <MovieForm
+                initialData={extractedData}
+                formats={formats}
+                theaters={theaters}
+                moods={moods}
+                aspects={aspects}
+                rewatchOptions={rewatchOptions}
+                giftCards={giftCards.filter((gc) => gc.status === "active")}
+                onSubmit={handleSubmit}
+                isLoading={isSubmitting}
+              />
+            </div>
           )}
         </div>
       </ScrollArea>
