@@ -176,7 +176,7 @@ export function MovieForm({
                 <SelectValue placeholder="Select theater" />
               </SelectTrigger>
               <SelectContent>
-                {theaters.map((theater) => (
+                {theaters.filter(t => t.id).map((theater) => (
                   <SelectItem key={theater.id} value={theater.id}>
                     {theater.name}
                   </SelectItem>
@@ -196,7 +196,7 @@ export function MovieForm({
                   <SelectValue placeholder="Select format" />
                 </SelectTrigger>
                 <SelectContent>
-                  {formats.map((format) => (
+                  {formats.filter(f => f.id).map((format) => (
                     <SelectItem key={format.id} value={format.id}>
                       {format.name}
                     </SelectItem>
@@ -274,7 +274,7 @@ export function MovieForm({
                 <SelectValue placeholder="How did you feel?" />
               </SelectTrigger>
               <SelectContent>
-                {moods.map((mood) => (
+                {moods.filter(m => m.id).map((mood) => (
                   <SelectItem key={mood.id} value={mood.id}>
                     {mood.emoji && `${mood.emoji} `}
                     {mood.name}
@@ -295,7 +295,7 @@ export function MovieForm({
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
-                  {aspects.map((aspect) => (
+                  {aspects.filter(a => a.id).map((aspect) => (
                     <SelectItem key={aspect.id} value={aspect.id}>
                       {aspect.name}
                     </SelectItem>
@@ -313,7 +313,7 @@ export function MovieForm({
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
-                  {aspects.map((aspect) => (
+                  {aspects.filter(a => a.id).map((aspect) => (
                     <SelectItem key={aspect.id} value={aspect.id}>
                       {aspect.name}
                     </SelectItem>
@@ -333,7 +333,7 @@ export function MovieForm({
                 <SelectValue placeholder="Would you watch again?" />
               </SelectTrigger>
               <SelectContent>
-                {rewatchOptions.map((option) => (
+                {rewatchOptions.filter(r => r.id).map((option) => (
                   <SelectItem key={option.id} value={option.id}>
                     {option.name}
                   </SelectItem>
