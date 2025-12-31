@@ -1,54 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { TicketOCRData } from "@/types";
 
-// Google Cloud Vision API endpoint
-const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
-
-interface TicketData {
-  movie_title: string | null;
-  date: string | null;
-  showtime: string | null;
-  theater: string | null;
-  audi: string | null;
-  format: string | null;
-  seat: string | null;
-  ticket_cost: number | null;
-  convenience_fee: number | null;
-  booking_id: string | null;
-}
+const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Config Check
+    const body = await request.json();
+
+    if (!body.image) {
+      return NextResponse.json({ error: "No image data provided" }, { status: 400 });
+    }
+
     if (!GOOGLE_API_KEY) {
       console.error("OCR Check Failed: GOOGLE_CLOUD_API_KEY is missing");
-      return NextResponse.json(
-        { error: "Server configuration error: OCR API key is missing. Please check Vercel env vars." },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Server misconfiguration: Missing API Key" }, { status: 500 });
     }
 
-    // 2. Request Parsing Check
-    let body;
-    try {
-      body = await request.json();
-    } catch (e) {
-      console.error("OCR Body Parse Failed:", e);
-      return NextResponse.json(
-        { error: "Invalid request format: Body must be JSON" },
-        { status: 400 }
-      );
-    }
-
-    if (!body || !body.image) {
-      console.error("OCR Validation Failed: No image provided");
-      return NextResponse.json(
-        { error: "No image data provided in request" },
-        { status: 400 }
-      );
-    }
-
-    // 3. Google API Call
+    // Call Google Vision API
     console.log("Calling Google Vision API...");
     const response = await fetch(`${VISION_API_URL}?key=${GOOGLE_API_KEY}`, {
       method: "POST",
@@ -88,25 +57,19 @@ export async function POST(request: NextRequest) {
     if (!textAnnotations || textAnnotations.length === 0) {
       console.warn("OCR Success but no text found");
       return NextResponse.json(
-        { error: "No text text detected in this image. Please ensure image is clear and contains text." },
-        { status: 422 } // Unprocessable Entity
+        { error: "Could not detect any text in the image. Try a clearer photo." },
+        { status: 422 }
       );
     }
 
-    // 4. Parsing Logic
     const fullText = textAnnotations[0].description || "";
-    console.log("OCR Success. Extracted chars:", fullText.length);
+    console.log("Extracted text length:", fullText.length);
 
-    try {
-      const ticketData = parseTicketText(fullText);
-      return NextResponse.json(ticketData);
-    } catch (parseError) {
-      console.error("OCR Parsing Logic Failed:", parseError);
-      return NextResponse.json(
-        { error: "Failed to parse ticket data from extracted text." },
-        { status: 500 }
-      );
-    }
+    // Parse the text (Async because it calls TMDB)
+    const ticketData = await parseTicketText(fullText);
+
+    console.log("Parsed ticket data:", JSON.stringify(ticketData));
+    return NextResponse.json(ticketData);
 
   } catch (error) {
     console.error("OCR Critical Failure:", error);
@@ -117,12 +80,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function parseTicketText(text: string): TicketData {
+async function parseTicketText(text: string): Promise<TicketOCRData> {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const fullText = text.toLowerCase();
-  const originalText = text;
 
-  const result: TicketData = {
+  // Debug logging
+  console.log("--- OCR RAW TEXT START ---");
+  console.log(text);
+  console.log("--- OCR RAW TEXT END ---");
+
+  const result: TicketOCRData = {
     movie_title: null,
     date: null,
     showtime: null,
@@ -136,22 +103,22 @@ function parseTicketText(text: string): TicketData {
   };
 
   // === MOVIE TITLE ===
-  // Look for pattern like "MOVIE NAME (3D ENGLISH IMAX WITH" or movie name before format indicators
   const moviePatterns = [
     // PVR INOX format: MOVIE NAME (3D ENGLISH IMAX WITH
-    /([A-Z][A-Z0-9\s]+\d?)\s*\((?:3D|2D|IMAX|ENGLISH|HINDI|TELUGU|TAMIL)/i,
+    // Case-sensitive, strict
+    /([A-Z][A-Z0-9\s]+\d?)\s*\((?:3D|2D|IMAX|ENGLISH|HINDI|TELUGU|TAMIL)/,
     // Standard patterns
     /(?:movie|film|title)[:\s]*([^\n]+)/i,
   ];
 
   for (const pattern of moviePatterns) {
-    const match = originalText.match(pattern);
+    const match = text.match(pattern);
     if (match) {
       let title = match[1].trim();
       // Clean up specific PVR artifacts
-      title = title.replace(/^Lucknow\s*\d+\s*/i, ""); // Remove Lucknow pin code prefix
+      title = title.replace(/^Lucknow\s*\d+\s*/i, "");
       title = title.replace(/^(?:TAX\s*INVOICE|INVOICE|TICKET)\s*/i, "").trim();
-      title = title.replace(/\s*\(.*$/, "").trim(); // Remove (3D...)
+      title = title.replace(/\s*\(.*$/, "").trim();
 
       if (title.length > 2 && title.length < 100) {
         result.movie_title = title;
@@ -163,7 +130,6 @@ function parseTicketText(text: string): TicketData {
   // Fallback: look for uppercase lines that aren't headers
   if (!result.movie_title) {
     for (const line of lines) {
-      // Skip common headers and address lines
       if (line === line.toUpperCase() &&
         line.length > 3 &&
         line.length < 60 &&
@@ -213,50 +179,39 @@ function parseTicketText(text: string): TicketData {
   for (const pattern of timePatterns) {
     const match = text.match(pattern);
     if (match) {
-      result.showtime = normalizeTime(match[0]);
-      if (result.showtime) break;
+      result.showtime = match[0].toUpperCase();
+      break;
     }
   }
 
   // === THEATER ===
   const theaterPatterns = [
-    // PVR INOX combined format
+    // Exclude "Thank you for choosing..."
     /pvr\s*inox\s*(?:limited)?[^\n]*?([^\n]*(?:mall|cinema|phoenix|pallasio)[^\n]*)/i,
-    // Address line with location
     /(?:floor|rd|nd|st)\s+([^\n]*(?:mall|phoenix|pallasio)[^\n]*)/i,
-    // Standard patterns
-    /inox\s+(?:megaplex\s+)?([^\n,]+(?:mall|cinema)?[^\n,]*)/i,
-    /pvr\s+([^\n,]+(?:mall|cinema)?[^\n,]*)/i,
+    // Strict INOX match avoiding "PVR INOX!"
+    /inox\s+(?:megaplex\s+)?([^\n,]+(?:mall|cinema)[^\n,]*)/i,
+    /pvr\s+([^\n,]+(?:mall|cinema)[^\n,]*)/i,
     /(phoenix\s+pallass?io[^\n,]*)/i,
-    /(cinepolis[^\n,]*)/i,
-    // Lucknow specific
-    /lucknow[^\n]*phoenix[^\n]*/i,
   ];
 
   for (const pattern of theaterPatterns) {
     const match = text.match(pattern);
     if (match) {
       let theater = (match[1] || match[0]).trim().replace(/\s+/g, " ");
-      // Clean up
       theater = theater.replace(/^\d+\s*/, "").trim();
-      if (theater.length > 5) {
-        result.theater = theater;
+      // Remove common address prefixes
+      theater = theater.replace(/^(?:floor|ground|first|second|third|3rd)\s*/i, "");
+
+      if (theater.length > 5 && !theater.toLowerCase().includes("thank you")) {
+        result.theater = theater.replace(/,?\s*lucknow/i, "").trim();
         break;
       }
     }
   }
-
-  // If no theater found but we see LUCKNOW/PHOENIX, construct it
-  if (!result.theater) {
-    if (fullText.includes("phoenix") && fullText.includes("pallasio")) {
-      result.theater = "Phoenix Pallasio Mall, Lucknow";
-    }
-  }
-
-  // === SCREEN/AUDI ===
-  const screenMatch = text.match(/screen\s*(\d+)/i);
-  if (screenMatch) {
-    result.audi = `Screen ${screenMatch[1]}`;
+  // Fallback LUCKNOW
+  if (!result.theater && fullText.includes("phoenix") && fullText.includes("pallasio")) {
+    result.theater = "Phoenix Pallasio Mall";
   }
 
   // === FORMAT ===
@@ -283,7 +238,6 @@ function parseTicketText(text: string): TicketData {
     /(?:seat|seats?)[:\s]*([A-Z]-?\d+)/i,
     /\b([A-Z]-?\d{1,2})\b(?!\s*(?:nov|dec|jan|feb|mar|apr|may|jun|jul|aug|sep|oct))/i,
   ];
-
   for (const pattern of seatPatterns) {
     const match = text.match(pattern);
     if (match) {
@@ -294,14 +248,9 @@ function parseTicketText(text: string): TicketData {
 
   // === COSTS ===
   const ticketCostPatterns = [
-    // Specific "Total Ticket Price"
-    /total\s*ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    // AMOUNT PAID pattern (PVR INOX)
-    /amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    // Total patterns
-    /(?:total\s*(?:amount|paid)?)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
-    // Direct rupee symbol with 3+ digit amount
-    /[₹]\s*([\d,]+\.\d{2})/,
+    /total\s*ticket\s*price\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
+    /amount\s*paid\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
+    /total\s*(?:amount|paid)?\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
   ];
 
   for (const pattern of ticketCostPatterns) {
@@ -315,29 +264,80 @@ function parseTicketText(text: string): TicketData {
     }
   }
 
-  // Service charge / convenience fee
-  const convFeePatterns = [
-    /(?:service\s*charge|convenience\s*(?:fee|fees)?)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i,
+  // === GRAND TOTAL ===
+  // We extract Grand Total to calculate the full convenience fee (Fee + GST + Others)
+  const totalPatterns = [
+    /^Total\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/im, // Start of line "Total"
+    /Total\s+Amount\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
+    /AMOUNT\s*PAID\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
   ];
-  for (const pattern of convFeePatterns) {
+  let grandTotal: number | null = null;
+  for (const pattern of totalPatterns) {
     const match = text.match(pattern);
     if (match) {
-      result.convenience_fee = parseFloat(match[1].replace(/,/g, ""));
+      grandTotal = parseFloat(match[1].replace(/,/g, ""));
       break;
+    }
+  }
+
+  // === CONVENIENCE FEE ===
+  // Primary method: Difference between Grand Total and Ticket Cost
+  if (grandTotal && result.ticket_cost && grandTotal > result.ticket_cost) {
+    result.convenience_fee = Number((grandTotal - result.ticket_cost).toFixed(2));
+  } else {
+    // Fallback: Explicit extraction
+    const convFeePatterns = [
+      /convenience\s*(?:fee|fees)\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
+    ];
+    for (const pattern of convFeePatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        result.convenience_fee = parseFloat(match[1].replace(/,/g, ""));
+        break;
+      }
     }
   }
 
   // === BOOKING ID ===
   const bookingPatterns = [
+    // Handle "Booking ID: \n CODE"
     /(?:booking\s*(?:id|no)?|ticket\s*id)[:\s]*([A-Z0-9]+)/i,
-    /\(ticketid[:\s]*([A-Z0-9]+)\)/i,
+    /\b([A-Z0-9]{6,10})\b/,
   ];
-
   for (const pattern of bookingPatterns) {
     const match = text.match(pattern);
-    if (match && match[1].length >= 5 && match[1].length <= 20) {
-      result.booking_id = match[1].toUpperCase();
-      break;
+    if (match && match[1].length > 4) {
+      // Must contain at least one digit and one letter
+      if (/\d/.test(match[1]) && /[A-Z]/.test(match[1])) {
+        result.booking_id = match[1];
+        break;
+      }
+    }
+  }
+
+  // === TMDB ENRICHMENT ===
+  if (result.movie_title && process.env.TMDB_API_KEY) {
+    try {
+      console.log(`Searching TMDB for: ${result.movie_title}`);
+      const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.TMDB_API_KEY}&query=${encodeURIComponent(result.movie_title)}&year=${result.date ? new Date(result.date).getFullYear() : ""}`;
+
+      const tmdbRes = await fetch(searchUrl);
+      if (tmdbRes.ok) {
+        const tmdbData = await tmdbRes.json();
+        if (tmdbData.results && tmdbData.results.length > 0) {
+          const bestMatch = tmdbData.results[0];
+          console.log("TMDB Match Found:", bestMatch.title);
+
+          result.tmdb_id = bestMatch.id;
+          result.overview = bestMatch.overview;
+          result.poster_path = bestMatch.poster_path;
+          result.backdrop_path = bestMatch.backdrop_path;
+          result.original_title = bestMatch.original_title;
+          result.release_date = bestMatch.release_date;
+        }
+      }
+    } catch (error) {
+      console.error("TMDB Search Failed:", error);
     }
   }
 
@@ -346,51 +346,8 @@ function parseTicketText(text: string): TicketData {
 
 function normalizeDate(dateStr: string): string | null {
   try {
-    const months: Record<string, string> = {
-      jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-      jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
-    };
-
-    const monthNameMatch = dateStr.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*,?\s*(\d{4})?/i);
-    if (monthNameMatch) {
-      const day = monthNameMatch[1].padStart(2, "0");
-      const month = months[monthNameMatch[2].toLowerCase().substring(0, 3)];
-      const year = monthNameMatch[3] || new Date().getFullYear().toString();
-      return `${year}-${month}-${day}`;
-    }
-
-    const numericMatch = dateStr.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
-    if (numericMatch) {
-      const day = numericMatch[1].padStart(2, "0");
-      const month = numericMatch[2].padStart(2, "0");
-      let year = numericMatch[3];
-      if (year.length === 2) {
-        year = `20${year}`;
-      }
-      return `${year}-${month}-${day}`;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeTime(timeStr: string): string | null {
-  try {
-    const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
-
-    if (match) {
-      let hours = parseInt(match[1]);
-      const minutes = match[2];
-      const period = match[3]?.toUpperCase();
-
-      if (period === "PM" && hours < 12) hours += 12;
-      if (period === "AM" && hours === 12) hours = 0;
-
-      return `${hours.toString().padStart(2, "0")}:${minutes}`;
-    }
-    return null;
+    const date = new Date(dateStr);
+    return !isNaN(date.getTime()) ? date.toISOString().split("T")[0] : null;
   } catch {
     return null;
   }

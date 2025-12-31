@@ -393,6 +393,17 @@ function GiftCardItem({
             <p className="text-sm text-muted-foreground">
               Expires {formatDate(gc.expiry_date)}
             </p>
+            {gc.code && (
+              <p className="mt-2 font-mono text-sm">
+                <span className="text-muted-foreground select-none">Code: </span>
+                <span className="font-medium bg-muted px-1.5 py-0.5 rounded select-all">{gc.code}</span>
+              </p>
+            )}
+            {gc.notes && (
+              <p className="mt-1 text-xs text-muted-foreground/80 italic">
+                {gc.notes}
+              </p>
+            )}
           </div>
           <div className="flex items-start gap-2">
             <div className="text-right">

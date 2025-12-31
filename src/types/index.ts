@@ -54,6 +54,13 @@ export interface TicketOCRData {
   ticket_cost: number | null;
   convenience_fee: number | null;
   booking_id: string | null;
+  // TMDB Data
+  tmdb_id?: number | null;
+  overview?: string | null;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  original_title?: string | null;
+  release_date?: string | null;
 }
 
 // TMDB Response type
