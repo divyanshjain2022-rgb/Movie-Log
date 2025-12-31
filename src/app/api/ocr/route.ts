@@ -523,46 +523,30 @@ function extractCosts(text: string): { ticketCost: number | null; convenienceFee
   // === CONVENIENCE FEE ===
   // Look specifically for convenience fee line
   let convFee = 0;
-  let igst = 0;
+  let convGst = 0;
 
   for (const line of lines) {
-    // Pattern: "Convenience fees ₹43.22" - exact match for convenience
-    const convMatch = line.match(/^convenience\s*(?:fee|fees)?[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
+    // Pattern: "Convenience Fees    51.00" - convenience fee without currency symbol
+    const convMatch = line.match(/convenience\s*fees?\s+(\d+(?:\.\d{2})?)/i);
     if (convMatch) {
-      convFee = parseFloat(convMatch[1].replace(/,/g, ""));
+      convFee = parseFloat(convMatch[1]);
       continue;
     }
 
-    // Pattern: "IGST ₹7.78" - look for IGST specifically (GST on convenience fee)
-    const igstMatch = line.match(/^i?gst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-    if (igstMatch) {
-      const gstAmount = parseFloat(igstMatch[1].replace(/,/g, ""));
-      // Only count small GST amounts (typically < ₹50 for convenience fee GST)
+    // Pattern: "GST-09AAACP4526D1ZO    9.18" - GSTIN followed by GST amount
+    const gstinMatch = line.match(/gst-[A-Z0-9]+\s+(\d+(?:\.\d{2})?)/i);
+    if (gstinMatch) {
+      const gstAmount = parseFloat(gstinMatch[1]);
       if (gstAmount < 50) {
-        igst = gstAmount;
+        convGst = gstAmount;
       }
+      continue;
     }
   }
 
-  // Also check for CGST + SGST pattern (each is half of total GST)
-  const cgstMatch = text.match(/cgst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-  const sgstMatch = text.match(/sgst[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-
-  if (cgstMatch && sgstMatch) {
-    const cgst = parseFloat(cgstMatch[1].replace(/,/g, ""));
-    const sgst = parseFloat(sgstMatch[1].replace(/,/g, ""));
-    // Only use if both are small (< ₹25 each)
-    if (cgst < 25 && sgst < 25) {
-      igst = cgst + sgst;
-    }
-  }
-
-  // Total convenience fee = base fee + GST (only if we found a reasonable conv fee)
+  // Total convenience fee = base fee + GST on convenience fee
   if (convFee > 0 && convFee < 200) {
-    convenienceFee = convFee + igst;
-  } else if (convFee > 0) {
-    // If conv fee seems too high, it might already include GST
-    convenienceFee = convFee;
+    convenienceFee = convFee + convGst;
   }
 
   return { ticketCost, convenienceFee };
