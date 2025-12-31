@@ -1,14 +1,27 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
-import { Edit } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Edit, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
-import { useMovie } from "@/hooks";
+import { useMovie, useDeleteMovie } from "@/hooks";
 import {
   formatCurrency,
   formatDate,
@@ -24,7 +37,21 @@ interface MovieDetailPageProps {
 
 export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const { id } = use(params);
+  const router = useRouter();
   const { movie, isLoading, error } = useMovie(id);
+  const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const handleDelete = async () => {
+    try {
+      await deleteMovie(id);
+      toast.success("Movie deleted");
+      router.push("/movies");
+    } catch (error) {
+      toast.error("Failed to delete movie");
+      console.error(error);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -63,12 +90,39 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
         title=""
         showBack
         action={
-          <Link href={`/movies/${id}/edit`}>
-            <Button variant="ghost" size="sm">
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-          </Link>
+          <div className="flex items-center gap-1">
+            <Link href={`/movies/${id}/edit`}>
+              <Button variant="ghost" size="sm">
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this movie?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete &quot;{movie.title}&quot; from your log. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         }
       />
 
