@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { RatingSlider } from "./rating-slider";
+import { TMDBSearchInput } from "./tmdb-search-input";
 import type {
   Format,
   Theater,
@@ -48,6 +49,13 @@ const movieFormSchema = z.object({
   gc_id: z.string().optional(),
   other_expenses: z.coerce.number().min(0).optional(),
   passport_savings: z.coerce.number().min(0).optional(),
+  // TMDB metadata
+  tmdb_id: z.coerce.number().optional(),
+  runtime_minutes: z.coerce.number().optional(),
+  genres: z.array(z.string()).optional(),
+  language: z.string().optional(),
+  director: z.string().optional(),
+  poster_url: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
@@ -108,6 +116,13 @@ export function MovieForm({
       gc_id: initialData?.gc_id || "",
       other_expenses: initialData?.other_expenses || 0,
       passport_savings: initialData?.passport_savings || 0,
+      // TMDB metadata defaults
+      tmdb_id: initialData?.tmdb_id || undefined,
+      runtime_minutes: initialData?.runtime_minutes || undefined,
+      genres: initialData?.genres || [],
+      language: initialData?.language || "",
+      director: initialData?.director || "",
+      poster_url: initialData?.poster_url || "",
     },
   });
 
@@ -132,12 +147,37 @@ export function MovieForm({
         <div className="space-y-3">
           <div>
             <Label htmlFor="title">Movie *</Label>
-            <Input
-              id="title"
-              {...register("title")}
-              placeholder="Movie title"
-              className="mt-1"
-            />
+            <div className="mt-1">
+              <TMDBSearchInput
+                value={watch("title") || ""}
+                onChange={(title, movieDetails) => {
+                  setValue("title", title);
+                  if (movieDetails) {
+                    // Set all TMDB metadata
+                    if (movieDetails.tmdb_id) {
+                      setValue("tmdb_id", movieDetails.tmdb_id);
+                    }
+                    if (movieDetails.runtime_minutes) {
+                      setValue("runtime_minutes", movieDetails.runtime_minutes);
+                    }
+                    if (movieDetails.poster_url) {
+                      setValue("poster_url", movieDetails.poster_url);
+                    }
+                    if (movieDetails.genres) {
+                      setValue("genres", movieDetails.genres);
+                    }
+                    if (movieDetails.language) {
+                      setValue("language", movieDetails.language);
+                    }
+                    if (movieDetails.director) {
+                      setValue("director", movieDetails.director);
+                    }
+                    console.log("[TMDB] Movie populated:", movieDetails);
+                  }
+                }}
+                placeholder="Search for a movie..."
+              />
+            </div>
             {errors.title && (
               <p className="mt-1 text-xs text-destructive">
                 {errors.title.message}
