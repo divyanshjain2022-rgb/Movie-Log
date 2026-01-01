@@ -51,6 +51,13 @@ const movieFormSchema = z.object({
   remarks: z.string().optional(),
   other_expenses: z.coerce.number().min(0).optional(),
   passport_savings: z.coerce.number().min(0).optional(),
+  // TMDB fields - required for saving movie metadata
+  tmdb_id: z.coerce.number().optional(),
+  runtime_minutes: z.coerce.number().optional(),
+  genres: z.array(z.string()).optional(),
+  language: z.string().optional(),
+  director: z.string().optional(),
+  poster_url: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
@@ -158,6 +165,13 @@ export function MovieForm({
       if (initialData.ticket_cost !== undefined) setValue("ticket_cost", initialData.ticket_cost);
       if (initialData.convenience_fee !== undefined) setValue("convenience_fee", initialData.convenience_fee);
       if (initialData.booking_id !== undefined) setValue("booking_id", initialData.booking_id);
+      // TMDB fields
+      if (initialData.tmdb_id !== undefined) setValue("tmdb_id", initialData.tmdb_id);
+      if (initialData.runtime_minutes !== undefined) setValue("runtime_minutes", initialData.runtime_minutes);
+      if (initialData.genres !== undefined) setValue("genres", initialData.genres);
+      if (initialData.language !== undefined) setValue("language", initialData.language);
+      if (initialData.director !== undefined) setValue("director", initialData.director);
+      if (initialData.poster_url !== undefined) setValue("poster_url", initialData.poster_url);
     }
   }, [initialData, setValue]);
 

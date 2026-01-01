@@ -69,8 +69,19 @@ export function formatDate(dateString: string): string {
 }
 
 export function formatTime(timeString: string): string {
-  const [hours, minutes] = timeString.split(":");
-  const hour = parseInt(hours, 10);
+  if (!timeString) return "";
+
+  // If already has AM/PM, just return it (OCR might return "04:00 PM")
+  if (/\b(am|pm)\b/i.test(timeString)) {
+    return timeString.trim();
+  }
+
+  // Handle 24-hour format "HH:MM"
+  const match = timeString.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return timeString;
+
+  const hour = parseInt(match[1], 10);
+  const minutes = match[2];
   const ampm = hour >= 12 ? "PM" : "AM";
   const displayHour = hour % 12 || 12;
   return `${displayHour}:${minutes} ${ampm}`;
