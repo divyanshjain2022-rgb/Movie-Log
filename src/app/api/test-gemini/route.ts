@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
         const ai = new GoogleGenAI({ apiKey });
 
-        const model = "gemini-2.5-flash";
+        const model = "gemini-3-flash-preview";
         console.log(`[Test] Testing connection with model: ${model}`);
 
         const response = await ai.models.generateContent({

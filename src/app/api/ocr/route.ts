@@ -4,96 +4,129 @@ import { TicketOCRData } from "@/types";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
-// System instruction for PVR/INOX tickets
+// Comprehensive system instruction for PVR/INOX tickets
 const systemInstruction = `
-You are a specialized data extraction engine for movie tickets (specifically PVR/INOX receipts). 
-Your job is to extract data accurately from screenshots of booking confirmations and tax invoices.
+You are a specialized data extraction engine for Indian movie tickets (PVR, INOX, Cinepolis receipts).
+Your job is to extract ALL data accurately from screenshots of booking confirmations and tax invoices.
 
 CRITICAL EXTRACTION RULES:
 
 1. **Movie Title Cleanup**: 
-   - Extract the full title but remove format tags (IMAX, 3D, 4DX, ICE), language (Hindi, English), and certifications (UA 16+, A).
+   - Extract the full title but REMOVE format tags (IMAX, 3D, 4DX, ICE), language (Hindi, English, Tamil, Telugu), and certifications (UA, UA 16+, A, U).
    - Example: "TRON: ARES (3D ENGLISH IMAX)" -> "TRON: ARES"
    - Example: "JOLLY LLB 3 (HINDI ATMOS)" -> "JOLLY LLB 3"
+   - Example: "PUSHPA 2 THE RULE RELOADED VERSION (UA HINDI IMAX 2D)" -> "PUSHPA 2 THE RULE RELOADED VERSION"
 
-2. **Date Parsing**: 
-   - Convert all dates to strictly YYYY-MM-DD.
-   - If the receipt shows "Fri, 10 Oct" and no year, assume the year is 2025 (or the nearest future date). 
-   - Look closely: Some invoices (blue background) explicitly state the year (e.g., "28 Nov 2025"). Use that.
+2. **Theater Name**: 
+   - Extract the FULL cinema name including the mall. 
+   - Example: "INOX: Megaplex, Phoenix Palassio, Lko" -> "INOX Megaplex Phoenix Palassio Lucknow"
+   - Example: "PVR: Phoenix Market City, Pune" -> "PVR Phoenix Market City Pune"
+   - Remove "INOX:" or "PVR:" prefixes but keep the location.
 
-3. **Financial Logic (The "0.00" Trap)**:
-   - **Never** trust the "Amount Paid" if it is 0.00.
-   - You must look for the **"Total"** or **"Gross Total"** line.
-   - If the user used a "PVR Passport" or "Gift Card", the receipt will show a high "Total" (e.g., ₹404.28) but "Amount Paid: ₹0.00". **Extract the ₹404.28 value.**
-   - Do NOT subtract discounts. We want the value of the transaction, not the cash paid.
+3. **Showtime**:
+   - Look for the time of the show carefully. It is usually near the date.
+   - Format: "HH:MM AM/PM" (e.g., "10:00 AM", "07:30 PM")
+   - Sometimes shown as "10:00 AM - 12:30 PM" (pick the START time).
+   - If 24-hour format: convert to 12-hour with AM/PM.
 
-4. **Convenience Fees**:
-   - Extract the specific line item for "Convenience Fees" (or "Internet Handling Fees").
-   - Extract the specific line item for "GST" or "Tax" associated with those fees if listed separately.
+4. **Date Parsing**: 
+   - Convert ALL dates to strictly YYYY-MM-DD format.
+   - If the receipt shows "Fri, 10 Oct" and no year, assume the year is 2026 (or the nearest future date). 
+   - Look for explicit year mentions (e.g., "28 Nov 2025"). Use that if found.
 
-5. **Formats**:
-   - Look for keywords: IMAX, 3D, 4DX, ATMOS, ICE, PXL. Return them as a list.
+5. **Screen/Audi**:
+   - Look for "Audi", "Screen", "Hall" number.
+   - Example: "Audi 3", "Screen 5", "Hall 2" -> extract as "Audi 3", "Screen 5", "Hall 2"
+
+6. **Seat Number**:
+   - Extract the seat identifier(s). 
+   - Example: "G-12", "A14", "E-5,E-6" -> "G-12", "A14", "E-5, E-6"
+
+7. **Formats**:
+   - Look for these keywords in the movie title or elsewhere: IMAX, 3D, 4DX, ATMOS, ICE, PXL, 2D, Dolby, ScreenX
+   - Return as a list: ["IMAX", "3D"] or ["4DX"] or ["2D"]
+
+8. **Booking ID**:
+   - Look for "Booking ID", "Confirmation Number", "Transaction ID", "PNR"
+   - Usually an alphanumeric code like "TRAFCM4", "BHPVRRN83765483"
+
+9. **Financial Logic (CRITICAL - The "0.00" Trap)**:
+   - **NEVER** trust the "Amount Paid" if it is 0.00 or very low.
+   - ALWAYS look for the **"Total"**, **"Gross Total"**, or **"Sub Total"** line.
+   - If user used "PVR Passport", "Gift Card", or "Discount", the receipt shows high "Total" (e.g., ₹404.28) but "Amount Paid: ₹0.00". 
+   - **EXTRACT the ₹404.28 value as gross_total, NOT the ₹0.00.**
+   - Do NOT subtract discounts. We want the FULL VALUE of the transaction.
+
+10. **Ticket Base Price**:
+    - This is usually labeled as "Ticket Price", "Ticket Amount", "Base Fare" BEFORE fees.
+    - Extract this number separately from convenience fees.
+    - **HINT**: Ticket base prices (without convenience fees) ALWAYS end with .00 (e.g., 350.00, 450.00, 149.00). If you see a number ending in .00, it's likely the base price.
+
+11. **Convenience Fees**:
+    - Look for "Convenience Fees", "Internet Handling Fees", "Booking Fee"
+    - Also extract GST/Tax ON FEES if listed separately (e.g., "CGST on CF", "SGST on CF")
+    - Sum them: Convenience Fee + Tax on Fee = total convenience fee
 `;
 
-// JSON Schema for structured output
+// Comprehensive JSON Schema for structured output
 const responseSchema = {
   type: "OBJECT",
   properties: {
     movie_title: {
       type: "STRING",
-      description: "Cleaned movie title. No formats/languages."
+      description: "Cleaned movie title without formats/languages/certifications"
     },
     theater_name: {
       type: "STRING",
-      description: "Name of the cinema (e.g. 'INOX Megaplex Phoenix Palassio')."
+      description: "Full cinema name with mall and city (e.g. 'INOX Megaplex Phoenix Palassio Lucknow')"
     },
     show_date: {
       type: "STRING",
-      description: "YYYY-MM-DD"
+      description: "Date in YYYY-MM-DD format"
     },
     show_time: {
       type: "STRING",
-      description: "e.g. '10:00 AM' or '22:00'"
-    },
-    seat_number: {
-      type: "STRING",
-      description: "e.g. 'A14' or 'Screen 4 - A14'"
+      description: "Start time in HH:MM AM/PM format (e.g. '10:00 AM', '07:30 PM')"
     },
     audi: {
       type: "STRING",
-      description: "Audi/Screen number if present"
+      description: "Screen/Audi/Hall number (e.g. 'Audi 3', 'Screen 5')"
+    },
+    seat_number: {
+      type: "STRING",
+      description: "Seat identifier(s) (e.g. 'G-12', 'A14, A15')"
     },
     formats: {
       type: "ARRAY",
       items: { type: "STRING" },
-      description: "List of tags: ['IMAX', '3D', 'Atmos']"
+      description: "List of format tags found: ['IMAX', '3D', 'ATMOS', '4DX', '2D']"
     },
     booking_id: {
       type: "STRING",
-      description: "Alphanumeric Booking ID (e.g. 'TRAFCM4')"
+      description: "Booking/Confirmation ID (e.g. 'TRAFCM4')"
     },
     pricing: {
       type: "OBJECT",
       properties: {
         ticket_base_price: {
           type: "NUMBER",
-          description: "The base price of the tickets (e.g. 350.00). Exclude fees."
+          description: "Base price of tickets BEFORE fees (e.g. 350.00)"
         },
         convenience_fee: {
           type: "NUMBER",
-          description: "The explicit Convenience Fee line item (e.g. 46.00)."
+          description: "Convenience/Booking fee amount (e.g. 46.00)"
         },
         tax_on_fee: {
           type: "NUMBER",
-          description: "The GST/Tax line item specifically under fees (e.g. 8.28)."
+          description: "GST/Tax on convenience fees (e.g. 8.28)"
         },
         gross_total: {
           type: "NUMBER",
-          description: "The final Transaction Value. If 'Amount Paid' is 0, use the 'Total' or struck-through price."
+          description: "TOTAL transaction value. If Amount Paid is 0, use Total/Subtotal line (e.g. 404.28)"
         },
         amount_paid_cash: {
           type: "NUMBER",
-          description: "The actual money paid (can be 0.00)."
+          description: "Actual cash/card paid (can be 0.00 if gift card used)"
         }
       }
     }
@@ -125,7 +158,7 @@ export async function POST(request: NextRequest) {
     const sizeInBytes = Math.ceil(base64Data.length / 4) * 3;
     console.log(`[OCR] Image size approx: ${(sizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
-    const usedModel = "gemini-2.5-flash";
+    const usedModel = "gemini-3-flash-preview";
     console.log(`[OCR] Calling model: ${usedModel}`);
 
     const response = await ai.models.generateContent({
@@ -142,7 +175,7 @@ export async function POST(request: NextRequest) {
             data: base64Data,
           },
         },
-        { text: "Extract this ticket." },
+        { text: "Extract ALL ticket details from this movie ticket image. Be thorough - extract showtime, theater, format, seat, audi, and all pricing information." },
       ],
     });
 
@@ -151,7 +184,7 @@ export async function POST(request: NextRequest) {
       throw new Error("Empty response from AI model");
     }
 
-    console.log("[OCR] Raw Gemini Response:", textResponse.substring(0, 500) + "...");
+    console.log("[OCR] Raw Gemini Response:", textResponse.substring(0, 800));
 
     // Parse the structured response
     let geminiData: any;
@@ -163,6 +196,8 @@ export async function POST(request: NextRequest) {
       throw new Error("Failed to parse Gemini JSON response");
     }
 
+    console.log("[OCR] Parsed data:", JSON.stringify(geminiData, null, 2));
+
     // Map Gemini schema response to TicketOCRData
     const ticketData: TicketOCRData = {
       movie_title: geminiData.movie_title || null,
@@ -173,10 +208,18 @@ export async function POST(request: NextRequest) {
       format: geminiData.formats?.join(", ") || null,
       seat: geminiData.seat_number || null,
       booking_id: geminiData.booking_id || null,
-      // Pricing: Use gross_total for ticket_cost if base is missing, and sum fees
-      ticket_cost: geminiData.pricing?.ticket_base_price || geminiData.pricing?.gross_total || null,
+      // Pricing: ticket_base_price is the ticket cost, convenience fees are summed
+      ticket_cost: geminiData.pricing?.ticket_base_price || null,
       convenience_fee: (geminiData.pricing?.convenience_fee || 0) + (geminiData.pricing?.tax_on_fee || 0),
     };
+
+    // If ticket_cost is null but gross_total exists, calculate ticket_cost
+    if (!ticketData.ticket_cost && geminiData.pricing?.gross_total) {
+      const totalFees = (geminiData.pricing?.convenience_fee || 0) + (geminiData.pricing?.tax_on_fee || 0);
+      ticketData.ticket_cost = geminiData.pricing.gross_total - totalFees;
+    }
+
+    console.log("[OCR] Mapped TicketData:", JSON.stringify(ticketData, null, 2));
 
     // TMDB Enrichment
     if (ticketData.movie_title && process.env.TMDB_API_KEY) {
