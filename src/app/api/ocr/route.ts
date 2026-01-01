@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     // Initialize Gemini
     const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       generationConfig: { responseMimeType: "application/json" }
     });
 
@@ -86,10 +86,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(ticketData);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("OCR Critical Failure:", error);
     return NextResponse.json(
-      { error: "Internal Server Error during OCR processing." },
+      { error: `OCR Failed: ${error.message || "Unknown error"}` },
       { status: 500 }
     );
   }
