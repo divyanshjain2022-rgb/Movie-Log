@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { TicketOCRData } from "@/types";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
@@ -17,12 +17,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Server misconfiguration: Missing API Key" }, { status: 500 });
     }
 
-    // Initialize Gemini
-    const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: { responseMimeType: "application/json" }
-    });
+    // Initialize Gemini with new SDK
+    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
     const prompt = `
     Analyze this movie ticket image and extract the following details in JSON format.
@@ -36,34 +32,49 @@ export async function POST(request: NextRequest) {
     - format (string): e.g. "IMAX 3D", "3D", "4DX", "2D", "Dolby Atmos".
     - seat (string): e.g. "A14".
     - booking_id (string): e.g. "TMAZJS3".
-    - ticket_cost (number): The base cost of the tickets WITHOUT convenience fees or taxes.
+    - ticket_cost (number): The base cost of the tickets WITHOUT convenience fees or taxes. 
+      NOTE: Use the GROSS price before any discounts (like "PVR Passport" or Gift Cards) are applied.
     - convenience_fee (number): The TOTAL "Convenience Fees" or "Internet Handling Fees" plus any tax on it. 
        CRITICAL: If the receipt shows a "Total" and a "Ticket Price", calculate: (Total - Ticket Price).
        Example: Total 173.78, Ticket Price 149.00 -> Convenience Fee = 24.78.
        If explicitly listed as "Convenience Fees" (e.g. 21.00) and distinct taxes (e.g. 3.78) are below it, SUM THEM UP (24.78).
+       IMPORTANT: If the "Amount Paid" is 0.00 or less than Total due to Gift Card/Passport, IGNORE Amount Paid. Use the full "Total" or "Subtotal" value to calculate fees.
     
     If a field is missing, set it to null.
     `;
 
-    console.log("Calling Gemini 1.5 Flash...");
-    const result = await model.generateContent([
-      prompt,
-      { inlineData: { data: body.image, mimeType: "image/jpeg" } }
-    ]);
+    console.log("Calling Gemini 2.5 Flash...");
 
-    const response = await result.response;
-    const text = response.text();
+    // Convert base64 string to buffer/clean string if needed
+    // The previous code received raw base64 data in body.image. 
+    // The new SDK for inlineData expects base64 string.
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      config: { responseMimeType: "application/json" },
+      contents: [
+        { text: prompt },
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: body.image, // Assuming body.image is the base64 string
+          },
+        },
+      ],
+    });
+
+    const text = response.text;
     console.log("Gemini Response:", text);
 
-    const ticketData: TicketOCRData = JSON.parse(text);
+    let ticketData: TicketOCRData;
+    try {
+      ticketData = JSON.parse(text || "{}");
+    } catch (e) {
+      console.error("JSON Parse Error", e);
+      throw new Error("Failed to parse Gemini response");
+    }
 
-    // TMDB Enrichment (Optional - Keep existing logic if needed, or ask Gemini to do it? 
-    // Gemini 1.5 Flash acts as OCR here, TMDB enrichment is best done via specific ID search separately 
-    // to match DB, but for now we keep the OCR part clean. 
-    // The previous code had TMDB enrichment at the end. I will port it back if requested, 
-    // but the prompt asked to "fix parsing". I'll add the TMDB enrichment back to maintain parity.)
-
-    // ... Parsing Parity: Add TMDB Enrichment ...
+    // TMDB Enrichment
     if (ticketData.movie_title && process.env.TMDB_API_KEY) {
       try {
         console.log(`Searching TMDB for: ${ticketData.movie_title}`);
