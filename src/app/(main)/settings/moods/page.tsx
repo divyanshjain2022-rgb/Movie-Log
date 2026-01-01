@@ -35,7 +35,6 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Mood } from "@/types";
 
-
 export default function MoodsPage() {
     const [moods, setMoods] = useState<Mood[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -62,23 +61,14 @@ export default function MoodsPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            toast.error("Authentication required");
-            setIsSubmitting(false);
-            return;
-        }
-
         try {
             const { data, error } = await supabase.from("moods").insert({
-                user_id: user.id,
+                user_id: "",
                 name: formData.get("name") as string,
                 emoji: (formData.get("emoji") as string) || null,
-                sentiment: formData.get("sentiment") as "positive" | "negative" | "neutral",
-                sort_order: moods.length + 1,
-            } as any).select().single();
+                sentiment: formData.get("sentiment") as string,
+                sort_order: moods.length,
+            } as never).select().single();
 
             if (error) throw error;
             setMoods([...moods, data as Mood]);

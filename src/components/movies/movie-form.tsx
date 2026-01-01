@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,7 +16,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { RatingSlider } from "./rating-slider";
-import { TMDBSearchInput } from "./tmdb-search-input";
+import { Plus, X } from "lucide-react";
+import { formatCurrency } from "@/lib/formula";
 import type {
   Format,
   Theater,
@@ -24,6 +26,7 @@ import type {
   RewatchOption,
   GiftCardWithUsage,
   MovieFormData,
+  GiftCardUsageEntry,
 } from "@/types";
 
 const movieFormSchema = z.object({
@@ -46,16 +49,8 @@ const movieFormSchema = z.object({
   rewatch_id: z.string().optional(),
   review: z.string().optional(),
   remarks: z.string().optional(),
-  gc_id: z.string().optional(),
   other_expenses: z.coerce.number().min(0).optional(),
   passport_savings: z.coerce.number().min(0).optional(),
-  // TMDB metadata
-  tmdb_id: z.coerce.number().optional(),
-  runtime_minutes: z.coerce.number().optional(),
-  genres: z.array(z.string()).optional(),
-  language: z.string().optional(),
-  director: z.string().optional(),
-  poster_url: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
@@ -68,9 +63,11 @@ interface MovieFormProps {
   aspects: Aspect[];
   rewatchOptions: RewatchOption[];
   giftCards: GiftCardWithUsage[];
-  onSubmit: (data: MovieFormData) => Promise<void>;
+  onSubmit: (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => Promise<void>;
   isLoading?: boolean;
   isEditing?: boolean;
+  isAdvanceBooking?: boolean;
+  initialGiftCardUsage?: GiftCardUsageEntry[];
 }
 
 export function MovieForm({
@@ -84,6 +81,8 @@ export function MovieForm({
   onSubmit,
   isLoading = false,
   isEditing = false,
+  isAdvanceBooking = false,
+  initialGiftCardUsage = [],
 }: MovieFormProps) {
   const {
     register,
@@ -113,23 +112,57 @@ export function MovieForm({
       rewatch_id: initialData?.rewatch_id || "",
       review: initialData?.review || "",
       remarks: initialData?.remarks || "",
-      gc_id: initialData?.gc_id || "",
       other_expenses: initialData?.other_expenses || 0,
       passport_savings: initialData?.passport_savings || 0,
-      // TMDB metadata defaults
-      tmdb_id: initialData?.tmdb_id || undefined,
-      runtime_minutes: initialData?.runtime_minutes || undefined,
-      genres: initialData?.genres || [],
-      language: initialData?.language || "",
-      director: initialData?.director || "",
-      poster_url: initialData?.poster_url || "",
     },
   });
 
   const rating = watch("rating") || 5;
 
+  // State for multiple gift card selection
+  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>(initialGiftCardUsage);
+
+  // Filter out already selected gift cards
+  const availableGiftCards = giftCards.filter(
+    gc => gc.status === "active" && !giftCardUsage.some(u => u.gift_card_id === gc.id)
+  );
+
+  const addGiftCard = (gcId: string) => {
+    const gc = giftCards.find(g => g.id === gcId);
+    if (gc) {
+      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
+    }
+  };
+
+  const removeGiftCard = (gcId: string) => {
+    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
+  };
+
+  const updateGiftCardAmount = (gcId: string, amount: number) => {
+    setGiftCardUsage(prev =>
+      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
+    );
+  };
+
+  // Sync form with initialData changes (e.g., when TMDB or OCR updates data)
+  useEffect(() => {
+    if (initialData) {
+      // Only update fields that have changed
+      if (initialData.title !== undefined) setValue("title", initialData.title);
+      if (initialData.date !== undefined) setValue("date", initialData.date);
+      if (initialData.showtime !== undefined) setValue("showtime", initialData.showtime);
+      if (initialData.theater_id !== undefined) setValue("theater_id", initialData.theater_id);
+      if (initialData.format_id !== undefined) setValue("format_id", initialData.format_id);
+      if (initialData.audi !== undefined) setValue("audi", initialData.audi);
+      if (initialData.seat !== undefined) setValue("seat", initialData.seat);
+      if (initialData.ticket_cost !== undefined) setValue("ticket_cost", initialData.ticket_cost);
+      if (initialData.convenience_fee !== undefined) setValue("convenience_fee", initialData.convenience_fee);
+      if (initialData.booking_id !== undefined) setValue("booking_id", initialData.booking_id);
+    }
+  }, [initialData, setValue]);
+
   const onFormSubmit = async (data: MovieFormValues) => {
-    await onSubmit(data as MovieFormData);
+    await onSubmit(data as MovieFormData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
   };
 
   return (
@@ -147,37 +180,12 @@ export function MovieForm({
         <div className="space-y-3">
           <div>
             <Label htmlFor="title">Movie *</Label>
-            <div className="mt-1">
-              <TMDBSearchInput
-                value={watch("title") || ""}
-                onChange={(title, movieDetails) => {
-                  setValue("title", title);
-                  if (movieDetails) {
-                    // Set all TMDB metadata
-                    if (movieDetails.tmdb_id) {
-                      setValue("tmdb_id", movieDetails.tmdb_id);
-                    }
-                    if (movieDetails.runtime_minutes) {
-                      setValue("runtime_minutes", movieDetails.runtime_minutes);
-                    }
-                    if (movieDetails.poster_url) {
-                      setValue("poster_url", movieDetails.poster_url);
-                    }
-                    if (movieDetails.genres) {
-                      setValue("genres", movieDetails.genres);
-                    }
-                    if (movieDetails.language) {
-                      setValue("language", movieDetails.language);
-                    }
-                    if (movieDetails.director) {
-                      setValue("director", movieDetails.director);
-                    }
-                    console.log("[TMDB] Movie populated:", movieDetails);
-                  }
-                }}
-                placeholder="Search for a movie..."
-              />
-            </div>
+            <Input
+              id="title"
+              {...register("title")}
+              placeholder="Movie title"
+              className="mt-1"
+            />
             {errors.title && (
               <p className="mt-1 text-xs text-destructive">
                 {errors.title.message}
@@ -209,22 +217,18 @@ export function MovieForm({
           <div>
             <Label htmlFor="theater_id">Theater</Label>
             <Select
-              value={(watch("theater_id") || undefined) || undefined}
+              value={watch("theater_id")}
               onValueChange={(value) => setValue("theater_id", value)}
             >
               <SelectTrigger className="mt-1">
                 <SelectValue placeholder="Select theater" />
               </SelectTrigger>
               <SelectContent>
-                {theaters?.length > 0 ? (
-                  theaters.filter(t => t.id).map((theater) => (
-                    <SelectItem key={theater.id} value={theater.id}>
-                      {theater.name}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <div className="p-2 text-sm text-muted-foreground">No theaters found</div>
-                )}
+                {theaters.map((theater) => (
+                  <SelectItem key={theater.id} value={theater.id}>
+                    {theater.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -233,22 +237,18 @@ export function MovieForm({
             <div>
               <Label htmlFor="format_id">Format</Label>
               <Select
-                value={(watch("format_id") || undefined) || undefined}
+                value={watch("format_id")}
                 onValueChange={(value) => setValue("format_id", value)}
               >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select format" />
                 </SelectTrigger>
                 <SelectContent>
-                  {formats?.length > 0 ? (
-                    formats.filter(f => f.id).map((format) => (
-                      <SelectItem key={format.id} value={format.id}>
-                        {format.name}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="p-2 text-sm text-muted-foreground">No formats found</div>
-                  )}
+                  {formats.map((format) => (
+                    <SelectItem key={format.id} value={format.id}>
+                      {format.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -298,99 +298,101 @@ export function MovieForm({
         </div>
       </div>
 
-      {/* User Experience Section */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Separator className="flex-1" />
-          <span className="text-xs text-muted-foreground">Your experience</span>
-          <Separator className="flex-1" />
-        </div>
-
+      {/* User Experience Section - Hidden in Advance Booking Mode */}
+      {!isAdvanceBooking && (
         <div className="space-y-4">
-          <RatingSlider
-            value={rating}
-            onChange={(value) => setValue("rating", value)}
-          />
-
-          <div>
-            <Label htmlFor="mood_id">Mood *</Label>
-            <Select
-              value={(watch("mood_id") || undefined) || undefined}
-              onValueChange={(value) => setValue("mood_id", value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="How did you feel?" />
-              </SelectTrigger>
-              <SelectContent>
-                {moods.filter(m => m.id).map((mood) => (
-                  <SelectItem key={mood.id} value={mood.id}>
-                    {mood.emoji && `${mood.emoji} `}
-                    {mood.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-2">
+            <Separator className="flex-1" />
+            <span className="text-xs text-muted-foreground">Your experience</span>
+            <Separator className="flex-1" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4">
+            <RatingSlider
+              value={rating}
+              onChange={(value) => setValue("rating", value)}
+            />
+
             <div>
-              <Label htmlFor="strongest_part_id">Strongest Part</Label>
+              <Label htmlFor="mood_id">Mood *</Label>
               <Select
-                value={(watch("strongest_part_id") || undefined) || undefined}
-                onValueChange={(value) => setValue("strongest_part_id", value)}
+                value={watch("mood_id")}
+                onValueChange={(value) => setValue("mood_id", value)}
               >
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select" />
+                  <SelectValue placeholder="How did you feel?" />
                 </SelectTrigger>
                 <SelectContent>
-                  {aspects.filter(a => a.id).map((aspect) => (
-                    <SelectItem key={aspect.id} value={aspect.id}>
-                      {aspect.name}
+                  {moods.map((mood) => (
+                    <SelectItem key={mood.id} value={mood.id}>
+                      {mood.emoji && `${mood.emoji} `}
+                      {mood.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="strongest_part_id">Strongest Part</Label>
+                <Select
+                  value={watch("strongest_part_id")}
+                  onValueChange={(value) => setValue("strongest_part_id", value)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aspects.map((aspect) => (
+                      <SelectItem key={aspect.id} value={aspect.id}>
+                        {aspect.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="weakest_part_id">Weakest Part</Label>
+                <Select
+                  value={watch("weakest_part_id")}
+                  onValueChange={(value) => setValue("weakest_part_id", value)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aspects.map((aspect) => (
+                      <SelectItem key={aspect.id} value={aspect.id}>
+                        {aspect.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div>
-              <Label htmlFor="weakest_part_id">Weakest Part</Label>
+              <Label htmlFor="rewatch_id">Rewatch Value</Label>
               <Select
-                value={(watch("weakest_part_id") || undefined) || undefined}
-                onValueChange={(value) => setValue("weakest_part_id", value)}
+                value={watch("rewatch_id")}
+                onValueChange={(value) => setValue("rewatch_id", value)}
               >
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select" />
+                  <SelectValue placeholder="Would you watch again?" />
                 </SelectTrigger>
                 <SelectContent>
-                  {aspects.filter(a => a.id).map((aspect) => (
-                    <SelectItem key={aspect.id} value={aspect.id}>
-                      {aspect.name}
+                  {rewatchOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="rewatch_id">Rewatch Value</Label>
-            <Select
-              value={(watch("rewatch_id") || undefined) || undefined}
-              onValueChange={(value) => setValue("rewatch_id", value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Would you watch again?" />
-              </SelectTrigger>
-              <SelectContent>
-                {rewatchOptions.filter(r => r.id).map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Additional Info Section */}
       <div className="space-y-4">
@@ -434,43 +436,91 @@ export function MovieForm({
             />
           </div>
 
+          {/* Gift Cards - Multi Select */}
           <div>
-            <Label htmlFor="gc_id">Gift Card Used</Label>
-            <Select
-              value={(watch("gc_id") || "none") || "none"}
-              onValueChange={(value) => setValue("gc_id", value === "none" ? "" : value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {giftCards.map((gc) => (
-                  <SelectItem key={gc.id} value={gc.id}>
-                    {gc.platform?.name || "Gift Card"} - Balance:{" "}
-                    {gc.balance?.toFixed(0) || gc.face_value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Gift Cards Used</Label>
+            {giftCardUsage.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {giftCardUsage.map((usage) => {
+                  const gc = giftCards.find(g => g.id === usage.gift_card_id);
+                  if (!gc) return null;
+                  return (
+                    <div key={usage.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {gc.platform?.name || "Gift Card"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Balance: {formatCurrency(gc.balance)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">₹</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={usage.amount_used}
+                          onChange={(e) => updateGiftCardAmount(usage.gift_card_id, parseFloat(e.target.value) || 0)}
+                          className="h-8 w-20 text-right"
+                          max={gc.balance}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeGiftCard(usage.gift_card_id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {availableGiftCards.length > 0 && (
+              <Select onValueChange={addGiftCard} value="">
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Add gift card..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableGiftCards.map((gc) => (
+                    <SelectItem key={gc.id} value={gc.id}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{gc.platform?.name || "Gift Card"}</span>
+                        <span className="text-muted-foreground">
+                          {formatCurrency(gc.balance)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {giftCardUsage.length === 0 && availableGiftCards.length === 0 && (
+              <p className="mt-2 text-sm text-muted-foreground">No active gift cards available</p>
+            )}
           </div>
 
-          <div>
-            <Label htmlFor="review">Review</Label>
-            <textarea
-              id="review"
-              {...register("review")}
-              placeholder="Your thoughts on the movie..."
-              className="mt-1 min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+          {!isAdvanceBooking && (
+            <div>
+              <Label htmlFor="review">Review</Label>
+              <textarea
+                id="review"
+                {...register("review")}
+                placeholder="Your thoughts on the movie..."
+                className="mt-1 min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          )}
 
           <div>
             <Label htmlFor="remarks">Remarks</Label>
             <textarea
               id="remarks"
               {...register("remarks")}
-              placeholder="Any additional notes..."
+              placeholder={isAdvanceBooking ? "Booking notes..." : "Any additional notes..."}
               className="mt-1 min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
@@ -478,7 +528,7 @@ export function MovieForm({
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Saving..." : isEditing ? "Save Changes" : "Save Entry"}
+        {isLoading ? "Saving..." : isEditing ? "Save Changes" : isAdvanceBooking ? "Save Advance Booking" : "Save Entry"}
       </Button>
     </form>
   );

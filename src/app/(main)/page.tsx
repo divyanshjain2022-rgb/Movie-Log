@@ -2,8 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Plus, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Plus, Settings, Film, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   SummaryCard,
@@ -49,21 +48,26 @@ export default function DashboardPage() {
   const isLoading = moviesLoading || giftCardsLoading;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background pb-24">
       {/* Header */}
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <h1 className="text-xl font-bold text-primary">CinemaLog</h1>
-        <div className="flex items-center gap-2">
-          <Link href="/movies/new">
-            <Button size="icon" className="h-9 w-9">
-              <Plus className="h-5 w-5" />
-            </Button>
-          </Link>
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <Settings className="h-5 w-5" />
-            </Button>
-          </Link>
+      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background/80">
+        <div className="flex h-16 items-center justify-between px-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15">
+              <Film className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold">CinemaLog</h1>
+              <p className="text-xs text-muted-foreground">Track your cinema journey</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/movies/new">
+              <button className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:shadow-primary/40 active:scale-95">
+                <Plus className="h-5 w-5" />
+              </button>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -71,7 +75,7 @@ export default function DashboardPage() {
       <div className="space-y-6 p-4">
         {/* Year Summary */}
         {isLoading ? (
-          <Skeleton className="h-[100px] w-full" />
+          <Skeleton className="h-[140px] w-full rounded-2xl" />
         ) : (
           <SummaryCard
             year={year}
@@ -84,9 +88,9 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         {isLoading ? (
           <div className="grid grid-cols-3 gap-3">
-            <Skeleton className="h-[72px]" />
-            <Skeleton className="h-[72px]" />
-            <Skeleton className="h-[72px]" />
+            <Skeleton className="h-[100px] rounded-xl" />
+            <Skeleton className="h-[100px] rounded-xl" />
+            <Skeleton className="h-[100px] rounded-xl" />
           </div>
         ) : (
           <QuickStats
@@ -98,19 +102,19 @@ export default function DashboardPage() {
 
         {/* Recent Movies */}
         <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Recent</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Recent</h2>
             <Link
               href="/movies"
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-sm text-primary hover:underline"
             >
               See all
             </Link>
           </div>
           {isLoading ? (
             <div className="space-y-3">
-              <Skeleton className="h-[80px]" />
-              <Skeleton className="h-[80px]" />
+              <Skeleton className="h-[100px] rounded-xl" />
+              <Skeleton className="h-[100px] rounded-xl" />
             </div>
           ) : (
             <RecentMovies movies={recentMovies} />
@@ -119,21 +123,49 @@ export default function DashboardPage() {
 
         {/* Gift Cards */}
         <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Gift Cards</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Gift Cards</h2>
             <Link
               href="/gift-cards"
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-sm text-primary hover:underline"
             >
               Manage
             </Link>
           </div>
           {isLoading ? (
-            <Skeleton className="h-[80px]" />
+            <Skeleton className="h-[80px] rounded-xl" />
           ) : (
             <GCStatus giftCards={giftCards} />
           )}
         </section>
+
+        {/* Year Wrapped CTA */}
+        {!isLoading && stats.movieCount > 0 && (
+          <Link href="/year-wrapped">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600/20 via-pink-500/20 to-primary/20 p-5 border border-purple-500/20 transition-all hover:border-purple-500/40">
+              <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-purple-500/20 blur-2xl" />
+              <div className="absolute -bottom-4 -left-4 h-20 w-20 rounded-full bg-pink-500/10 blur-xl" />
+
+              <div className="relative flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-500/20">
+                    <Sparkles className="h-6 w-6 text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">{year} Wrapped</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Your year in cinema
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-purple-400">{stats.movieCount}</div>
+                  <div className="text-xs text-muted-foreground">films</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
       </div>
     </div>
   );

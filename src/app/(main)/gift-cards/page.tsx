@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, CreditCard, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Plus, CreditCard, MoreHorizontal, Pencil, Trash2, Camera, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,11 +42,17 @@ import { useGiftCards, useCreateGiftCard, useUpdateGiftCard, useDeleteGiftCard, 
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import type { GiftCardWithUsage } from "@/types";
+import type { GiftCardWithUsage, GiftCardOCRData } from "@/types";
+
+interface ExtractedGiftCardData {
+  card_number: string | null;
+  pin: string | null;
+  face_value: number | null;
+  expiry_date: string | null;
+  platform: string | null;
+}
 
 export default function GiftCardsPage() {
-  const supabase = createClient();
   const { giftCards, isLoading, refetch } = useGiftCards();
   const { platforms } = useLookupData();
   const { createGiftCard, isLoading: isCreating } = useCreateGiftCard();
@@ -56,6 +62,68 @@ export default function GiftCardsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<GiftCardWithUsage | null>(null);
   const [deletingCard, setDeletingCard] = useState<GiftCardWithUsage | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [extractedData, setExtractedData] = useState<ExtractedGiftCardData | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleScanGiftCard = async (file: File) => {
+    setIsScanning(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch("/api/ocr/gift-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64 }),
+      });
+
+      if (!response.ok) {
+        throw new Error("OCR request failed");
+      }
+
+      const data: GiftCardOCRData = await response.json();
+
+      // If no expiry date found, default to 15 days from today
+      let expiryDate = data.expiry_date;
+      if (!expiryDate) {
+        const defaultExpiry = new Date();
+        defaultExpiry.setDate(defaultExpiry.getDate() + 15);
+        expiryDate = defaultExpiry.toISOString().split("T")[0];
+      }
+
+      setExtractedData({
+        card_number: data.card_number,
+        pin: data.pin,
+        face_value: data.face_value,
+        expiry_date: expiryDate,
+        platform: data.platform,
+      });
+
+      setIsAddDialogOpen(true);
+      toast.success("Gift card data extracted!");
+    } catch (error) {
+      toast.error("Failed to scan gift card. Try entering manually.");
+      console.error(error);
+      setIsAddDialogOpen(true);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleScanGiftCard(file);
+    }
+  };
 
   const handleCreateGiftCard = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -63,11 +131,8 @@ export default function GiftCardsPage() {
     const platformId = formData.get("platform_id") as string;
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error("User authentication failed");
-
       await createGiftCard({
-        user_id: user.id,
+        user_id: "", // Will be set by RLS
         face_value: parseFloat(formData.get("face_value") as string),
         amount_paid: parseFloat(formData.get("amount_paid") as string),
         platform_id: platformId || null,
@@ -81,11 +146,10 @@ export default function GiftCardsPage() {
       setIsAddDialogOpen(false);
       refetch();
     } catch (error) {
-      console.error("Create gift card error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to add gift card");
+      toast.error("Failed to add gift card");
+      console.error(error);
     }
   };
-
 
   const handleUpdateGiftCard = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -132,113 +196,184 @@ export default function GiftCardsPage() {
   const exhaustedCards = giftCards.filter((gc) => gc.status === "exhausted");
   const expiredCards = giftCards.filter((gc) => gc.status === "expired");
 
+  // Match platform by name from OCR
+  const matchPlatformByName = (name: string | null): string | undefined => {
+    if (!name || !platforms.length) return undefined;
+    const search = name.toLowerCase();
+    const match = platforms.find(p =>
+      p.name.toLowerCase().includes(search) ||
+      search.includes(p.name.toLowerCase())
+    );
+    return match?.id;
+  };
+
+  // Format code with PIN for display
+  const formatCodeWithPin = (cardNumber: string | null, pin: string | null): string => {
+    if (!cardNumber && !pin) return "";
+    if (cardNumber && pin) return `${cardNumber} | PIN: ${pin}`;
+    return cardNumber || pin || "";
+  };
+
   const GiftCardForm = ({
     card,
+    extracted,
     onSubmit,
     isSubmitting
   }: {
     card?: GiftCardWithUsage;
+    extracted?: ExtractedGiftCardData | null;
     onSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
     isSubmitting: boolean;
-  }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+  }) => {
+    // Determine default values - extracted data takes priority for new cards
+    const defaultFaceValue = card?.face_value ?? extracted?.face_value ?? undefined;
+    const defaultPurchaseDate = card?.purchase_date ?? new Date().toISOString().split("T")[0];
+    const defaultExpiryDate = card?.expiry_date ?? extracted?.expiry_date ?? "";
+    const defaultCode = card?.code ?? formatCodeWithPin(extracted?.card_number ?? null, extracted?.pin ?? null);
+    const defaultPlatformId = card?.platform?.id ?? matchPlatformByName(extracted?.platform ?? null) ?? "";
+
+    return (
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="face_value">Face Value</Label>
+            <Input
+              id="face_value"
+              name="face_value"
+              type="number"
+              step="0.01"
+              required
+              defaultValue={defaultFaceValue}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="amount_paid">Amount Paid</Label>
+            <Input
+              id="amount_paid"
+              name="amount_paid"
+              type="number"
+              step="0.01"
+              required
+              defaultValue={card?.amount_paid ?? defaultFaceValue}
+              className="mt-1"
+            />
+          </div>
+        </div>
         <div>
-          <Label htmlFor="face_value">Face Value</Label>
+          <Label htmlFor="platform_id">Platform</Label>
+          <Select name="platform_id" defaultValue={defaultPlatformId}>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Select platform" />
+            </SelectTrigger>
+            <SelectContent>
+              {platforms.map((platform) => (
+                <SelectItem key={platform.id} value={platform.id}>
+                  {platform.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="purchase_date">Purchase Date</Label>
+            <Input
+              id="purchase_date"
+              name="purchase_date"
+              type="date"
+              required
+              defaultValue={defaultPurchaseDate}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="expiry_date">Expiry Date</Label>
+            <Input
+              id="expiry_date"
+              name="expiry_date"
+              type="date"
+              required
+              defaultValue={defaultExpiryDate}
+              className="mt-1"
+            />
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="code">Card ID / PIN</Label>
           <Input
-            id="face_value"
-            name="face_value"
-            type="number"
-            step="0.01"
-            required
-            defaultValue={card?.face_value}
-            className="mt-1"
+            id="code"
+            name="code"
+            defaultValue={defaultCode}
+            placeholder="e.g., 1234567890 | PIN: 1234"
+            className="mt-1 font-mono"
           />
         </div>
         <div>
-          <Label htmlFor="amount_paid">Amount Paid</Label>
-          <Input
-            id="amount_paid"
-            name="amount_paid"
-            type="number"
-            step="0.01"
-            required
-            defaultValue={card?.amount_paid}
-            className="mt-1"
-          />
+          <Label htmlFor="notes">Notes (optional)</Label>
+          <Input id="notes" name="notes" defaultValue={card?.notes || ""} className="mt-1" />
         </div>
-      </div>
-      <div>
-        <Label htmlFor="platform_id">Platform</Label>
-        <Select name="platform_id" defaultValue={card?.platform?.id || undefined}>
-          <SelectTrigger className="mt-1">
-            <SelectValue placeholder="Select platform" />
-          </SelectTrigger>
-          <SelectContent>
-            {platforms.filter(p => p.id).map((platform) => (
-              <SelectItem key={platform.id} value={platform.id}>
-                {platform.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="purchase_date">Purchase Date</Label>
-          <Input
-            id="purchase_date"
-            name="purchase_date"
-            type="date"
-            required
-            defaultValue={card?.purchase_date}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="expiry_date">Expiry Date</Label>
-          <Input
-            id="expiry_date"
-            name="expiry_date"
-            type="date"
-            required
-            defaultValue={card?.expiry_date}
-            className="mt-1"
-          />
-        </div>
-      </div>
-      <div>
-        <Label htmlFor="code">Code (optional)</Label>
-        <Input id="code" name="code" defaultValue={card?.code || ""} className="mt-1" />
-      </div>
-      <div>
-        <Label htmlFor="notes">Notes (optional)</Label>
-        <Input id="notes" name="notes" defaultValue={card?.notes || ""} className="mt-1" />
-      </div>
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
-        {isSubmitting ? "Saving..." : card ? "Save Changes" : "Add Gift Card"}
-      </Button>
-    </form>
-  );
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Saving..." : card ? "Save Changes" : "Add Gift Card"}
+        </Button>
+      </form>
+    );
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      setIsAddDialogOpen(false);
+      setExtractedData(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen pb-20">
+      {/* Hidden file input for scanning */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileSelect}
+      />
+
       <PageHeader
         title="Gift Cards"
         action={
-          <Button size="icon" className="h-9 w-9" onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-9 w-9"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isScanning}
+            >
+              {isScanning ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Camera className="h-5 w-5" />
+              )}
+            </Button>
+            <Button size="icon" className="h-9 w-9" onClick={() => setIsAddDialogOpen(true)}>
+              <Plus className="h-5 w-5" />
+            </Button>
+          </div>
         }
       />
 
       {/* Add Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+      <Dialog open={isAddDialogOpen} onOpenChange={handleDialogClose}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Gift Card</DialogTitle>
           </DialogHeader>
-          <GiftCardForm onSubmit={handleCreateGiftCard} isSubmitting={isCreating} />
+          <GiftCardForm
+            extracted={extractedData}
+            onSubmit={handleCreateGiftCard}
+            isSubmitting={isCreating}
+          />
         </DialogContent>
       </Dialog>
 
@@ -361,10 +496,16 @@ function GiftCardItem({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [showCode, setShowCode] = useState(false);
   const daysUntilExpiry = Math.ceil(
     (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   );
   const isExpiringSoon = gc.status === "active" && daysUntilExpiry <= 30;
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard!");
+  };
 
   return (
     <Card className={cn(gc.status !== "active" && "opacity-60")}>
@@ -393,14 +534,33 @@ function GiftCardItem({
             <p className="text-sm text-muted-foreground">
               Expires {formatDate(gc.expiry_date)}
             </p>
+
+            {/* Code/PIN Display */}
             {gc.code && (
-              <p className="mt-2 font-mono text-sm">
-                <span className="text-muted-foreground select-none">Code: </span>
-                <span className="font-medium bg-muted px-1.5 py-0.5 rounded select-all">{gc.code}</span>
-              </p>
+              <div className="mt-3 space-y-1">
+                <button
+                  onClick={() => setShowCode(!showCode)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {showCode ? "Hide" : "Show"} Card ID/PIN
+                </button>
+                {showCode && (
+                  <div className="rounded-lg bg-secondary/50 p-2 font-mono text-sm">
+                    <button
+                      onClick={() => copyToClipboard(gc.code!)}
+                      className="w-full text-left hover:text-primary transition-colors"
+                      title="Click to copy"
+                    >
+                      {gc.code}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
+
+            {/* Notes */}
             {gc.notes && (
-              <p className="mt-1 text-xs text-muted-foreground/80 italic">
+              <p className="mt-2 text-xs text-muted-foreground italic">
                 {gc.notes}
               </p>
             )}

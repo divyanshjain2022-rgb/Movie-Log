@@ -28,7 +28,6 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { RewatchOption } from "@/types";
 
-
 export default function RewatchPage() {
     const [options, setOptions] = useState<RewatchOption[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -52,21 +51,13 @@ export default function RewatchPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            toast.error("Authentication required");
-            setIsSubmitting(false);
-            return;
-        }
-
         try {
             const { data, error } = await supabase.from("rewatch_options").insert({
-                user_id: user.id,
+                user_id: "",
                 name: formData.get("name") as string,
                 value: parseInt(formData.get("value") as string) || 0,
-                sort_order: options.length + 1,
-            } as any).select().single();
+                sort_order: options.length,
+            } as never).select().single();
 
             if (error) throw error;
             setOptions([...options, data as RewatchOption]);

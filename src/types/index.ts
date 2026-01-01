@@ -30,6 +30,18 @@ export interface MovieFormData {
   gc_id?: string;
   other_expenses?: number;
   passport_savings?: number;
+  status?: "upcoming" | "watched";
+  gift_cards_used?: Array<{ gift_card_id: string; amount_used: number }>;
+}
+
+export interface FnbFormData {
+  date: string;
+  theater_id?: string;
+  items: string;
+  cost: number;
+  remarks?: string;
+  movie_id?: string;
+  gift_cards_used?: Array<{ gift_card_id: string; amount_used: number }>;
 }
 
 export interface GiftCardFormData {
@@ -42,7 +54,7 @@ export interface GiftCardFormData {
   notes?: string;
 }
 
-// OCR Response type
+// OCR Response types
 export interface TicketOCRData {
   movie_title: string | null;
   date: string | null;
@@ -61,6 +73,14 @@ export interface TicketOCRData {
   backdrop_path?: string | null;
   original_title?: string | null;
   release_date?: string | null;
+}
+
+export interface GiftCardOCRData {
+  card_number: string | null;
+  pin: string | null;
+  face_value: number | null;
+  expiry_date: string | null;
+  platform: string | null;
 }
 
 // TMDB Response type

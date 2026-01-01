@@ -28,7 +28,6 @@ import { PageHeader } from "@/components/shared";
 import { useTheaters } from "@/hooks";
 import { toast } from "sonner";
 import type { Theater } from "@/types";
-import { createClient } from "@/lib/supabase/client";
 
 export default function TheatersPage() {
     const { theaters, isLoading, addTheater, updateTheater, deleteTheater } = useTheaters();
@@ -42,18 +41,9 @@ export default function TheatersPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            toast.error("You must be logged in to add data");
-            setIsSubmitting(false);
-            return;
-        }
-
         try {
             await addTheater({
-                user_id: user.id,
+                user_id: "",
                 name: formData.get("name") as string,
                 city: (formData.get("city") as string) || null,
                 has_imax: formData.get("has_imax") === "on",
