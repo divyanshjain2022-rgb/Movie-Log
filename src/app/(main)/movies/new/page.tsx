@@ -56,6 +56,33 @@ function fuzzyMatch<T extends { id: string; name: string }>(
   return partial?.id;
 }
 
+// Convert 12-hour time (e.g., "06:45 PM") to 24-hour format (e.g., "18:45")
+function convertTo24Hour(time12h: string | null | undefined): string | null {
+  if (!time12h) return null;
+
+  // If already in 24-hour format (no AM/PM), return as-is
+  if (!/[ap]m/i.test(time12h)) {
+    // Validate it's a proper time format
+    const match = time12h.match(/^(\d{1,2}):(\d{2})/);
+    return match ? `${match[1].padStart(2, '0')}:${match[2]}` : time12h;
+  }
+
+  const match = time12h.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  if (!match) return time12h;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const period = match[3].toLowerCase();
+
+  if (period === 'pm' && hours !== 12) {
+    hours += 12;
+  } else if (period === 'am' && hours === 12) {
+    hours = 0;
+  }
+
+  return `${hours.toString().padStart(2, '0')}:${minutes}`;
+}
+
 export default function NewMoviePage() {
   const router = useRouter();
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
@@ -155,7 +182,7 @@ export default function NewMoviePage() {
         user_id: "",
         title: data.title,
         date: data.date,
-        showtime: data.showtime || null,
+        showtime: convertTo24Hour(data.showtime),
         theater_id: data.theater_id || null,
         audi: data.audi || null,
         format_id: data.format_id || null,
@@ -180,8 +207,9 @@ export default function NewMoviePage() {
         remarks: data.remarks || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
-        status: mode === "advance" ? "upcoming" : "watched",
-      }, giftCardUsage);
+        // NOTE: Uncomment after running SQL migration 001_advanced_features.sql
+        // status: mode === "advance" ? "upcoming" : "watched",
+      } as any, giftCardUsage);
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
       router.push("/movies");

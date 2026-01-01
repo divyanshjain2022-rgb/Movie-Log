@@ -94,9 +94,18 @@ export function useCreateMovie() {
       setIsLoading(true);
       setError(null);
 
+      // Get authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be logged in to create a movie");
+      }
+
+      // Set user_id from auth
+      const movieWithUser = { ...movie, user_id: user.id };
+
       const { data, error: insertError } = await supabase
         .from("movies")
-        .insert(movie as never)
+        .insert(movieWithUser as never)
         .select()
         .single();
 

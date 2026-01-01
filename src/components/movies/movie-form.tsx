@@ -207,6 +207,47 @@ export function MovieForm({
             )}
           </div>
 
+          {/* TMDB Data Preview - shows when movie is selected from TMDB */}
+          {(watch("poster_url") || watch("genres") || watch("runtime_minutes") || watch("director")) && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex gap-3">
+                {watch("poster_url") && (
+                  <img
+                    src={watch("poster_url")}
+                    alt={watch("title")}
+                    className="h-20 w-14 rounded object-cover shadow"
+                  />
+                )}
+                <div className="flex-1 space-y-1">
+                  {watch("genres") && watch("genres")!.length > 0 && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Genre:</span>{" "}
+                      {watch("genres")!.join(", ")}
+                    </p>
+                  )}
+                  {watch("runtime_minutes") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Runtime:</span>{" "}
+                      {watch("runtime_minutes")} min
+                    </p>
+                  )}
+                  {watch("director") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Director:</span>{" "}
+                      {watch("director")}
+                    </p>
+                  )}
+                  {watch("language") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Language:</span>{" "}
+                      {watch("language")}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="date">Date *</Label>

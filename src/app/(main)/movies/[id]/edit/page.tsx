@@ -23,11 +23,28 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { updateMovie, isLoading: isSubmitting } = useUpdateMovie();
 
   const handleSubmit = async (data: MovieFormData) => {
+    // Convert 12-hour time to 24-hour format
+    const convertTo24Hour = (time12h: string | null | undefined): string | null => {
+      if (!time12h) return null;
+      if (!/[ap]m/i.test(time12h)) {
+        const match = time12h.match(/^(\d{1,2}):(\d{2})/);
+        return match ? `${match[1].padStart(2, '0')}:${match[2]}` : time12h;
+      }
+      const match = time12h.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+      if (!match) return time12h;
+      let hours = parseInt(match[1], 10);
+      const minutes = match[2];
+      const period = match[3].toLowerCase();
+      if (period === 'pm' && hours !== 12) hours += 12;
+      else if (period === 'am' && hours === 12) hours = 0;
+      return `${hours.toString().padStart(2, '0')}:${minutes}`;
+    };
+
     try {
       await updateMovie(id, {
         title: data.title,
         date: data.date,
-        showtime: data.showtime || null,
+        showtime: convertTo24Hour(data.showtime),
         theater_id: data.theater_id || null,
         audi: data.audi || null,
         format_id: data.format_id || null,
@@ -68,35 +85,35 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   // Convert movie data to form data format
   const initialData: Partial<MovieFormData> = movie
     ? {
-        title: movie.title,
-        date: movie.date,
-        showtime: movie.showtime || undefined,
-        theater_id: movie.theater_id || undefined,
-        audi: movie.audi || undefined,
-        format_id: movie.format_id || undefined,
-        seat: movie.seat || undefined,
-        ticket_cost: movie.ticket_cost,
-        convenience_fee: movie.convenience_fee,
-        booking_id: movie.booking_id || undefined,
-        tmdb_id: movie.tmdb_id || undefined,
-        runtime_minutes: movie.runtime_minutes || undefined,
-        genres: movie.genres || undefined,
-        language: movie.language || undefined,
-        director: movie.director || undefined,
-        poster_url: movie.poster_url || undefined,
-        rating: movie.rating || undefined,
-        mood_id: movie.mood_id || undefined,
-        fnb_cost: movie.fnb_cost || undefined,
-        fnb_items: movie.fnb_items || undefined,
-        strongest_part_id: movie.strongest_part_id || undefined,
-        weakest_part_id: movie.weakest_part_id || undefined,
-        rewatch_id: movie.rewatch_id || undefined,
-        review: movie.review || undefined,
-        remarks: movie.remarks || undefined,
-        gc_id: movie.gc_id || undefined,
-        other_expenses: movie.other_expenses || undefined,
-        passport_savings: movie.passport_savings || undefined,
-      }
+      title: movie.title,
+      date: movie.date,
+      showtime: movie.showtime || undefined,
+      theater_id: movie.theater_id || undefined,
+      audi: movie.audi || undefined,
+      format_id: movie.format_id || undefined,
+      seat: movie.seat || undefined,
+      ticket_cost: movie.ticket_cost,
+      convenience_fee: movie.convenience_fee,
+      booking_id: movie.booking_id || undefined,
+      tmdb_id: movie.tmdb_id || undefined,
+      runtime_minutes: movie.runtime_minutes || undefined,
+      genres: movie.genres || undefined,
+      language: movie.language || undefined,
+      director: movie.director || undefined,
+      poster_url: movie.poster_url || undefined,
+      rating: movie.rating || undefined,
+      mood_id: movie.mood_id || undefined,
+      fnb_cost: movie.fnb_cost || undefined,
+      fnb_items: movie.fnb_items || undefined,
+      strongest_part_id: movie.strongest_part_id || undefined,
+      weakest_part_id: movie.weakest_part_id || undefined,
+      rewatch_id: movie.rewatch_id || undefined,
+      review: movie.review || undefined,
+      remarks: movie.remarks || undefined,
+      gc_id: movie.gc_id || undefined,
+      other_expenses: movie.other_expenses || undefined,
+      passport_savings: movie.passport_savings || undefined,
+    }
     : {};
 
   return (
