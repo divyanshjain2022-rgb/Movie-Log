@@ -54,50 +54,23 @@ export async function POST(request: NextRequest) {
     `;
 
     let textResponse: string | null = null;
-    let usedModel = "gemini-2.5-flash";
+    const usedModel = "gemini-2.5-flash";
 
-    try {
-      console.log(`[OCR] Attempting with model: ${usedModel}`);
-      const response = await ai.models.generateContent({
-        model: usedModel,
-        config: { responseMimeType: "application/json" },
-        contents: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: base64Data,
-            },
+    console.log(`[OCR] Attempting with model: ${usedModel}`);
+    const response = await ai.models.generateContent({
+      model: usedModel,
+      config: { responseMimeType: "application/json" },
+      contents: [
+        { text: prompt },
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: base64Data,
           },
-        ],
-      });
-      textResponse = response.text || null;
-    } catch (e: any) {
-      console.error(`[OCR] ${usedModel} validation failed:`, e.message);
-      // Fallback to 1.5-flash
-      usedModel = "gemini-1.5-flash";
-      console.log(`[OCR] Falling back to model: ${usedModel}`);
-      try {
-        const response = await ai.models.generateContent({
-          model: usedModel,
-          config: { responseMimeType: "application/json" },
-          contents: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: base64Data,
-              },
-            },
-          ],
-        });
-        textResponse = response.text || null;
-      } catch (fallbackError: any) {
-        console.error(`[OCR] ${usedModel} (fallback) failed:`, fallbackError.message);
-        // Throw the original error or the new one? Throw new one.
-        throw new Error(`Both models failed. Last error: ${fallbackError.message}`);
-      }
-    }
+        },
+      ],
+    });
+    textResponse = response.text || null;
 
     if (!textResponse) {
       throw new Error("Empty response from AI model");
