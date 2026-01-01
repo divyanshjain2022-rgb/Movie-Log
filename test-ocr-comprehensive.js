@@ -55,7 +55,71 @@ console.log("--- Testing Blue Ticket ---");
 testParsing(textBlueTicket);
 
 console.log("\n--- Testing App Screenshot ---");
+console.log("\n--- Testing App Screenshot ---");
 testParsing(textAppScreenshot);
+
+const textUserCase = `
+Total ₹173.78
+Net Price (1 x Ticket(s)) ₹126.26
+GST ₹22.74
+Total Ticket Price ₹149.00
+Action for 17 SDGs 0.00
+Taxes & Fees
+Convenience Fees 21.00
+GST-09AAACP4526D1ZO 3.78
+`;
+console.log("\n--- Testing User Case (Convenience Fee Priority) ---");
+testParsing(textUserCase);
+
+const case1 = `
+Total ₹229.68 ₹0.00
+Net Price (1 x Ticket(s)) ₹253.38
+GST ₹45.62
+Total Ticket Price ₹299.00
+Action for 17 SDGs 0.00
+Convenience Fees 26.00
+GST-09AAACP4526D1ZO 4.68
+Discount PASSPORT 229.68
+`;
+console.log("\n--- Testing Case 1 (Passport Zero Pay) ---");
+testParsing(case1);
+
+const case2 = `
+Total ₹341.48 ₹173.50
+Net Price (1 x Ticket(s)) ₹253.38
+GST ₹45.62
+Total Ticket Price ₹299.00
+Action for 17 SDGs 0.00
+Convenience Fees 36.00
+GST-09AAACP4526D1ZO 6.48
+Discount 167.98
+`;
+console.log("\n--- Testing Case 2 (Partial Pay) ---");
+testParsing(case2);
+
+const case3 = `
+Total ₹627.20 ₹0.00
+Net Price (1 x Ticket(s)) ₹270.00
+GST ₹50.34
+Total Ticket Price ₹330.00
+Action for 17 SDGs 0.00
+Convenience Fees 40.00
+GST-09AAACP4526D1ZO 7.20
+Discount PASSPORT 527.20
+Upgrade Fee 150.00
+`;
+console.log("\n--- Testing Case 3 (Upgrade Fee) ---");
+testParsing(case3);
+
+const case0 = `
+Total ₹598.50 ₹0.00
+Taxes & Fees
+Convenience Fees 75.00
+GST-09AAACP4526D1ZO 13.50
+Discount 598.50
+`;
+console.log("\n--- Testing Case 0 (Total Discount) ---");
+testParsing(case0);
 
 function testParsing(text) {
     const fullText = text.toLowerCase();
@@ -68,21 +132,40 @@ function testParsing(text) {
     let cost = null;
     for (const p of costPatterns) {
         const m = text.match(p);
-        if (m) { cost = m[1]; break; }
+        if (m) { cost = parseFloat(m[1].replace(/,/g, "")); break; }
     }
     console.log("Cost:", cost);
 
-    // 2. Convenience Fee
-    const feePatterns = [
-        /convenience\s*(?:fee|fees)\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
-        // Removed Service Charge
+    // 1-B. Grand Total (New)
+    const totalPatterns = [
+        /^\s*Total\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/im,
+        /Total\s+Amount\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
+        /AMOUNT\s*PAID\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
     ];
-    let fee = null;
-    for (const p of feePatterns) {
+    let grandTotal = null;
+    for (const p of totalPatterns) {
         const m = text.match(p);
-        if (m) { fee = m[1]; break; }
+        if (m) { grandTotal = parseFloat(m[1].replace(/,/g, "")); break; }
     }
-    console.log("Fee:", fee);
+    console.log("Grand Total:", grandTotal);
+
+    // 2. Convenience Fee
+    let fee = null;
+    // Primary: Calculation
+    if (grandTotal && cost && grandTotal > cost) {
+        fee = Number((grandTotal - cost).toFixed(2));
+        console.log("Fee (Calculated):", fee);
+    } else {
+        // Fallback: Explicit
+        const feePatterns = [
+            /convenience\s*(?:fee|fees)\s*(?:[:\-])?\s*[₹]?\s*([\d,]+\.\d{2})/i,
+        ];
+        for (const p of feePatterns) {
+            const m = text.match(p);
+            if (m) { fee = m[1]; break; }
+        }
+        console.log("Fee (Explicit):", fee);
+    }
 
     // 3. Movie Title
     const movieMatch = text.match(/([A-Z][A-Z0-9\s]+\d?)\s*\((?:3D|2D|IMAX|ENGLISH|HINDI|TELUGU|TAMIL)/);
