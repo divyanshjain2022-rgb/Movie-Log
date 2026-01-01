@@ -5,20 +5,30 @@ import { TicketOCRData } from "@/types";
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
 export async function POST(request: NextRequest) {
+  const timestamp = new Date().toISOString();
+  console.log(`[OCR] Request received at ${timestamp}`);
+
   try {
     const body = await request.json();
 
     if (!body.image) {
+      console.error("[OCR] No image data provided");
       return NextResponse.json({ error: "No image data provided" }, { status: 400 });
     }
 
     if (!GOOGLE_API_KEY) {
-      console.error("OCR Check Failed: GOOGLE_CLOUD_API_KEY is missing");
+      console.error("[OCR] Server misconfiguration: GOOGLE_CLOUD_API_KEY is missing");
       return NextResponse.json({ error: "Server misconfiguration: Missing API Key" }, { status: 500 });
     }
 
     // Initialize Gemini with new SDK
     const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+
+    // Clean base64 string
+    const base64Data = body.image.replace(/^data:image\/\w+;base64,/, "");
+    // Check payload size (approximate)
+    const sizeInBytes = Math.ceil(base64Data.length / 4) * 3;
+    console.log(`[OCR] Image size approx: ${(sizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
     const prompt = `
     Analyze this movie ticket image and extract the following details in JSON format.
@@ -43,40 +53,72 @@ export async function POST(request: NextRequest) {
     If a field is missing, set it to null.
     `;
 
-    console.log("Calling Gemini 2.5 Flash...");
+    let textResponse: string | null = null;
+    let usedModel = "gemini-2.5-flash";
 
-    // Ensure clean base64 string (remove data URL prefix if present)
-    const base64Data = body.image.replace(/^data:image\/\w+;base64,/, "");
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      config: { responseMimeType: "application/json" },
-      contents: [
-        { text: prompt },
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: base64Data,
+    try {
+      console.log(`[OCR] Attempting with model: ${usedModel}`);
+      const response = await ai.models.generateContent({
+        model: usedModel,
+        config: { responseMimeType: "application/json" },
+        contents: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64Data,
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+      textResponse = response.text || null;
+    } catch (e: any) {
+      console.error(`[OCR] ${usedModel} validation failed:`, e.message);
+      // Fallback to 1.5-flash
+      usedModel = "gemini-1.5-flash";
+      console.log(`[OCR] Falling back to model: ${usedModel}`);
+      try {
+        const response = await ai.models.generateContent({
+          model: usedModel,
+          config: { responseMimeType: "application/json" },
+          contents: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: base64Data,
+              },
+            },
+          ],
+        });
+        textResponse = response.text || null;
+      } catch (fallbackError: any) {
+        console.error(`[OCR] ${usedModel} (fallback) failed:`, fallbackError.message);
+        // Throw the original error or the new one? Throw new one.
+        throw new Error(`Both models failed. Last error: ${fallbackError.message}`);
+      }
+    }
 
-    const text = response.text;
-    console.log("Gemini Response:", text);
+    if (!textResponse) {
+      throw new Error("Empty response from AI model");
+    }
+
+    console.log("[OCR] Raw Gemini Response:", textResponse.substring(0, 500) + "...");
 
     let ticketData: TicketOCRData;
     try {
-      ticketData = JSON.parse(text || "{}");
+      // Sanitize markdown code blocks if present
+      const jsonStr = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      ticketData = JSON.parse(jsonStr);
     } catch (e) {
-      console.error("JSON Parse Error", e);
-      throw new Error("Failed to parse Gemini response");
+      console.error("[OCR] JSON Parse Error", e);
+      throw new Error("Failed to parse Gemini JSON response");
     }
 
     // TMDB Enrichment
     if (ticketData.movie_title && process.env.TMDB_API_KEY) {
       try {
-        console.log(`Searching TMDB for: ${ticketData.movie_title}`);
+        console.log(`[OCR] Searching TMDB for: ${ticketData.movie_title}`);
         const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.TMDB_API_KEY}&query=${encodeURIComponent(ticketData.movie_title)}&year=${ticketData.date ? new Date(ticketData.date).getFullYear() : ""}`;
         const tmdbRes = await fetch(searchUrl);
         if (tmdbRes.ok) {
@@ -91,15 +133,18 @@ export async function POST(request: NextRequest) {
             ticketData.release_date = bestMatch.release_date;
           }
         }
-      } catch (e) { console.error("TMDB Error", e); }
+      } catch (e) {
+        console.error("[OCR] TMDB Error (non-critical)", e);
+      }
     }
 
     return NextResponse.json(ticketData);
 
   } catch (error: any) {
-    console.error("OCR Critical Failure:", error);
+    console.error("[OCR] Final Critical Failure:", error);
+    // Return the specific error message to the client
     return NextResponse.json(
-      { error: `OCR Failed: ${error.message || "Unknown error"}` },
+      { error: `OCR Processing Failed: ${error.message || "Unknown error"}` },
       { status: 500 }
     );
   }
