@@ -45,9 +45,8 @@ export async function POST(request: NextRequest) {
 
     console.log("Calling Gemini 2.5 Flash...");
 
-    // Convert base64 string to buffer/clean string if needed
-    // The previous code received raw base64 data in body.image. 
-    // The new SDK for inlineData expects base64 string.
+    // Ensure clean base64 string (remove data URL prefix if present)
+    const base64Data = body.image.replace(/^data:image\/\w+;base64,/, "");
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -57,7 +56,7 @@ export async function POST(request: NextRequest) {
         {
           inlineData: {
             mimeType: "image/jpeg",
-            data: body.image, // Assuming body.image is the base64 string
+            data: base64Data,
           },
         },
       ],
