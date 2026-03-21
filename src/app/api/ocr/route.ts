@@ -23,9 +23,13 @@ DATE: Return strictly as YYYY-MM-DD
 - "Fri, 28 Nov 2025" → "2025-11-28"
 - "28/11/2025" → "2025-11-28"
 
-SHOWTIME: Return as "HH:MM AM/PM" in 12-hour format
-- "16:00" → "04:00 PM"
-- "09:30 PM" → "09:30 PM"
+SHOWTIME: This is critical — find the show/screening time on the ticket. It may appear as:
+- Near the date, e.g. "Fri, 28 Nov 2025 | 04:00 PM"
+- Labeled "Show Time", "Time", "Showtime", or just next to the date
+- In 24-hour format like "16:00" or "21:15" → convert to 12-hour: "04:00 PM", "09:15 PM"
+- In 12-hour format like "09:30 PM" → keep as is
+- On PVR/INOX tickets it's usually right after the date line
+- Return strictly as "HH:MM AM/PM" (e.g. "04:00 PM"). NEVER return null if a time is visible.
 
 SCREEN/AUDI: Just the number
 - "SCREEN 4" → "4"
@@ -137,8 +141,6 @@ function stripDataUri(data: string): string {
 // Try models in order of preference — skip to next on quota/rate limit errors
 const MODEL_PRIORITY = [
   "gemini-3-flash-preview",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
 ];
 
 export async function POST(request: NextRequest) {
