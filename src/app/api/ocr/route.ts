@@ -170,26 +170,37 @@ export async function POST(request: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
-    const usedModel = "gemini-2.0-flash";
+    const usedModel = "gemini-2.5-pro";
     console.log(`[OCR] Using model: ${usedModel}`);
 
-    const response = await ai.models.generateContent({
-      model: usedModel,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-      },
-      contents: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data,
-          },
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: usedModel,
+        config: {
+          systemInstruction: systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: responseSchema,
         },
-        { text: "Extract ALL ticket details including itemized pricing breakdown." },
-      ],
-    });
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data,
+                },
+              },
+              { text: "Extract ALL ticket details including itemized pricing breakdown." },
+            ],
+          },
+        ],
+      });
+    } catch (apiError: any) {
+      console.error("[OCR] Gemini API error:", apiError?.message, apiError?.status, JSON.stringify(apiError?.errorDetails || {}));
+      throw new Error(`Gemini API error: ${apiError?.message || "Unknown"}`);
+    }
 
     const textResponse = response.text;
     if (!textResponse) {

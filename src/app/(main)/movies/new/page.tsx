@@ -147,7 +147,8 @@ export default function NewMoviePage() {
       });
 
       if (!response.ok) {
-        throw new Error("OCR request failed");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `OCR request failed (${response.status})`);
       }
 
       const data: TicketOCRData = await response.json();
@@ -166,9 +167,12 @@ export default function NewMoviePage() {
 
       setShowForm(true);
       toast.success("Ticket data extracted!");
-    } catch (error) {
-      toast.error("Failed to extract ticket data. Try entering manually.");
-      console.error(error);
+    } catch (error: any) {
+      const msg = error?.message || "Unknown error";
+      toast.error(msg.includes("Missing API Key")
+        ? "Google API key not configured. Enter data manually."
+        : `OCR failed: ${msg}`);
+      console.error("[OCR]", error);
       setShowForm(true);
     } finally {
       setIsUploading(false);
