@@ -169,7 +169,7 @@ export default function NewMoviePage() {
       setExtractedData({
         title: data.movie_title || "",
         date: data.date || new Date().toISOString().split("T")[0],
-        showtime: data.showtime || "",
+        showtime: convertTo24Hour(data.showtime) || data.showtime || "",
         audi: data.audi || "",
         seat: data.seat || "",
         ticket_cost: data.ticket_cost || 0,
