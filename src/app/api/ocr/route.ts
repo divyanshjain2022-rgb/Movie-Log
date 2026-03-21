@@ -3,69 +3,83 @@ import { GoogleGenAI } from "@google/genai";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
-const EXTRACTION_PROMPT = `You are an expert OCR system for Indian movie theater tickets and booking confirmations (PVR, INOX, Cinepolis, BookMyShow, Paytm).
+const EXTRACTION_PROMPT = `You are an expert OCR system for Indian movie theater tickets and booking confirmations.
 
-Look at this ticket image carefully. First, read ALL text visible in the image. Then extract the following fields.
+Read ALL text in the image carefully, then extract the fields below.
 
-EXTRACTION RULES:
+THERE ARE TWO COMMON TICKET FORMATS:
+
+=== FORMAT 1: PVR INOX TAX INVOICE (Blue ticket PDF) ===
+This has a TWO-PANEL layout:
+- LEFT PANEL (blue background): Movie title, theater name (e.g. "LUCKNOW PHOENIX PALASSIO"), TicketId, pricing breakdown (Admin, Service Charge, 3D Charge, CGST, SGST, AMOUNT PAID), a DD-MM-YY date, and a HH:MM:SS TRANSACTION timestamp (this is NOT the showtime!)
+- RIGHT PANEL (white background): SCREEN number, CLASS, SEAT, a full date like "Wed, 25 Feb 2026", and the SHOWTIME in large colored text like "04:20 PM" or "10:35 AM"
+
+CRITICAL: The showtime is the large colored time in the RIGHT panel (e.g. "04:20 PM"). Do NOT use the left panel timestamp (e.g. "03:16:54") — that is the booking/transaction time.
+
+=== FORMAT 2: BOOKING CONFIRMATION SCREENSHOT (PVR INOX app / BookMyShow) ===
+- Shows "SHOW DATE & TIME" with date and time range like "Tue, 17 Mar, 6:25 PM - 8:34 PM"
+- The showtime is the START time (e.g. "6:25 PM")
+- Shows AUDI number, seat, Booking ID, pricing breakdown
+
+=== EXTRACTION RULES ===
 
 MOVIE TITLE:
-- Remove format tags like "(IMAX)", "(3D)", "(4DX)", "(2D)", language tags like "(HINDI)", "(ENGLISH)", and certification tags like "(UA)", "(A)", "(U)"
-- Example: "DEADPOOL & WOLVERINE (UA) (IMAX 2D) (ENGLISH)" → "Deadpool & Wolverine"
-- Keep the core movie name in title case
+- Remove ALL parenthetical tags: format (IMAX, 3D, 4DX, MX4D, 2D), language (ENGLISH, HINDI, MANIPURI), certification (U, UA, A), "RE RELEASE", "WITH ENGLISH SUBTITLE", etc.
+- "SINNERS (ENGLISH IMAX WITH ENGLI..." → "Sinners"
+- "HOPPERS (3D ENGLISH IMAX WITH E..." → "Hoppers"
+- "CRIME 101 (ENGLISH MX4D WITH ENG..." → "Crime 101"
+- "DHURANDHAR THE REVENGE (HINDI)" → "Dhurandhar The Revenge"
+- "BOONG (RE RELEASE) (MANIPURI WITH ENGLISH SUBTITLE) (U)" → "Boong"
+- Return in title case
 
 THEATER:
-- Full cinema name including mall/location
-- "PVR: PHOENIX PALASSIO, LUCKNOW" → "PVR Phoenix Palassio Lucknow"
-- "INOX: LULU MALL" → "INOX Lulu Mall"
+- From the ticket location line: "LUCKNOW PHOENIX PALASSIO" → "Phoenix Palassio Lucknow"
+- Or from header: "3rd Floor Phoenix Pallasio Mall... Lucknow" → "Phoenix Palassio Lucknow"
+- Or from booking: "PVR SUPERPLEX Lulu Lucknow" → "PVR Superplex Lulu Lucknow"
 
 DATE: Return strictly as YYYY-MM-DD
-- "Fri, 28 Nov 2025" → "2025-11-28"
-- "28/11/2025" → "2025-11-28"
+- On PVR INOX tax invoices, use the FULL date from the RIGHT panel: "Wed, 25 Feb 2026" → "2026-02-25"
+- Do NOT use the DD-MM-YY from left panel (that's the invoice date, same day but use the full format)
+- On booking screenshots: "Tue, 17 Mar" with context year → "2026-03-17"
 
-SHOWTIME: This is critical — find the show/screening time on the ticket. It may appear as:
-- Near the date, e.g. "Fri, 28 Nov 2025 | 04:00 PM"
-- Labeled "Show Time", "Time", "Showtime", or just next to the date
-- In 24-hour format like "16:00" or "21:15" → convert to 12-hour: "04:00 PM", "09:15 PM"
-- In 12-hour format like "09:30 PM" → keep as is
-- On PVR/INOX tickets it's usually right after the date line
-- Return strictly as "HH:MM AM/PM" (e.g. "04:00 PM"). NEVER return null if a time is visible.
+SHOWTIME — THIS IS THE MOST IMPORTANT FIELD:
+- On PVR INOX tax invoices: Read the LARGE COLORED TIME in the RIGHT panel. Examples: "04:20 PM", "02:45 PM", "07:55 PM", "05:25 PM", "10:35 AM"
+- IGNORE the left panel timestamp like "03:16:54" or "14:58:04" — that is the transaction time
+- On booking screenshots: Use the start time from "6:25 PM - 8:34 PM" → "06:25 PM"
+- Return as "HH:MM AM/PM". NEVER return null — there is always a showtime on a valid ticket.
 
 SCREEN/AUDI: Just the number
-- "SCREEN 4" → "4"
-- "Audi 03" → "3"
+- "SCREEN 4" → "4", "SCREEN 7" → "7", "AUDI 09" → "9"
 
 SEAT: Full seat designation
-- "G-12, G-13" → "G-12, G-13"
+- "A-14" → "A-14", "B-11" → "B-11", "K9" → "K-9"
 
-FORMAT: Identify the screening format from the ticket
-- Look for: IMAX, 3D, 2D, 4DX, MX4D, PXL, Dolby Atmos, ScreenX, ICE
-- If "IMAX 3D" → return ["IMAX", "3D"]
-- If "4DX 3D" → return ["4DX", "3D"]
-- If only "2D" or no format mentioned → return ["2D"]
+FORMAT: Extract from the movie title line (before you clean it)
+- "ENGLISH IMAX WITH..." → ["IMAX", "2D"] (IMAX defaults to 2D unless 3D is specified)
+- "3D ENGLISH IMAX WITH..." → ["IMAX", "3D"]
+- "ENGLISH MX4D WITH..." → ["MX4D"]
+- "(HINDI)" with no format tag → ["2D"]
+- Also check if "3D Charge" in pricing is > 0 → format includes "3D"
 
-BOOKING ID: The alphanumeric booking/transaction reference
-- Usually labeled "Booking ID", "Transaction ID", "Booking Ref", or "PNR"
+BOOKING ID:
+- On tax invoices: Look for "TicketId:" in the blue panel, e.g. "TicketId:T7A3E3S" → "T7A3E3S"
+- On booking screenshots: "BOOKING ID:" field, e.g. "TTAYJUH"
 
-PRICING — This is critical, read every number carefully:
+PRICING (read every ₹ amount carefully):
+For PVR INOX tax invoices:
+  - "Admin" → admin_base (e.g. ₹191.73)
+  - "Service Charge" → service_charge (e.g. ₹9.32)
+  - "3D Charge" → format_charge (e.g. ₹59.32, or ₹0.00)
+  - "CGST @9%" or "CGST @2.5%" → cgst
+  - "SGST @9%" or "SGST @2.5%" → sgst
+  - "AMOUNT PAID" → amount_paid (e.g. ₹237.25)
 
-Type A - Itemized tax invoice (blue/white receipt):
-  - "Admission/Admin" or base ticket amount → admin_base
-  - "3D Charge" or "IMAX Charge" or format surcharge → format_charge
-  - "Internet Handling Fee" or "Convenience Fee" or "Service Charge" (before tax) → service_charge
-  - "CGST" → cgst
-  - "SGST" → sgst
-  - "Total" or "Amount Paid" or "Grand Total" → amount_paid
+For booking screenshots:
+  - "Net Price" or "Total Ticket Price" → ticket_total
+  - "Convenience Fees" → convenience_fee_total
+  - "Total" → grand_total
 
-Type B - Simple booking confirmation:
-  - "Ticket Price" or "Total Ticket" → ticket_total
-  - "Convenience Fee" (including taxes) → convenience_fee_total
-  - "Total Amount" or "Amount Paid" → grand_total
-
-Type C - Screenshot with just total:
-  - Whatever total amount is visible → grand_total
-
-Return ONLY valid JSON matching the schema. Use null for fields you cannot find. Use 0 for pricing fields that don't apply. Do NOT guess — only extract what you can clearly read.`;
+Return valid JSON. Use null for truly missing fields. Use 0 for pricing fields that show ₹0.00.`;
 
 const responseSchema = {
   type: "OBJECT" as const,
