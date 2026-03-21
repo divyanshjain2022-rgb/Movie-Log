@@ -136,8 +136,8 @@ function stripDataUri(data: string): string {
 
 // Try models in order of preference — skip to next on quota/rate limit errors
 const MODEL_PRIORITY = [
+  "gemini-3-flash-preview",
   "gemini-2.5-flash",
-  "gemini-3.1-flash-lite-preview",
   "gemini-2.5-flash-lite",
 ];
 
