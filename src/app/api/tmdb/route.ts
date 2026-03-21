@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get("query");
     const movieId = searchParams.get("id");
 
-    // If movie ID is provided, get movie details
+    // If movie ID is provided, get movie details with full enrichment
     if (movieId) {
       const detailResponse = await fetch(
-        `${TMDB_BASE_URL}/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits`
+        `${TMDB_BASE_URL}/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords,videos,release_dates`
       );
 
       if (!detailResponse.ok) {
@@ -30,9 +30,53 @@ export async function GET(request: NextRequest) {
       }
 
       const movie = await detailResponse.json();
-      const director = movie.credits?.crew?.find(
+
+      // Extract crew members
+      const crew = movie.credits?.crew || [];
+      const director = crew.find(
         (c: { job: string }) => c.job === "Director"
       );
+      const composer = crew.find(
+        (c: { job: string; department: string }) =>
+          c.department === "Sound" && (c.job === "Original Music Composer" || c.job === "Music")
+      );
+      const cinematographer = crew.find(
+        (c: { job: string; department: string }) =>
+          c.department === "Camera" && c.job === "Director of Photography"
+      );
+
+      // Extract top 5 cast
+      const castMembers = (movie.credits?.cast || [])
+        .slice(0, 5)
+        .map((c: { name: string }) => c.name);
+
+      // Extract keywords
+      const keywords = (movie.keywords?.keywords || [])
+        .map((k: { name: string }) => k.name);
+
+      // Extract trailer (prefer YouTube)
+      const videos = movie.videos?.results || [];
+      const trailer = videos.find(
+        (v: { type: string; site: string }) =>
+          v.type === "Trailer" && v.site === "YouTube"
+      ) || videos.find(
+        (v: { type: string; site: string }) =>
+          v.type === "Teaser" && v.site === "YouTube"
+      );
+      const trailerUrl = trailer
+        ? `https://www.youtube.com/watch?v=${trailer.key}`
+        : null;
+
+      // Extract certification for India (IN) or fallback to US
+      const releaseDates = movie.release_dates?.results || [];
+      const inRelease = releaseDates.find(
+        (r: { iso_3166_1: string }) => r.iso_3166_1 === "IN"
+      );
+      const usRelease = releaseDates.find(
+        (r: { iso_3166_1: string }) => r.iso_3166_1 === "US"
+      );
+      const certRelease = inRelease || usRelease;
+      const certification = certRelease?.release_dates?.[0]?.certification || null;
 
       return NextResponse.json({
         tmdb_id: movie.id,
@@ -46,6 +90,17 @@ export async function GET(request: NextRequest) {
           : null,
         release_date: movie.release_date,
         overview: movie.overview,
+        // Enriched fields
+        cast_members: castMembers,
+        composer: composer?.name || null,
+        cinematographer: cinematographer?.name || null,
+        budget: movie.budget || null,
+        box_office: movie.revenue || null,
+        tmdb_rating: movie.vote_average || null,
+        tmdb_vote_count: movie.vote_count || null,
+        certification,
+        trailer_url: trailerUrl,
+        keywords,
       });
     }
 

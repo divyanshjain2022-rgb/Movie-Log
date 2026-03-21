@@ -8,7 +8,7 @@ import { MovieForm } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMovie, useLookupData, useGiftCards, useUpdateMovie } from "@/hooks";
-import type { MovieFormData } from "@/types";
+import type { MovieFormData, GiftCardUsageEntry } from "@/types";
 
 interface EditMoviePageProps {
   params: Promise<{ id: string }>;
@@ -22,7 +22,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { updateMovie, isLoading: isSubmitting } = useUpdateMovie();
 
-  const handleSubmit = async (data: MovieFormData) => {
+  const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     // Convert 12-hour time to 24-hour format
     const convertTo24Hour = (time12h: string | null | undefined): string | null => {
       if (!time12h) return null;
@@ -67,10 +67,25 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
         rewatch_id: data.rewatch_id || null,
         review: data.review || null,
         remarks: data.remarks || null,
-        gc_id: data.gc_id || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
-      });
+        // New fields
+        watched_with: data.watched_with || null,
+        payment_methods: data.payment_methods || [],
+        // TMDB enrichment
+        cast_members: data.cast_members || null,
+        composer: data.composer || null,
+        cinematographer: data.cinematographer || null,
+        budget: data.budget || null,
+        box_office: data.box_office || null,
+        tmdb_rating: data.tmdb_rating || null,
+        tmdb_vote_count: data.tmdb_vote_count || null,
+        certification: data.certification || null,
+        trailer_url: data.trailer_url || null,
+        keywords: data.keywords || null,
+        overview: data.overview || null,
+        release_date: data.release_date || null,
+      }, giftCardUsage || []);
 
       toast.success("Movie updated successfully!");
       router.push(`/movies/${id}`);
@@ -110,11 +125,32 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
       rewatch_id: movie.rewatch_id || undefined,
       review: movie.review || undefined,
       remarks: movie.remarks || undefined,
-      gc_id: movie.gc_id || undefined,
       other_expenses: movie.other_expenses || undefined,
       passport_savings: movie.passport_savings || undefined,
+      // New fields
+      watched_with: movie.watched_with || undefined,
+      payment_methods: (movie.payment_methods as Array<{method: string; amount: number}>) || undefined,
+      // TMDB enrichment
+      cast_members: movie.cast_members || undefined,
+      composer: movie.composer || undefined,
+      cinematographer: movie.cinematographer || undefined,
+      budget: movie.budget || undefined,
+      box_office: movie.box_office || undefined,
+      tmdb_rating: movie.tmdb_rating || undefined,
+      tmdb_vote_count: movie.tmdb_vote_count || undefined,
+      certification: movie.certification || undefined,
+      trailer_url: movie.trailer_url || undefined,
+      keywords: movie.keywords || undefined,
+      overview: movie.overview || undefined,
+      release_date: movie.release_date || undefined,
     }
     : {};
+
+  // Pre-populate gift card usage from junction table
+  const initialGiftCardUsage = movie?.movie_gift_cards?.map(mgc => ({
+    gift_card_id: mgc.gift_card?.id || "",
+    amount_used: mgc.amount_used,
+  })).filter(u => u.gift_card_id) || [];
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -141,10 +177,11 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               moods={moods}
               aspects={aspects}
               rewatchOptions={rewatchOptions}
-              giftCards={giftCards.filter((gc) => gc.status === "active")}
+              giftCards={giftCards.filter((gc) => gc.status === "active" || initialGiftCardUsage.some(u => u.gift_card_id === gc.id))}
               onSubmit={handleSubmit}
               isLoading={isSubmitting}
               isEditing
+              initialGiftCardUsage={initialGiftCardUsage}
             />
           )}
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { PiggyBank, ThumbsUp, Meh } from "lucide-react";
+import { PiggyBank, ThumbsUp, Meh, Shield } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
@@ -8,12 +8,13 @@ interface QuickStatsProps {
   saved: number;
   greatCount: number;
   mehCount: number;
+  passportSavings?: number;
 }
 
-export function QuickStats({ saved, greatCount, mehCount }: QuickStatsProps) {
+export function QuickStats({ saved, greatCount, mehCount, passportSavings }: QuickStatsProps) {
   const stats = [
     {
-      label: "Saved",
+      label: "GC Saved",
       value: formatCurrency(saved),
       icon: PiggyBank,
       gradient: "from-emerald-500/20 to-emerald-500/5",
@@ -30,15 +31,29 @@ export function QuickStats({ saved, greatCount, mehCount }: QuickStatsProps) {
       iconColor: "text-primary",
       valueColor: "text-primary",
     },
-    {
-      label: "Meh",
-      value: mehCount.toString(),
-      icon: Meh,
-      gradient: "from-secondary to-secondary/50",
-      iconBg: "bg-secondary",
-      iconColor: "text-muted-foreground",
-      valueColor: "text-muted-foreground",
-    },
+    ...(passportSavings && passportSavings > 0
+      ? [
+          {
+            label: "Passport",
+            value: formatCurrency(passportSavings),
+            icon: Shield,
+            gradient: "from-blue-500/20 to-blue-500/5",
+            iconBg: "bg-blue-500/20",
+            iconColor: "text-blue-400",
+            valueColor: "text-blue-400",
+          },
+        ]
+      : [
+          {
+            label: "Meh",
+            value: mehCount.toString(),
+            icon: Meh,
+            gradient: "from-secondary to-secondary/50",
+            iconBg: "bg-secondary",
+            iconColor: "text-muted-foreground",
+            valueColor: "text-muted-foreground",
+          },
+        ]),
   ];
 
   return (

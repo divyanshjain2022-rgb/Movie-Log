@@ -23,20 +23,35 @@ export default function DashboardPage() {
       (m) => new Date(m.date).getFullYear() === year
     );
 
-    const totalSpend = yearMovies.reduce((sum, m) => sum + m.total_cost, 0);
+    const totalSpend = yearMovies.reduce((sum, m) => sum + (m.total_cost || 0), 0);
     const movieCount = yearMovies.length;
+    const ratedMovies = yearMovies.filter((m) => m.rating != null && m.rating > 0);
     const averageRating =
-      movieCount > 0
-        ? yearMovies.reduce((sum, m) => sum + (m.rating || 0), 0) / movieCount
+      ratedMovies.length > 0
+        ? ratedMovies.reduce((sum, m) => sum + (m.rating || 0), 0) / ratedMovies.length
         : 0;
     const greatCount = yearMovies.filter((m) => (m.rating || 0) >= 7).length;
-    const mehCount = yearMovies.filter((m) => (m.rating || 0) < 6).length;
+    const mehCount = yearMovies.filter((m) => m.rating != null && (m.rating || 0) < 6).length;
+
+    // GC savings: sum of (face_value - amount_paid) for GCs used this year
     const totalSaved = giftCards.reduce(
       (sum, gc) => sum + (gc.face_value - gc.amount_paid),
       0
     );
 
-    return { totalSpend, movieCount, averageRating, greatCount, mehCount, totalSaved };
+    // Passport savings
+    const passportSavings = yearMovies.reduce(
+      (sum, m) => sum + (m.passport_savings || 0),
+      0
+    );
+
+    // Total runtime
+    const totalRuntime = yearMovies.reduce(
+      (sum, m) => sum + (m.runtime_minutes || 0),
+      0
+    );
+
+    return { totalSpend, movieCount, averageRating, greatCount, mehCount, totalSaved, passportSavings, totalRuntime };
   }, [movies, giftCards, year]);
 
   const recentMovies = useMemo(() => {
@@ -82,6 +97,7 @@ export default function DashboardPage() {
             totalSpend={stats.totalSpend}
             movieCount={stats.movieCount}
             averageRating={stats.averageRating}
+            totalRuntime={stats.totalRuntime}
           />
         )}
 
@@ -97,6 +113,7 @@ export default function DashboardPage() {
             saved={stats.totalSaved}
             greatCount={stats.greatCount}
             mehCount={stats.mehCount}
+            passportSavings={stats.passportSavings}
           />
         )}
 

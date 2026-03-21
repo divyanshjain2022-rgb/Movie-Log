@@ -28,6 +28,7 @@ import type {
   MovieFormData,
   GiftCardUsageEntry,
 } from "@/types";
+import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
 
 const movieFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -51,13 +52,28 @@ const movieFormSchema = z.object({
   remarks: z.string().optional(),
   other_expenses: z.coerce.number().min(0).optional(),
   passport_savings: z.coerce.number().min(0).optional(),
-  // TMDB fields - required for saving movie metadata
+  // TMDB fields
   tmdb_id: z.coerce.number().optional(),
   runtime_minutes: z.coerce.number().optional(),
   genres: z.array(z.string()).optional(),
   language: z.string().optional(),
   director: z.string().optional(),
   poster_url: z.string().optional(),
+  // New fields
+  watched_with: z.string().optional(),
+  // TMDB enrichment
+  cast_members: z.array(z.string()).optional(),
+  composer: z.string().optional(),
+  cinematographer: z.string().optional(),
+  budget: z.coerce.number().optional(),
+  box_office: z.coerce.number().optional(),
+  tmdb_rating: z.coerce.number().optional(),
+  tmdb_vote_count: z.coerce.number().optional(),
+  certification: z.string().optional(),
+  trailer_url: z.string().optional(),
+  keywords: z.array(z.string()).optional(),
+  overview: z.string().optional(),
+  release_date: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
@@ -121,6 +137,8 @@ export function MovieForm({
       remarks: initialData?.remarks || "",
       other_expenses: initialData?.other_expenses || 0,
       passport_savings: initialData?.passport_savings || 0,
+      watched_with: initialData?.watched_with || "",
+      language: initialData?.language || "",
     },
   });
 
@@ -128,6 +146,25 @@ export function MovieForm({
 
   // State for multiple gift card selection
   const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>(initialGiftCardUsage);
+
+  // State for payment methods
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodEntry[]>(
+    (initialData?.payment_methods as PaymentMethodEntry[]) || []
+  );
+
+  const addPaymentMethod = () => {
+    setPaymentMethods(prev => [...prev, { method: "UPI", amount: 0 }]);
+  };
+
+  const removePaymentMethod = (index: number) => {
+    setPaymentMethods(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updatePaymentMethod = (index: number, field: "method" | "amount", value: string | number) => {
+    setPaymentMethods(prev =>
+      prev.map((pm, i) => i === index ? { ...pm, [field]: value } : pm)
+    );
+  };
 
   // Filter out already selected gift cards
   const availableGiftCards = giftCards.filter(
@@ -172,11 +209,28 @@ export function MovieForm({
       if (initialData.language !== undefined) setValue("language", initialData.language);
       if (initialData.director !== undefined) setValue("director", initialData.director);
       if (initialData.poster_url !== undefined) setValue("poster_url", initialData.poster_url);
+      // TMDB enrichment
+      if (initialData.cast_members !== undefined) setValue("cast_members", initialData.cast_members);
+      if (initialData.composer !== undefined) setValue("composer", initialData.composer);
+      if (initialData.cinematographer !== undefined) setValue("cinematographer", initialData.cinematographer);
+      if (initialData.budget !== undefined) setValue("budget", initialData.budget);
+      if (initialData.box_office !== undefined) setValue("box_office", initialData.box_office);
+      if (initialData.tmdb_rating !== undefined) setValue("tmdb_rating", initialData.tmdb_rating);
+      if (initialData.tmdb_vote_count !== undefined) setValue("tmdb_vote_count", initialData.tmdb_vote_count);
+      if (initialData.certification !== undefined) setValue("certification", initialData.certification);
+      if (initialData.trailer_url !== undefined) setValue("trailer_url", initialData.trailer_url);
+      if (initialData.keywords !== undefined) setValue("keywords", initialData.keywords);
+      if (initialData.overview !== undefined) setValue("overview", initialData.overview);
+      if (initialData.release_date !== undefined) setValue("release_date", initialData.release_date);
     }
   }, [initialData, setValue]);
 
   const onFormSubmit = async (data: MovieFormValues) => {
-    await onSubmit(data as MovieFormData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
+    const formData: MovieFormData = {
+      ...data,
+      payment_methods: paymentMethods.length > 0 ? paymentMethods : undefined,
+    };
+    await onSubmit(formData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
   };
 
   return (
@@ -215,7 +269,7 @@ export function MovieForm({
                   <img
                     src={watch("poster_url")}
                     alt={watch("title")}
-                    className="h-20 w-14 rounded object-cover shadow"
+                    className="h-24 w-16 rounded object-cover shadow"
                   />
                 )}
                 <div className="flex-1 space-y-1">
@@ -237,16 +291,61 @@ export function MovieForm({
                       {watch("director")}
                     </p>
                   )}
-                  {watch("language") && (
+                  {watch("cast_members") && watch("cast_members")!.length > 0 && (
                     <p className="text-sm">
-                      <span className="text-muted-foreground">Language:</span>{" "}
-                      {watch("language")}
+                      <span className="text-muted-foreground">Cast:</span>{" "}
+                      {watch("cast_members")!.join(", ")}
+                    </p>
+                  )}
+                  {watch("composer") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Composer:</span>{" "}
+                      {watch("composer")}
+                    </p>
+                  )}
+                  {watch("cinematographer") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">DOP:</span>{" "}
+                      {watch("cinematographer")}
+                    </p>
+                  )}
+                  {watch("tmdb_rating") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">TMDB:</span>{" "}
+                      {watch("tmdb_rating")}/10
+                      {watch("certification") && (
+                        <span className="ml-2 rounded border px-1 py-0.5 text-xs font-medium">
+                          {watch("certification")}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {(watch("budget") || watch("box_office")) && (
+                    <p className="text-sm">
+                      {watch("budget") ? (
+                        <><span className="text-muted-foreground">Budget:</span> ${(watch("budget")! / 1_000_000).toFixed(0)}M</>
+                      ) : null}
+                      {watch("budget") && watch("box_office") ? " / " : ""}
+                      {watch("box_office") ? (
+                        <><span className="text-muted-foreground">Box Office:</span> ${(watch("box_office")! / 1_000_000).toFixed(0)}M</>
+                      ) : null}
                     </p>
                   )}
                 </div>
               </div>
             </div>
           )}
+
+          {/* Language - editable, pre-filled from TMDB */}
+          <div>
+            <Label htmlFor="language">Language</Label>
+            <Input
+              id="language"
+              {...register("language")}
+              placeholder="e.g., English, Hindi, Japanese Dubbed in Hindi"
+              className="mt-1"
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -330,6 +429,28 @@ export function MovieForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <Label htmlFor="booking_id">Booking ID</Label>
+              <Input
+                id="booking_id"
+                {...register("booking_id")}
+                placeholder="PVR-ABC123"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="passport_savings">Passport Savings</Label>
+              <Input
+                id="passport_savings"
+                type="number"
+                step="0.01"
+                {...register("passport_savings")}
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <Label htmlFor="ticket_cost">Ticket Cost</Label>
               <Input
                 id="ticket_cost"
@@ -340,7 +461,7 @@ export function MovieForm({
               />
             </div>
             <div>
-              <Label htmlFor="convenience_fee">Conv. Fee</Label>
+              <Label htmlFor="convenience_fee">Booking Fee</Label>
               <Input
                 id="convenience_fee"
                 type="number"
@@ -369,7 +490,7 @@ export function MovieForm({
             />
 
             <div>
-              <Label htmlFor="mood_id">Mood *</Label>
+              <Label htmlFor="mood_id">Mood</Label>
               <Select
                 value={watch("mood_id")}
                 onValueChange={(value) => setValue("mood_id", value)}
@@ -556,6 +677,74 @@ export function MovieForm({
             {giftCardUsage.length === 0 && availableGiftCards.length === 0 && (
               <p className="mt-2 text-sm text-muted-foreground">No active gift cards available</p>
             )}
+          </div>
+
+          {/* Payment Methods */}
+          <div>
+            <Label>Payment Methods</Label>
+            {paymentMethods.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {paymentMethods.map((pm, index) => (
+                  <div key={index} className="flex items-center gap-2 rounded-md border p-2">
+                    <Select
+                      value={pm.method}
+                      onValueChange={(value) => updatePaymentMethod(index, "method", value)}
+                    >
+                      <SelectTrigger className="h-8 w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_METHODS.map((method) => (
+                          <SelectItem key={method} value={method}>
+                            {method}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-1 flex-1">
+                      <span className="text-xs text-muted-foreground">₹</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={pm.amount}
+                        onChange={(e) => updatePaymentMethod(index, "amount", parseFloat(e.target.value) || 0)}
+                        className="h-8"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => removePaymentMethod(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={addPaymentMethod}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              Add Payment
+            </Button>
+          </div>
+
+          {/* Watched With */}
+          <div>
+            <Label htmlFor="watched_with">Watched With</Label>
+            <Input
+              id="watched_with"
+              {...register("watched_with")}
+              placeholder="Solo, Friends, Family..."
+              className="mt-1"
+            />
           </div>
 
           {!isAdvanceBooking && (

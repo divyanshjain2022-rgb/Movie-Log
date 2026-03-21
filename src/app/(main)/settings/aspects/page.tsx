@@ -40,6 +40,7 @@ const CATEGORIES = [
     { value: "narrative", label: "Narrative" },
     { value: "technical", label: "Technical" },
     { value: "performance", label: "Performance" },
+    { value: "other", label: "Other" },
 ];
 
 export default function AspectsPage() {

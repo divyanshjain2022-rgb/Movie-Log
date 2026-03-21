@@ -22,6 +22,17 @@ interface TMDBMovieDetails {
   poster_url?: string;
   release_date?: string;
   overview?: string;
+  // Enriched fields
+  cast_members?: string[];
+  composer?: string;
+  cinematographer?: string;
+  budget?: number;
+  box_office?: number;
+  tmdb_rating?: number;
+  tmdb_vote_count?: number;
+  certification?: string;
+  trailer_url?: string;
+  keywords?: string[];
 }
 
 type BookingMode = "watched" | "advance";
@@ -162,16 +173,28 @@ export default function NewMoviePage() {
 
   const handleTMDBSelect = (movie: TMDBMovieDetails) => {
     setTmdbData(movie);
-    // Only update TMDB-specific fields, don't duplicate title
     setExtractedData((prev) => ({
       ...prev,
-      title: movie.title, // Replace title with TMDB title (properly formatted)
+      title: movie.title,
       tmdb_id: movie.tmdb_id,
       runtime_minutes: movie.runtime_minutes,
       genres: movie.genres,
       language: movie.language,
       director: movie.director,
       poster_url: movie.poster_url,
+      // Enriched TMDB fields
+      cast_members: movie.cast_members,
+      composer: movie.composer,
+      cinematographer: movie.cinematographer,
+      budget: movie.budget || undefined,
+      box_office: movie.box_office || undefined,
+      tmdb_rating: movie.tmdb_rating || undefined,
+      tmdb_vote_count: movie.tmdb_vote_count || undefined,
+      certification: movie.certification || undefined,
+      trailer_url: movie.trailer_url || undefined,
+      keywords: movie.keywords,
+      overview: movie.overview || undefined,
+      release_date: movie.release_date || undefined,
     }));
     toast.success("Movie details loaded from TMDB!");
   };
@@ -190,12 +213,12 @@ export default function NewMoviePage() {
         ticket_cost: data.ticket_cost,
         convenience_fee: data.convenience_fee,
         booking_id: data.booking_id || null,
-        tmdb_id: tmdbData?.tmdb_id || data.tmdb_id || null,
-        runtime_minutes: tmdbData?.runtime_minutes || data.runtime_minutes || null,
-        genres: tmdbData?.genres || data.genres || null,
-        language: tmdbData?.language || data.language || null,
-        director: tmdbData?.director || data.director || null,
-        poster_url: tmdbData?.poster_url || data.poster_url || null,
+        tmdb_id: data.tmdb_id || null,
+        runtime_minutes: data.runtime_minutes || null,
+        genres: data.genres || null,
+        language: data.language || null,
+        director: data.director || null,
+        poster_url: data.poster_url || null,
         rating: mode === "advance" ? null : data.rating || null,
         mood_id: mode === "advance" ? null : data.mood_id || null,
         fnb_cost: data.fnb_cost || null,
@@ -207,8 +230,23 @@ export default function NewMoviePage() {
         remarks: data.remarks || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
-        // NOTE: Uncomment after running SQL migration 001_advanced_features.sql
-        // status: mode === "advance" ? "upcoming" : "watched",
+        status: mode === "advance" ? "upcoming" : "watched",
+        // New fields
+        watched_with: data.watched_with || null,
+        payment_methods: data.payment_methods || [],
+        // TMDB enrichment
+        cast_members: data.cast_members || null,
+        composer: data.composer || null,
+        cinematographer: data.cinematographer || null,
+        budget: data.budget || null,
+        box_office: data.box_office || null,
+        tmdb_rating: data.tmdb_rating || null,
+        tmdb_vote_count: data.tmdb_vote_count || null,
+        certification: data.certification || null,
+        trailer_url: data.trailer_url || null,
+        keywords: data.keywords || null,
+        overview: data.overview || null,
+        release_date: data.release_date || null,
       } as any, giftCardUsage);
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");

@@ -6,6 +6,22 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+// Payment method entry for tracking how a movie was paid for
+export interface PaymentMethodEntry {
+  method: string;
+  amount: number;
+}
+
+export const PAYMENT_METHODS = [
+  "UPI",
+  "Credit Card",
+  "Debit Card",
+  "Cash",
+  "PVR Wallet",
+  "Net Banking",
+  "Other",
+] as const;
+
 export interface Database {
   public: {
     Tables: {
@@ -46,6 +62,22 @@ export interface Database {
           total_cost: number;
           value_score: number | null;
           status: "upcoming" | "watched";
+          // New fields (migration 002)
+          watched_with: string | null;
+          payment_methods: PaymentMethodEntry[] | null;
+          // TMDB enrichment (migration 003)
+          cast_members: string[] | null;
+          composer: string | null;
+          cinematographer: string | null;
+          budget: number | null;
+          box_office: number | null;
+          tmdb_rating: number | null;
+          tmdb_vote_count: number | null;
+          certification: string | null;
+          trailer_url: string | null;
+          keywords: string[] | null;
+          overview: string | null;
+          release_date: string | null;
         };
         Insert: {
           id?: string;
@@ -82,6 +114,20 @@ export interface Database {
           passport_savings?: number;
           value_score?: number | null;
           status?: "upcoming" | "watched";
+          watched_with?: string | null;
+          payment_methods?: PaymentMethodEntry[] | null;
+          cast_members?: string[] | null;
+          composer?: string | null;
+          cinematographer?: string | null;
+          budget?: number | null;
+          box_office?: number | null;
+          tmdb_rating?: number | null;
+          tmdb_vote_count?: number | null;
+          certification?: string | null;
+          trailer_url?: string | null;
+          keywords?: string[] | null;
+          overview?: string | null;
+          release_date?: string | null;
         };
         Update: {
           id?: string;
@@ -118,6 +164,20 @@ export interface Database {
           passport_savings?: number;
           value_score?: number | null;
           status?: "upcoming" | "watched";
+          watched_with?: string | null;
+          payment_methods?: PaymentMethodEntry[] | null;
+          cast_members?: string[] | null;
+          composer?: string | null;
+          cinematographer?: string | null;
+          budget?: number | null;
+          box_office?: number | null;
+          tmdb_rating?: number | null;
+          tmdb_vote_count?: number | null;
+          certification?: string | null;
+          trailer_url?: string | null;
+          keywords?: string[] | null;
+          overview?: string | null;
+          release_date?: string | null;
         };
       };
       fnb_purchases: {
@@ -275,6 +335,7 @@ export interface Database {
           has_imax: boolean;
           has_4dx: boolean;
           notes: string | null;
+          capabilities: string[] | null;
         };
         Insert: {
           id?: string;
@@ -284,6 +345,7 @@ export interface Database {
           has_imax?: boolean;
           has_4dx?: boolean;
           notes?: string | null;
+          capabilities?: string[] | null;
         };
         Update: {
           id?: string;
@@ -293,6 +355,7 @@ export interface Database {
           has_imax?: boolean;
           has_4dx?: boolean;
           notes?: string | null;
+          capabilities?: string[] | null;
         };
       };
       moods: {
@@ -437,6 +500,12 @@ export interface MovieWithRelations extends Movie {
   weakest_part?: Aspect | null;
   rewatch?: RewatchOption | null;
   gift_card?: GiftCard | null;
+  // Multi-GC support via junction table
+  movie_gift_cards?: Array<{
+    id: string;
+    amount_used: number;
+    gift_card: GiftCard;
+  }>;
 }
 
 export interface GiftCardWithUsage extends GiftCard {

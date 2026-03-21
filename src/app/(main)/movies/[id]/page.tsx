@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Edit, Trash2 } from "lucide-react";
+import { Edit, Trash2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -130,7 +130,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
         {/* Header with poster */}
         <div className="mb-6 flex gap-4">
           {movie.poster_url ? (
-            <div className="h-32 w-20 flex-shrink-0 overflow-hidden rounded-lg">
+            <div className="h-36 w-24 flex-shrink-0 overflow-hidden rounded-lg">
               <img
                 src={movie.poster_url}
                 alt={movie.title}
@@ -138,12 +138,17 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
               />
             </div>
           ) : (
-            <div className="flex h-32 w-20 flex-shrink-0 items-center justify-center rounded-lg bg-secondary text-2xl">
+            <div className="flex h-36 w-24 flex-shrink-0 items-center justify-center rounded-lg bg-secondary text-2xl">
               🎬
             </div>
           )}
           <div className="flex-1">
             <h1 className="text-xl font-bold">{movie.title}</h1>
+            {movie.certification && (
+              <Badge variant="outline" className="mr-1 mt-1">
+                {movie.certification}
+              </Badge>
+            )}
             {movie.genres && movie.genres.length > 0 && (
               <p className="mt-1 text-sm text-muted-foreground">
                 {movie.genres.join(", ")}
@@ -158,8 +163,57 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                 Dir: {movie.director}
               </p>
             )}
+            {movie.cast_members && movie.cast_members.length > 0 && (
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {movie.cast_members.join(", ")}
+              </p>
+            )}
+            <div className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
+              {movie.composer && <span>Music: {movie.composer}</span>}
+              {movie.composer && movie.cinematographer && <span> \u2022 </span>}
+              {movie.cinematographer && <span>DOP: {movie.cinematographer}</span>}
+            </div>
+            {movie.trailer_url && (
+              <a
+                href={movie.trailer_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                Watch Trailer <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
           </div>
         </div>
+
+        {/* Budget & Box Office */}
+        {(movie.budget || movie.box_office) && (
+          <div className="mb-4 flex gap-3">
+            {movie.budget && movie.budget > 0 && (
+              <div className="flex-1 rounded-lg bg-card p-3 text-center">
+                <p className="text-xs text-muted-foreground">Budget</p>
+                <p className="text-sm font-semibold">${(movie.budget / 1_000_000).toFixed(0)}M</p>
+              </div>
+            )}
+            {movie.box_office && movie.box_office > 0 && (
+              <div className="flex-1 rounded-lg bg-card p-3 text-center">
+                <p className="text-xs text-muted-foreground">Box Office</p>
+                <p className="text-sm font-semibold">${(movie.box_office / 1_000_000).toFixed(0)}M</p>
+              </div>
+            )}
+            {movie.budget && movie.budget > 0 && movie.box_office && movie.box_office > 0 && (
+              <div className="flex-1 rounded-lg bg-card p-3 text-center">
+                <p className="text-xs text-muted-foreground">ROI</p>
+                <p className={cn(
+                  "text-sm font-semibold",
+                  movie.box_office > movie.budget ? "text-positive" : "text-negative"
+                )}>
+                  {((movie.box_office / movie.budget - 1) * 100).toFixed(0)}%
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Rating Section */}
         {movie.rating && (
@@ -181,12 +235,30 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                   )}
                 </div>
               </div>
-              {movie.value_score && (
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">Value Score</p>
-                  <p className="text-lg font-bold">{movie.value_score.toFixed(1)}</p>
-                </div>
-              )}
+              <div className="text-right space-y-1">
+                {movie.tmdb_rating && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">TMDB</p>
+                    <p className="text-sm font-medium">
+                      {movie.tmdb_rating.toFixed(1)}/10
+                      {movie.rating && (
+                        <span className={cn(
+                          "ml-1 text-xs",
+                          movie.rating > movie.tmdb_rating ? "text-positive" : movie.rating < movie.tmdb_rating ? "text-negative" : "text-muted-foreground"
+                        )}>
+                          ({movie.rating > movie.tmdb_rating ? "+" : ""}{(movie.rating - movie.tmdb_rating).toFixed(1)})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+                {movie.value_score && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Value Score</p>
+                    <p className="text-sm font-bold">{movie.value_score.toFixed(1)}</p>
+                  </div>
+                )}
+              </div>
             </div>
             {movie.review && (
               <p className="mt-3 text-sm italic text-muted-foreground">
@@ -202,7 +274,14 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Date</span>
-              <span>{formatDate(movie.date)}</span>
+              <span>
+                {formatDate(movie.date)}
+                {movie.date && (
+                  <span className="ml-1 text-muted-foreground">
+                    ({new Date(movie.date).toLocaleDateString("en-IN", { weekday: "long" })})
+                  </span>
+                )}
+              </span>
             </div>
             {movie.showtime && (
               <div className="flex justify-between">
@@ -222,16 +301,36 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                 <Badge variant="secondary">{movie.format.name}</Badge>
               </div>
             )}
+            {movie.audi && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Audi</span>
+                <span>{movie.audi}</span>
+              </div>
+            )}
             {movie.seat && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Seat</span>
                 <span>{movie.seat}</span>
               </div>
             )}
-            {movie.audi && (
+            {movie.booking_id && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Audi</span>
-                <span>{movie.audi}</span>
+                <span className="text-muted-foreground">Booking ID</span>
+                <span className="font-mono text-xs">{movie.booking_id}</span>
+              </div>
+            )}
+            {movie.watched_with && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Watched With</span>
+                <span>{movie.watched_with}</span>
+              </div>
+            )}
+            {movie.release_date && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Days After Release</span>
+                <span>
+                  {Math.max(0, Math.floor((new Date(movie.date).getTime() - new Date(movie.release_date).getTime()) / (1000 * 60 * 60 * 24)))} days
+                </span>
               </div>
             )}
           </div>
@@ -248,9 +347,15 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
               <span>{formatCurrency(movie.ticket_cost)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Conv. Fee</span>
+              <span className="text-muted-foreground">Booking Fee</span>
               <span>{formatCurrency(movie.convenience_fee)}</span>
             </div>
+            {movie.passport_savings > 0 && (
+              <div className="flex justify-between text-positive">
+                <span>Passport Savings</span>
+                <span>-{formatCurrency(movie.passport_savings)}</span>
+              </div>
+            )}
             {movie.fnb_cost && movie.fnb_cost > 0 && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
@@ -261,7 +366,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             )}
             {movie.other_expenses && movie.other_expenses > 0 && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Other</span>
+                <span className="text-muted-foreground">Other Expenses</span>
                 <span>{formatCurrency(movie.other_expenses)}</span>
               </div>
             )}
@@ -270,15 +375,47 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
               <span>Total</span>
               <span>{formatCurrency(movie.total_cost)}</span>
             </div>
-            {movie.gift_card && (
-              <div className="flex justify-between text-positive">
-                <span>True Cost (GC applied)</span>
-                <span>
-                  {formatCurrency(
-                    movie.total_cost * (1 - movie.gift_card.discount_percent / 100)
-                  )}
-                </span>
-              </div>
+
+            {/* Multi-GC display */}
+            {movie.movie_gift_cards && movie.movie_gift_cards.length > 0 && (
+              <>
+                <Separator className="my-2" />
+                <p className="text-xs font-medium text-muted-foreground">Gift Cards Used</p>
+                {movie.movie_gift_cards.map((mgc) => (
+                  <div key={mgc.id} className="flex justify-between text-positive">
+                    <span>
+                      {mgc.gift_card?.platform_id ? "GC" : "Gift Card"} ({mgc.gift_card?.discount_percent?.toFixed(0)}% off)
+                    </span>
+                    <span>{formatCurrency(mgc.amount_used)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between font-medium text-positive">
+                  <span>Effective Cost</span>
+                  <span>
+                    {formatCurrency(
+                      movie.total_cost -
+                      movie.movie_gift_cards.reduce((sum, mgc) => {
+                        const discount = mgc.gift_card?.discount_percent || 0;
+                        return sum + mgc.amount_used * (discount / 100);
+                      }, 0)
+                    )}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {/* Payment methods */}
+            {movie.payment_methods && (movie.payment_methods as Array<{method: string; amount: number}>).length > 0 && (
+              <>
+                <Separator className="my-2" />
+                <p className="text-xs font-medium text-muted-foreground">Payment Breakdown</p>
+                {(movie.payment_methods as Array<{method: string; amount: number}>).map((pm, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span className="text-muted-foreground">{pm.method}</span>
+                    <span>{formatCurrency(pm.amount)}</span>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </section>
@@ -313,6 +450,34 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             )}
           </div>
         </section>
+
+        {/* Keywords */}
+        {movie.keywords && movie.keywords.length > 0 && (
+          <>
+            <Separator className="my-4" />
+            <section className="mb-6">
+              <h2 className="mb-3 font-semibold">Keywords</h2>
+              <div className="flex flex-wrap gap-1">
+                {movie.keywords.map((kw, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs">
+                    {kw}
+                  </Badge>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
+        {/* Overview */}
+        {movie.overview && (
+          <>
+            <Separator className="my-4" />
+            <section className="mb-6">
+              <h2 className="mb-3 font-semibold">Synopsis</h2>
+              <p className="text-sm text-muted-foreground">{movie.overview}</p>
+            </section>
+          </>
+        )}
 
         {/* Remarks Section */}
         {movie.remarks && (

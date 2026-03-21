@@ -68,6 +68,65 @@ export default function StatsPage() {
       }
     });
 
+    // Genre breakdown
+    const genreCounts: Record<string, number> = {};
+    yearMovies.forEach((m) => {
+      (m.genres || []).forEach((g) => {
+        genreCounts[g] = (genreCounts[g] || 0) + 1;
+      });
+    });
+
+    // Day of week breakdown
+    const dayOfWeekCounts: Record<string, number> = {};
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    yearMovies.forEach((m) => {
+      const day = dayNames[new Date(m.date).getDay()];
+      dayOfWeekCounts[day] = (dayOfWeekCounts[day] || 0) + 1;
+    });
+
+    // Director leaderboard
+    const directorCounts: Record<string, number> = {};
+    yearMovies.forEach((m) => {
+      if (m.director) {
+        directorCounts[m.director] = (directorCounts[m.director] || 0) + 1;
+      }
+    });
+
+    // Your rating vs TMDB rating
+    const ratingComparisons = yearMovies
+      .filter((m) => m.rating && m.tmdb_rating)
+      .map((m) => ({
+        title: m.title,
+        yours: m.rating!,
+        tmdb: m.tmdb_rating!,
+        diff: m.rating! - m.tmdb_rating!,
+      }));
+
+    // F&B stats
+    const totalFnb = yearMovies.reduce((sum, m) => sum + (m.fnb_cost || 0), 0);
+    const fnbPercent = totalSpend > 0 ? (totalFnb / totalSpend) * 100 : 0;
+
+    // Passport savings
+    const totalPassportSavings = yearMovies.reduce((sum, m) => sum + (m.passport_savings || 0), 0);
+
+    // Cost per minute
+    const totalMinutes = yearMovies.reduce((sum, m) => sum + (m.runtime_minutes || 0), 0);
+    const costPerMinute = totalMinutes > 0 ? totalSpend / totalMinutes : 0;
+
+    // Monthly summaries (matching spreadsheet style)
+    const monthlySummaries = Array.from({ length: 12 }, (_, i) => {
+      const monthMovies = yearMovies.filter((m) => new Date(m.date).getMonth() === i);
+      return {
+        month: i,
+        movieCount: monthMovies.length,
+        ticketCost: monthMovies.reduce((sum, m) => sum + m.ticket_cost, 0),
+        passportSavings: monthMovies.reduce((sum, m) => sum + (m.passport_savings || 0), 0),
+        fnbCost: monthMovies.reduce((sum, m) => sum + (m.fnb_cost || 0), 0),
+        totalCost: monthMovies.reduce((sum, m) => sum + m.total_cost, 0),
+        otherExpenses: monthMovies.reduce((sum, m) => sum + (m.other_expenses || 0), 0),
+      };
+    }).filter((s) => s.movieCount > 0);
+
     return {
       year,
       totalMovies,
@@ -78,6 +137,15 @@ export default function StatsPage() {
       theaterCounts,
       monthlyData,
       ratingDist,
+      genreCounts,
+      dayOfWeekCounts,
+      directorCounts,
+      ratingComparisons,
+      totalFnb,
+      fnbPercent,
+      totalPassportSavings,
+      costPerMinute,
+      monthlySummaries,
     };
   }, [movies]);
 
@@ -91,6 +159,7 @@ export default function StatsPage() {
             <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>
             <TabsTrigger value="spending" className="flex-1">Spending</TabsTrigger>
             <TabsTrigger value="ratings" className="flex-1">Ratings</TabsTrigger>
+            <TabsTrigger value="insights" className="flex-1">Insights</TabsTrigger>
           </TabsList>
 
           {isLoading ? (
@@ -187,6 +256,67 @@ export default function StatsPage() {
                     </div>
                   </CardContent>
                 </Card>
+                {/* Genre Breakdown */}
+                {Object.keys(stats.genreCounts).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Genres</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {Object.entries(stats.genreCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .slice(0, 8)
+                          .map(([genre, count]) => (
+                            <div key={genre} className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <div className="flex justify-between text-sm">
+                                  <span>{genre}</span>
+                                  <span className="text-muted-foreground">{count}</span>
+                                </div>
+                                <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
+                                  <div
+                                    className="h-full bg-primary/70"
+                                    style={{
+                                      width: `${(count / stats.totalMovies) * 100}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Day of Week */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Day of Week</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
+                        const fullDay = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][i];
+                        const count = stats.dayOfWeekCounts[fullDay] || 0;
+                        const maxDow = Math.max(...Object.values(stats.dayOfWeekCounts), 1);
+                        return (
+                          <div key={day} className="flex flex-col items-center gap-1">
+                            <div className="h-16 w-full flex items-end justify-center">
+                              <div
+                                className="w-full max-w-6 rounded-t bg-primary"
+                                style={{ height: `${count > 0 ? (count / maxDow) * 100 : 0}%`, minHeight: count > 0 ? '4px' : '0' }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">{day}</span>
+                            {count > 0 && <span className="text-xs font-medium">{count}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="spending" className="space-y-4">
@@ -208,6 +338,59 @@ export default function StatsPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Extra Spending Metrics */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-lg font-bold">{formatCurrency(stats.totalFnb)}</p>
+                      <p className="text-xs text-muted-foreground">F&B ({stats.fnbPercent.toFixed(0)}%)</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-lg font-bold text-positive">{formatCurrency(stats.totalPassportSavings)}</p>
+                      <p className="text-xs text-muted-foreground">Passport Savings</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-lg font-bold">{formatCurrency(stats.costPerMinute)}</p>
+                      <p className="text-xs text-muted-foreground">Cost/Min</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Monthly Summaries (spreadsheet style) */}
+                {stats.monthlySummaries.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Monthly Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {stats.monthlySummaries.map((s) => {
+                          const monthName = new Date(2000, s.month).toLocaleString("default", { month: "long" });
+                          return (
+                            <div key={s.month} className="rounded-lg bg-secondary/30 p-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-medium">{monthName}</span>
+                                <span className="text-sm text-muted-foreground">{s.movieCount} movies</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                                <span>Tickets: {formatCurrency(s.ticketCost)}</span>
+                                <span>F&B: {formatCurrency(s.fnbCost)}</span>
+                                <span>Total: {formatCurrency(s.totalCost)}</span>
+                                {s.passportSavings > 0 && <span className="text-positive">Saved: {formatCurrency(s.passportSavings)}</span>}
+                                {s.otherExpenses > 0 && <span>Other: {formatCurrency(s.otherExpenses)}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Monthly Spending */}
                 <Card>
@@ -281,6 +464,73 @@ export default function StatsPage() {
                     </div>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="insights" className="space-y-4">
+                {/* Your Rating vs TMDB */}
+                {stats.ratingComparisons.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Your Rating vs TMDB</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {stats.ratingComparisons
+                          .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+                          .slice(0, 10)
+                          .map((r, i) => (
+                            <div key={i} className="flex items-center justify-between text-sm">
+                              <span className="flex-1 truncate">{r.title}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{r.yours.toFixed(1)}</span>
+                                <span className="text-muted-foreground">vs</span>
+                                <span className="text-muted-foreground">{r.tmdb.toFixed(1)}</span>
+                                <span className={r.diff > 0 ? "text-positive text-xs" : r.diff < 0 ? "text-negative text-xs" : "text-xs"}>
+                                  {r.diff > 0 ? "+" : ""}{r.diff.toFixed(1)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      {stats.ratingComparisons.length > 0 && (
+                        <div className="mt-3 rounded-lg bg-secondary/30 p-2 text-center text-sm">
+                          You rate{" "}
+                          {(() => {
+                            const avgDiff = stats.ratingComparisons.reduce((sum, r) => sum + r.diff, 0) / stats.ratingComparisons.length;
+                            return avgDiff > 0.3
+                              ? <span className="font-medium text-positive">{avgDiff.toFixed(1)} higher</span>
+                              : avgDiff < -0.3
+                              ? <span className="font-medium text-negative">{Math.abs(avgDiff).toFixed(1)} lower</span>
+                              : <span className="font-medium">about the same</span>;
+                          })()}{" "}
+                          than TMDB average
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Director Leaderboard */}
+                {Object.keys(stats.directorCounts).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Directors Watched</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {Object.entries(stats.directorCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .slice(0, 8)
+                          .map(([director, count]) => (
+                            <div key={director} className="flex justify-between text-sm">
+                              <span>{director}</span>
+                              <span className="text-muted-foreground">{count} {count === 1 ? "movie" : "movies"}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
             </>
           )}

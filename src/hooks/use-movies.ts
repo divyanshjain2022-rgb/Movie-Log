@@ -24,7 +24,8 @@ export function useMovies() {
           strongest_part:aspects!movies_strongest_part_id_fkey(*),
           weakest_part:aspects!movies_weakest_part_id_fkey(*),
           rewatch:rewatch_options(*),
-          gift_card:gift_cards(*)
+          gift_card:gift_cards(*),
+          movie_gift_cards(id, amount_used, gift_card:gift_cards(*))
         `)
         .order("date", { ascending: false });
 

@@ -41,6 +41,11 @@ export default function TheatersPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
+        const capabilitiesStr = formData.get("capabilities") as string;
+        const capabilities = capabilitiesStr
+            ? capabilitiesStr.split(",").map(c => c.trim()).filter(Boolean)
+            : [];
+
         try {
             await addTheater({
                 user_id: "",
@@ -49,6 +54,7 @@ export default function TheatersPage() {
                 has_imax: formData.get("has_imax") === "on",
                 has_4dx: formData.get("has_4dx") === "on",
                 notes: (formData.get("notes") as string) || null,
+                capabilities,
             });
             toast.success("Theater added!");
             setIsAddDialogOpen(false);
@@ -65,6 +71,11 @@ export default function TheatersPage() {
         const formData = new FormData(e.currentTarget);
         setIsSubmitting(true);
 
+        const updateCapStr = formData.get("capabilities") as string;
+        const updateCapabilities = updateCapStr
+            ? updateCapStr.split(",").map(c => c.trim()).filter(Boolean)
+            : [];
+
         try {
             await updateTheater(editingTheater.id, {
                 name: formData.get("name") as string,
@@ -72,6 +83,7 @@ export default function TheatersPage() {
                 has_imax: formData.get("has_imax") === "on",
                 has_4dx: formData.get("has_4dx") === "on",
                 notes: (formData.get("notes") as string) || null,
+                capabilities: updateCapabilities,
             });
             toast.success("Theater updated!");
             setEditingTheater(null);
@@ -139,6 +151,17 @@ export default function TheatersPage() {
                     />
                     <span className="text-sm">Has 4DX</span>
                 </label>
+            </div>
+            <div>
+                <Label htmlFor="capabilities">Capabilities</Label>
+                <Input
+                    id="capabilities"
+                    name="capabilities"
+                    defaultValue={theater?.capabilities?.join(", ") || ""}
+                    placeholder="PXL, MX4D, Dolby Atmos, ScreenX, Kotak Insignia..."
+                    className="mt-1"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Comma-separated list of formats/features</p>
             </div>
             <div>
                 <Label htmlFor="notes">Notes</Label>
@@ -228,9 +251,12 @@ export default function TheatersPage() {
                                         {theater.city && (
                                             <p className="text-sm text-muted-foreground">{theater.city}</p>
                                         )}
-                                        <div className="mt-1 flex gap-1">
+                                        <div className="mt-1 flex flex-wrap gap-1">
                                             {theater.has_imax && <Badge variant="secondary" className="text-xs">IMAX</Badge>}
                                             {theater.has_4dx && <Badge variant="secondary" className="text-xs">4DX</Badge>}
+                                            {theater.capabilities?.map((cap) => (
+                                                <Badge key={cap} variant="outline" className="text-xs">{cap}</Badge>
+                                            ))}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1">

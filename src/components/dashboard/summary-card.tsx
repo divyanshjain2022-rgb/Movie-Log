@@ -1,6 +1,6 @@
 "use client";
 
-import { Film, TrendingUp, Star } from "lucide-react";
+import { Film, TrendingUp, Star, Clock } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
 
 interface SummaryCardProps {
@@ -8,6 +8,7 @@ interface SummaryCardProps {
   totalSpend: number;
   movieCount: number;
   averageRating: number;
+  totalRuntime?: number;
 }
 
 export function SummaryCard({
@@ -15,7 +16,11 @@ export function SummaryCard({
   totalSpend,
   movieCount,
   averageRating,
+  totalRuntime,
 }: SummaryCardProps) {
+  const runtimeHours = totalRuntime ? Math.floor(totalRuntime / 60) : 0;
+  const runtimeMins = totalRuntime ? totalRuntime % 60 : 0;
+
   return (
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent p-6 border border-primary/20">
       {/* Background decoration */}
@@ -35,7 +40,7 @@ export function SummaryCard({
         </div>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" />
@@ -61,6 +66,18 @@ export function SummaryCard({
               {averageRating > 0 ? averageRating.toFixed(1) : "—"}
             </div>
           </div>
+
+          {totalRuntime != null && totalRuntime > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                <span className="text-xs">In Theaters</span>
+              </div>
+              <div className="text-lg font-semibold">
+                {runtimeHours}h {runtimeMins}m
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Rating bar */}
