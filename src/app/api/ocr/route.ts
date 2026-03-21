@@ -249,6 +249,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("[OCR] Parsed:", JSON.stringify(geminiData, null, 2));
+    console.log("[OCR] show_time field:", JSON.stringify(geminiData.show_time), "| Type:", typeof geminiData.show_time);
 
     // Calculate ticket_cost and convenience_fee from the breakdown
     let ticket_cost: number | null = null;

@@ -152,7 +152,19 @@ export default function NewMoviePage() {
       }
 
       const data: TicketOCRData = await response.json();
+      console.log("[OCR] Full API response:", JSON.stringify(data, null, 2));
       setOcrRawData(data); // Store raw data for theater/format matching
+
+      // Show debug info for missing fields
+      const missing: string[] = [];
+      if (!data.movie_title) missing.push("title");
+      if (!data.date) missing.push("date");
+      if (!data.showtime) missing.push("showtime");
+      if (!data.theater) missing.push("theater");
+      if (!data.audi) missing.push("audi");
+      if (!data.format) missing.push("format");
+      if (!data.ticket_cost) missing.push("ticket_cost");
+      if (!data.booking_id) missing.push("booking_id");
 
       setExtractedData({
         title: data.movie_title || "",
@@ -166,7 +178,18 @@ export default function NewMoviePage() {
       });
 
       setShowForm(true);
-      toast.success("Ticket data extracted!");
+
+      if (missing.length > 0) {
+        toast.warning(`Extracted but missing: ${missing.join(", ")}`, { duration: 8000 });
+      } else {
+        toast.success("All ticket data extracted!");
+      }
+
+      // Debug toast with raw values
+      toast.info(
+        `OCR Debug: title="${data.movie_title}" | showtime="${data.showtime}" | date="${data.date}" | theater="${data.theater}" | audi="${data.audi}" | format="${data.format}" | cost=${data.ticket_cost} | fee=${data.convenience_fee} | booking="${data.booking_id}"`,
+        { duration: 15000 }
+      );
     } catch (error: any) {
       const msg = error?.message || "Unknown error";
       toast.error(msg.includes("Missing API Key")
