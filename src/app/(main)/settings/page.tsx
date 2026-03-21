@@ -1,7 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Download, Palette, MapPin, Smile, Star, RotateCcw, Calculator } from "lucide-react";
+import {
+  ChevronRight,
+  Download,
+  Upload,
+  MapPin,
+  Smile,
+  Star,
+  RotateCcw,
+  Calculator,
+  Palette,
+  Wallet,
+  Users,
+  Clapperboard,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared";
 
@@ -9,7 +22,16 @@ const settingsGroups = [
   {
     title: "Data",
     items: [
-      { href: "/settings/export", icon: Download, label: "Export to CSV" },
+      { href: "/settings/export", icon: Download, label: "Export (CSV / PDF)" },
+      { href: "/settings/import", icon: Upload, label: "Import from CSV" },
+    ],
+  },
+  {
+    title: "Features",
+    items: [
+      { href: "/settings/budget", icon: Wallet, label: "Monthly Budget" },
+      { href: "/companions", icon: Users, label: "Companions" },
+      { href: "/franchises", icon: Clapperboard, label: "Franchises" },
     ],
   },
   {
@@ -57,7 +79,7 @@ export default function SettingsPage() {
         ))}
 
         <p className="text-center text-xs text-muted-foreground">
-          CinemaLog v0.1.0
+          CinemaLog v0.2.0
         </p>
       </div>
     </div>

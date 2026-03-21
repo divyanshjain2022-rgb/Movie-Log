@@ -25,7 +25,9 @@ export function useMovies() {
           weakest_part:aspects!movies_weakest_part_id_fkey(*),
           rewatch:rewatch_options(*),
           gift_card:gift_cards(*),
-          movie_gift_cards(id, amount_used, gift_card:gift_cards(*))
+          movie_gift_cards(id, amount_used, gift_card:gift_cards(*)),
+          franchise:franchises(*),
+          movie_companions(id, companion:companions(*))
         `)
         .order("date", { ascending: false });
 
@@ -64,7 +66,9 @@ export function useMovie(id: string) {
             strongest_part:aspects!movies_strongest_part_id_fkey(*),
             weakest_part:aspects!movies_weakest_part_id_fkey(*),
             rewatch:rewatch_options(*),
-            gift_card:gift_cards(*)
+            gift_card:gift_cards(*),
+            franchise:franchises(*),
+            movie_companions(id, companion:companions(*))
           `)
           .eq("id", id)
           .single();

@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { RatingSlider } from "./rating-slider";
 import { Plus, X } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
+import { Switch } from "@/components/ui/switch";
 import type {
   Format,
   Theater,
@@ -27,6 +28,9 @@ import type {
   GiftCardWithUsage,
   MovieFormData,
   GiftCardUsageEntry,
+  Franchise,
+  Companion,
+  MovieWithRelations,
 } from "@/types";
 import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
 
@@ -74,6 +78,10 @@ const movieFormSchema = z.object({
   keywords: z.array(z.string()).optional(),
   overview: z.string().optional(),
   release_date: z.string().optional(),
+  // Feature expansion
+  franchise_id: z.string().optional(),
+  is_rewatch: z.boolean().optional(),
+  original_movie_id: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
@@ -86,11 +94,15 @@ interface MovieFormProps {
   aspects: Aspect[];
   rewatchOptions: RewatchOption[];
   giftCards: GiftCardWithUsage[];
+  franchises?: Franchise[];
+  companions?: Companion[];
+  allMovies?: MovieWithRelations[];
   onSubmit: (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => Promise<void>;
   isLoading?: boolean;
   isEditing?: boolean;
   isAdvanceBooking?: boolean;
   initialGiftCardUsage?: GiftCardUsageEntry[];
+  initialCompanionIds?: string[];
 }
 
 export function MovieForm({
@@ -101,11 +113,15 @@ export function MovieForm({
   aspects,
   rewatchOptions,
   giftCards,
+  franchises = [],
+  companions = [],
+  allMovies = [],
   onSubmit,
   isLoading = false,
   isEditing = false,
   isAdvanceBooking = false,
   initialGiftCardUsage = [],
+  initialCompanionIds = [],
 }: MovieFormProps) {
   const {
     register,
@@ -151,6 +167,12 @@ export function MovieForm({
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodEntry[]>(
     (initialData?.payment_methods as PaymentMethodEntry[]) || []
   );
+
+  // State for companions
+  const [selectedCompanionIds, setSelectedCompanionIds] = useState<string[]>(initialCompanionIds);
+
+  // State for rewatch
+  const [isRewatch, setIsRewatch] = useState(initialData?.is_rewatch || false);
 
   const addPaymentMethod = () => {
     setPaymentMethods(prev => [...prev, { method: "UPI", amount: 0 }]);
@@ -229,6 +251,8 @@ export function MovieForm({
     const formData: MovieFormData = {
       ...data,
       payment_methods: paymentMethods.length > 0 ? paymentMethods : undefined,
+      is_rewatch: isRewatch,
+      companion_ids: selectedCompanionIds.length > 0 ? selectedCompanionIds : undefined,
     };
     await onSubmit(formData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
   };
@@ -736,7 +760,98 @@ export function MovieForm({
             </Button>
           </div>
 
-          {/* Watched With */}
+          {/* Franchise */}
+          {franchises.length > 0 && (
+            <div>
+              <Label>Franchise</Label>
+              <Select
+                value={watch("franchise_id") || ""}
+                onValueChange={(v) => setValue("franchise_id", v === "none" ? undefined : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {franchises.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Rewatch Toggle */}
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label className="text-sm font-medium">This is a rewatch</Label>
+              <p className="text-xs text-muted-foreground">Link to original viewing</p>
+            </div>
+            <Switch checked={isRewatch} onCheckedChange={setIsRewatch} />
+          </div>
+
+          {/* Original Movie Selector (when rewatch) */}
+          {isRewatch && allMovies.length > 0 && (
+            <div>
+              <Label>Original Viewing</Label>
+              <Select
+                value={watch("original_movie_id") || ""}
+                onValueChange={(v) => setValue("original_movie_id", v === "none" ? undefined : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select original movie..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {allMovies
+                    .filter((m) => !m.is_rewatch)
+                    .sort((a, b) => b.title.localeCompare(a.title))
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.title} ({new Date(m.date).toLocaleDateString("en-IN", { month: "short", year: "numeric" })})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Companions */}
+          {companions.length > 0 && (
+            <div>
+              <Label className="mb-2 block">Companions</Label>
+              <div className="flex flex-wrap gap-2">
+                {companions.map((c) => {
+                  const selected = selectedCompanionIds.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedCompanionIds((prev) =>
+                          selected
+                            ? prev.filter((id) => id !== c.id)
+                            : [...prev, c.id]
+                        )
+                      }
+                      className={`flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors ${
+                        selected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      <span>{c.avatar_emoji}</span>
+                      <span>{c.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Watched With (free text fallback) */}
           <div>
             <Label htmlFor="watched_with">Watched With</Label>
             <Input

@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Edit, Trash2, ExternalLink } from "lucide-react";
+import { Edit, Trash2, ExternalLink, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
-import { useMovie, useDeleteMovie } from "@/hooks";
+import { PhotoGallery } from "@/components/movies/photo-gallery";
+import { ShareableCard } from "@/components/movies/shareable-card";
+import { TheaterRatingForm } from "@/components/movies/theater-rating-form";
+import { useMovie, useDeleteMovie, useMovies } from "@/hooks";
 import {
   formatCurrency,
   formatDate,
@@ -39,6 +42,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const { id } = use(params);
   const router = useRouter();
   const { movie, isLoading, error } = useMovie(id);
+  const { movies: allMovies } = useMovies();
   const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
@@ -91,6 +95,11 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
         showBack
         action={
           <div className="flex items-center gap-1">
+            <ShareableCard movie={movie}>
+              <Button variant="ghost" size="sm">
+                <Share2 className="h-4 w-4" />
+              </Button>
+            </ShareableCard>
             <Link href={`/movies/${id}/edit`}>
               <Button variant="ghost" size="sm">
                 <Edit className="mr-2 h-4 w-4" />
@@ -160,18 +169,54 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             </p>
             {movie.director && (
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Dir: {movie.director}
+                Dir:{" "}
+                <Link
+                  href={`/crew/${encodeURIComponent(movie.director)}`}
+                  className="text-primary hover:underline"
+                >
+                  {movie.director}
+                </Link>
               </p>
             )}
             {movie.cast_members && movie.cast_members.length > 0 && (
               <p className="mt-0.5 text-sm text-muted-foreground">
-                {movie.cast_members.join(", ")}
+                {movie.cast_members.map((actor, i) => (
+                  <span key={actor}>
+                    {i > 0 && ", "}
+                    <Link
+                      href={`/crew/${encodeURIComponent(actor)}`}
+                      className="text-primary hover:underline"
+                    >
+                      {actor}
+                    </Link>
+                  </span>
+                ))}
               </p>
             )}
             <div className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
-              {movie.composer && <span>Music: {movie.composer}</span>}
+              {movie.composer && (
+                <span>
+                  Music:{" "}
+                  <Link
+                    href={`/crew/${encodeURIComponent(movie.composer)}`}
+                    className="text-primary hover:underline"
+                  >
+                    {movie.composer}
+                  </Link>
+                </span>
+              )}
               {movie.composer && movie.cinematographer && <span> \u2022 </span>}
-              {movie.cinematographer && <span>DOP: {movie.cinematographer}</span>}
+              {movie.cinematographer && (
+                <span>
+                  DOP:{" "}
+                  <Link
+                    href={`/crew/${encodeURIComponent(movie.cinematographer)}`}
+                    className="text-primary hover:underline"
+                  >
+                    {movie.cinematographer}
+                  </Link>
+                </span>
+              )}
             </div>
             {movie.trailer_url && (
               <a
@@ -292,7 +337,18 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             {movie.theater && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Theater</span>
-                <span>{movie.theater.name}</span>
+                <div className="flex items-center gap-2">
+                  <span>{movie.theater.name}</span>
+                  <TheaterRatingForm
+                    theaterId={movie.theater.id}
+                    audi={movie.audi || undefined}
+                    movieId={movie.id}
+                  >
+                    <button className="text-xs text-primary hover:underline">
+                      Rate
+                    </button>
+                  </TheaterRatingForm>
+                </div>
               </div>
             )}
             {movie.format && (
@@ -478,6 +534,69 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             </section>
           </>
         )}
+
+        {/* Photo Gallery */}
+        <Separator className="my-4" />
+        <section className="mb-6">
+          <PhotoGallery movieId={movie.id} />
+        </section>
+
+        {/* Rewatch History */}
+        {(() => {
+          // Find rewatches of this movie, or if this is a rewatch, find the original + siblings
+          const originalId = movie.is_rewatch ? movie.original_movie_id : movie.id;
+          const rewatches = originalId
+            ? allMovies.filter(
+                (m) =>
+                  (m.original_movie_id === originalId || m.id === originalId) &&
+                  m.id !== movie.id
+              )
+            : [];
+
+          if (rewatches.length === 0) return null;
+
+          return (
+            <>
+              <Separator className="my-4" />
+              <section className="mb-6">
+                <h2 className="mb-3 font-semibold">
+                  {movie.is_rewatch ? "Other Viewings" : "Rewatches"}
+                </h2>
+                <div className="space-y-2">
+                  {rewatches
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .map((r) => (
+                      <Link
+                        key={r.id}
+                        href={`/movies/${r.id}`}
+                        className="flex items-center justify-between rounded-lg border p-3 hover:bg-secondary/50"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">
+                            {formatDate(r.date)}
+                            {r.is_rewatch && (
+                              <Badge variant="secondary" className="ml-2 text-[10px]">
+                                Rewatch
+                              </Badge>
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {r.theater?.name}
+                            {r.format?.name && ` \u2022 ${r.format.name}`}
+                          </p>
+                        </div>
+                        {r.rating && (
+                          <span className={cn("text-lg font-bold", getRatingColor(r.rating))}>
+                            {r.rating.toFixed(1)}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                </div>
+              </section>
+            </>
+          );
+        })()}
 
         {/* Remarks Section */}
         {movie.remarks && (

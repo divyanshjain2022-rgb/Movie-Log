@@ -6,6 +6,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared";
 import { useMovies } from "@/hooks";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  LineChart,
+  Line,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 import { formatCurrency } from "@/lib/formula";
 
 export default function StatsPage() {
@@ -127,6 +139,47 @@ export default function StatsPage() {
       };
     }).filter((s) => s.movieCount > 0);
 
+    // Cost per minute per format (grouped bar chart data)
+    const formatDetailsMap: Record<string, { totalCost: number; totalMin: number; totalRating: number; ratedCount: number; count: number }> = {};
+    yearMovies.forEach((m) => {
+      const format = m.format?.name || "Unknown";
+      if (!formatDetailsMap[format]) {
+        formatDetailsMap[format] = { totalCost: 0, totalMin: 0, totalRating: 0, ratedCount: 0, count: 0 };
+      }
+      formatDetailsMap[format].totalCost += m.total_cost;
+      formatDetailsMap[format].totalMin += m.runtime_minutes || 0;
+      formatDetailsMap[format].count += 1;
+      if (m.rating) {
+        formatDetailsMap[format].totalRating += m.rating;
+        formatDetailsMap[format].ratedCount += 1;
+      }
+    });
+    const costPerMinuteByFormat = Object.entries(formatDetailsMap)
+      .map(([format, d]) => ({
+        format,
+        costPerMin: d.totalMin > 0 ? +(d.totalCost / d.totalMin).toFixed(2) : 0,
+        avgRating: d.ratedCount > 0 ? +(d.totalRating / d.ratedCount).toFixed(1) : 0,
+        count: d.count,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Price trends - avg ticket cost per month (line chart)
+    const priceTrends = Array.from({ length: 12 }, (_, i) => {
+      const monthMovies = yearMovies.filter((m) => new Date(m.date).getMonth() === i);
+      const avgTicket = monthMovies.length > 0
+        ? monthMovies.reduce((sum, m) => sum + m.ticket_cost, 0) / monthMovies.length
+        : 0;
+      const avgTotal = monthMovies.length > 0
+        ? monthMovies.reduce((sum, m) => sum + m.total_cost, 0) / monthMovies.length
+        : 0;
+      return {
+        month: new Date(2000, i).toLocaleString("default", { month: "short" }),
+        avgTicket: +avgTicket.toFixed(0),
+        avgTotal: +avgTotal.toFixed(0),
+        count: monthMovies.length,
+      };
+    }).filter((d) => d.count > 0);
+
     return {
       year,
       totalMovies,
@@ -146,6 +199,8 @@ export default function StatsPage() {
       totalPassportSavings,
       costPerMinute,
       monthlySummaries,
+      costPerMinuteByFormat,
+      priceTrends,
     };
   }, [movies]);
 
@@ -360,6 +415,62 @@ export default function StatsPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Cost per Minute by Format */}
+                {stats.costPerMinuteByFormat.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Cost/Min by Format</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={stats.costPerMinuteByFormat}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis dataKey="format" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            formatter={(value: number, name: string) => [
+                              name === "costPerMin" ? `₹${value}/min` : value,
+                              name === "costPerMin" ? "Cost/Min" : "Avg Rating",
+                            ]}
+                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Bar dataKey="costPerMin" fill="hsl(var(--primary))" name="Cost/Min" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="avgRating" fill="hsl(var(--primary) / 0.4)" name="Avg Rating" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Price Trends */}
+                {stats.priceTrends.length > 1 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Price Trends</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={stats.priceTrends}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            formatter={(value: number, name: string) => [
+                              `₹${value}`,
+                              name === "avgTicket" ? "Avg Ticket" : "Avg Total",
+                            ]}
+                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="avgTicket" stroke="hsl(var(--primary))" name="Avg Ticket" strokeWidth={2} dot={{ r: 3 }} />
+                          <Line type="monotone" dataKey="avgTotal" stroke="hsl(var(--primary) / 0.5)" name="Avg Total" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Monthly Summaries (spreadsheet style) */}
                 {stats.monthlySummaries.length > 0 && (

@@ -48,6 +48,11 @@ export interface MovieFormData {
   keywords?: string[];
   overview?: string;
   release_date?: string;
+  // Feature expansion
+  franchise_id?: string;
+  original_movie_id?: string;
+  is_rewatch?: boolean;
+  companion_ids?: string[];
 }
 
 export interface FnbFormData {

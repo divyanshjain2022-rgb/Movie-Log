@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Plus, Settings, Film, Sparkles } from "lucide-react";
+import { Plus, Settings, Film, Sparkles, Calendar, Clock, ListTodo } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   SummaryCard,
@@ -10,11 +10,15 @@ import {
   RecentMovies,
   GCStatus,
 } from "@/components/dashboard";
-import { useMovies, useGiftCards } from "@/hooks";
+import { useMovies, useGiftCards, useWatchlist, useBudgets } from "@/hooks";
+import { formatCurrency } from "@/lib/formula";
+import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { movies, isLoading: moviesLoading } = useMovies();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
+  const { items: watchlistItems } = useWatchlist();
+  const { budgets } = useBudgets();
 
   const year = new Date().getFullYear();
 
@@ -155,6 +159,70 @@ export default function DashboardPage() {
             <GCStatus giftCards={giftCards} />
           )}
         </section>
+
+        {/* Quick Links */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link
+            href="/calendar"
+            className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-secondary/50"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
+              <Calendar className="h-5 w-5 text-blue-500" />
+            </div>
+            <span className="text-sm font-medium">Calendar</span>
+          </Link>
+          <Link
+            href="/watchlist"
+            className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-secondary/50"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-500/10">
+              <ListTodo className="h-5 w-5 text-orange-500" />
+            </div>
+            <div>
+              <span className="text-sm font-medium">Watchlist</span>
+              {watchlistItems.filter((w) => !w.watched_movie_id).length > 0 && (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({watchlistItems.filter((w) => !w.watched_movie_id).length})
+                </span>
+              )}
+            </div>
+          </Link>
+        </div>
+
+        {/* Budget Progress (current month) */}
+        {(() => {
+          const now = new Date();
+          const currentBudget = budgets.find(
+            (b) => b.month === now.getMonth() + 1 && b.year === now.getFullYear()
+          );
+          if (!currentBudget) return null;
+          const monthMovies = movies.filter((m) => {
+            const d = new Date(m.date);
+            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+          });
+          const monthSpend = monthMovies.reduce((sum, m) => sum + m.total_cost, 0);
+          const pct = currentBudget.amount > 0 ? (monthSpend / currentBudget.amount) * 100 : 0;
+          const barColor = pct > 100 ? "bg-red-500" : pct > 75 ? "bg-yellow-500" : "bg-green-500";
+
+          return (
+            <Link href="/settings/budget" className="block">
+              <div className="rounded-xl border p-3">
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="text-muted-foreground">Monthly Budget</span>
+                  <span className="font-medium">
+                    {formatCurrency(monthSpend)} / {formatCurrency(currentBudget.amount)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className={cn("h-full rounded-full transition-all", barColor)}
+                    style={{ width: `${Math.min(pct, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </Link>
+          );
+        })()}
 
         {/* Year Wrapped CTA */}
         {!isLoading && stats.movieCount > 0 && (

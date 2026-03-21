@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Upload, Camera, Loader2 } from "lucide-react";
+import { useState, useCallback, useRef } from "react";
+import { Upload, Camera, Loader2, FileImage } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -10,12 +10,18 @@ interface TicketUploadProps {
   isLoading?: boolean;
 }
 
+const ACCEPTED_TYPES = "image/*,application/pdf";
+
 export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith("image/")) {
+      const isImage = file.type.startsWith("image/");
+      const isPDF = file.type === "application/pdf";
+      if (!isImage && !isPDF) {
         return;
       }
       await onUpload(file);
@@ -51,6 +57,8 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
       if (file) {
         handleFile(file);
       }
+      // Reset so the same file can be re-selected
+      e.target.value = "";
     },
     [handleFile]
   );
@@ -58,7 +66,7 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
   return (
     <div
       className={cn(
-        "relative rounded-lg border-2 border-dashed p-8 text-center transition-colors",
+        "relative rounded-lg border-2 border-dashed p-6 text-center transition-colors",
         isDragOver
           ? "border-primary bg-primary/5"
           : "border-border hover:border-primary/50",
@@ -68,12 +76,24 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
+      {/* Hidden file inputs */}
+      {/* Gallery/files input - no capture attribute so user gets file picker */}
       <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPTED_TYPES}
+        onChange={handleInputChange}
+        className="hidden"
+        disabled={isLoading}
+      />
+      {/* Camera input - capture attribute for direct camera on mobile */}
+      <input
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         onChange={handleInputChange}
-        className="absolute inset-0 cursor-pointer opacity-0"
+        className="hidden"
         disabled={isLoading}
       />
 
@@ -85,19 +105,37 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
           </p>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex gap-2">
-            <div className="rounded-full bg-secondary p-3">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className="flex flex-col items-center gap-1.5 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/80 active:scale-95"
+            >
               <Camera className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div className="rounded-full bg-secondary p-3">
+              <span className="text-xs text-muted-foreground">Camera</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center gap-1.5 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/80 active:scale-95"
+            >
+              <FileImage className="h-6 w-6 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Gallery</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center gap-1.5 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/80 active:scale-95"
+            >
               <Upload className="h-6 w-6 text-muted-foreground" />
-            </div>
+              <span className="text-xs text-muted-foreground">File/PDF</span>
+            </button>
           </div>
           <div>
-            <p className="font-medium">Tap to upload ticket</p>
+            <p className="font-medium">Upload ticket</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              or drag and drop an image
+              Image or PDF — tap a button or drag and drop
             </p>
           </div>
         </div>

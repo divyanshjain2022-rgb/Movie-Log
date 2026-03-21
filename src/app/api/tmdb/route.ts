@@ -78,6 +78,17 @@ export async function GET(request: NextRequest) {
       const certRelease = inRelease || usRelease;
       const certification = certRelease?.release_dates?.[0]?.certification || null;
 
+      // Collection/franchise info
+      const collection = movie.belongs_to_collection
+        ? {
+            id: movie.belongs_to_collection.id,
+            name: movie.belongs_to_collection.name,
+            poster_url: movie.belongs_to_collection.poster_path
+              ? `https://image.tmdb.org/t/p/w500${movie.belongs_to_collection.poster_path}`
+              : null,
+          }
+        : null;
+
       return NextResponse.json({
         tmdb_id: movie.id,
         title: movie.title,
@@ -101,6 +112,7 @@ export async function GET(request: NextRequest) {
         certification,
         trailer_url: trailerUrl,
         keywords,
+        collection,
       });
     }
 
@@ -135,6 +147,36 @@ export async function GET(request: NextRequest) {
       }));
 
       return NextResponse.json({ results: movies });
+    }
+
+    // Upcoming movies
+    const upcoming = searchParams.get("upcoming");
+    if (upcoming === "true") {
+      const upcomingResponse = await fetch(
+        `${TMDB_BASE_URL}/movie/upcoming?api_key=${TMDB_API_KEY}&region=IN`
+      );
+
+      if (!upcomingResponse.ok) {
+        return NextResponse.json({ error: "Failed to fetch upcoming" }, { status: 500 });
+      }
+
+      const results = await upcomingResponse.json();
+      const upcomingMovies = results.results.slice(0, 10).map((movie: {
+        id: number;
+        title: string;
+        release_date?: string;
+        poster_path?: string;
+        genre_ids?: number[];
+      }) => ({
+        tmdb_id: movie.id,
+        title: movie.title,
+        release_date: movie.release_date,
+        poster_url: movie.poster_path
+          ? `https://image.tmdb.org/t/p/w200${movie.poster_path}`
+          : null,
+      }));
+
+      return NextResponse.json({ results: upcomingMovies });
     }
 
     return NextResponse.json(

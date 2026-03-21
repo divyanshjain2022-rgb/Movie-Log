@@ -10,7 +10,7 @@ Extract ALL data accurately from booking confirmations and tax invoices.
 
 CRITICAL RULES:
 
-1. **Movie Title**: 
+1. **Movie Title**:
    - Clean title: Remove format tags (IMAX, 3D, 4DX), language (Hindi, English), certifications (UA, A).
    - "ZOOTOPIA 2 (3D ENGLISH IMAX WITH" -> "ZOOTOPIA 2"
 
@@ -36,7 +36,7 @@ CRITICAL RULES:
    - **cgst**: "CGST" amount (e.g., ₹30.51)
    - **sgst**: "SGST" amount (e.g., ₹30.51)
    - **amount_paid**: "AMOUNT PAID" (e.g., ₹400.00)
-   
+
    For simpler receipts:
    - **ticket_total**: Look for "Total Ticket Price" or line ending in .00
    - **convenience_fee**: "Convenience Fee" + any taxes listed below it
@@ -88,6 +88,64 @@ interface TicketData {
   booking_id: string | null;
 }
 
+// Detect MIME type from base64 data URI or raw base64
+function detectMimeType(imageData: string, providedMime?: string): string {
+  // Check for data URI prefix
+  const dataUriMatch = imageData.match(/^data:([^;]+);base64,/);
+  if (dataUriMatch) {
+    return dataUriMatch[1];
+  }
+
+  // Use provided mime type if available
+  if (providedMime) {
+    return providedMime;
+  }
+
+  // Try to detect from base64 magic bytes
+  // Decode first few bytes
+  try {
+    const raw = atob(imageData.substring(0, 16));
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      bytes[i] = raw.charCodeAt(i);
+    }
+
+    // JPEG: FF D8 FF
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+      return "image/jpeg";
+    }
+    // PNG: 89 50 4E 47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+      return "image/png";
+    }
+    // PDF: 25 50 44 46 (%PDF)
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+      return "application/pdf";
+    }
+    // WebP: 52 49 46 46 (RIFF)
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+      return "image/webp";
+    }
+    // HEIC/HEIF: check for ftyp box
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+      return "image/heic";
+    }
+  } catch {
+    // Fall through to default
+  }
+
+  return "image/jpeg"; // Default fallback
+}
+
+// Strip data URI prefix if present, return raw base64
+function stripDataUri(data: string): string {
+  const commaIndex = data.indexOf(",");
+  if (commaIndex !== -1 && data.substring(0, commaIndex).includes("base64")) {
+    return data.substring(commaIndex + 1);
+  }
+  return data;
+}
+
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
   console.log(`[OCR] Request received at ${timestamp}`);
@@ -103,13 +161,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Server misconfiguration: Missing API Key" }, { status: 500 });
     }
 
-    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-    const base64Data = body.image.replace(/^data:image\/\w+;base64,/, "");
+    // Detect mime type BEFORE stripping the data URI
+    const mimeType = detectMimeType(body.image, body.mimeType);
+    const base64Data = stripDataUri(body.image);
 
     const sizeInBytes = Math.ceil(base64Data.length / 4) * 3;
-    console.log(`[OCR] Image size: ${(sizeInBytes / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`[OCR] Image size: ${(sizeInBytes / 1024 / 1024).toFixed(2)} MB, MIME: ${mimeType}`);
 
-    const usedModel = "gemini-3-flash-preview";
+    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+
+    const usedModel = "gemini-2.0-flash";
     console.log(`[OCR] Using model: ${usedModel}`);
 
     const response = await ai.models.generateContent({
@@ -122,7 +183,7 @@ export async function POST(request: NextRequest) {
       contents: [
         {
           inlineData: {
-            mimeType: "image/jpeg",
+            mimeType: mimeType,
             data: base64Data,
           },
         },

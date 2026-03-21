@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLookupData, useGiftCards, useCreateMovie } from "@/hooks";
+import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions } from "@/hooks";
 import { cn } from "@/lib/utils";
 import type { MovieFormData, TicketOCRData, GiftCardUsageEntry } from "@/types";
 
@@ -99,6 +99,10 @@ export default function NewMoviePage() {
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { createMovie, isLoading: isSubmitting } = useCreateMovie();
+  const { movies: allMovies } = useMovies();
+  const { franchises } = useFranchises();
+  const { companions } = useCompanions();
+  const { syncCompanions } = useSyncMovieCompanions();
 
   const [mode, setMode] = useState<BookingMode>("watched");
   const [isUploading, setIsUploading] = useState(false);
@@ -201,7 +205,7 @@ export default function NewMoviePage() {
 
   const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     try {
-      await createMovie({
+      const movie = await createMovie({
         user_id: "",
         title: data.title,
         date: data.date,
@@ -231,10 +235,8 @@ export default function NewMoviePage() {
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
         status: mode === "advance" ? "upcoming" : "watched",
-        // New fields
         watched_with: data.watched_with || null,
         payment_methods: data.payment_methods || [],
-        // TMDB enrichment
         cast_members: data.cast_members || null,
         composer: data.composer || null,
         cinematographer: data.cinematographer || null,
@@ -247,7 +249,16 @@ export default function NewMoviePage() {
         keywords: data.keywords || null,
         overview: data.overview || null,
         release_date: data.release_date || null,
+        franchise_id: data.franchise_id || null,
+        is_rewatch: data.is_rewatch || false,
+        original_movie_id: data.original_movie_id || null,
       } as any, giftCardUsage);
+
+      // Sync companion associations
+      const movieId = (movie as any)?.id;
+      if (data.companion_ids?.length && movieId) {
+        await syncCompanions(movieId, data.companion_ids);
+      }
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
       router.push("/movies");
@@ -346,6 +357,9 @@ export default function NewMoviePage() {
                 aspects={aspects}
                 rewatchOptions={rewatchOptions}
                 giftCards={giftCards.filter((gc) => gc.status === "active")}
+                franchises={franchises}
+                companions={companions}
+                allMovies={allMovies}
                 onSubmit={handleSubmit}
                 isLoading={isSubmitting}
                 isAdvanceBooking={mode === "advance"}

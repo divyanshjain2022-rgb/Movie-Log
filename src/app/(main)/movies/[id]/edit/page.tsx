@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/shared";
 import { MovieForm } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMovie, useLookupData, useGiftCards, useUpdateMovie } from "@/hooks";
+import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions } from "@/hooks";
 import type { MovieFormData, GiftCardUsageEntry } from "@/types";
 
 interface EditMoviePageProps {
@@ -21,6 +21,11 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { updateMovie, isLoading: isSubmitting } = useUpdateMovie();
+  const { movies: allMovies } = useMovies();
+  const { franchises } = useFranchises();
+  const { companions } = useCompanions();
+  const { companionIds: initialCompanionIds } = useMovieCompanions(id);
+  const { syncCompanions } = useSyncMovieCompanions();
 
   const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     // Convert 12-hour time to 24-hour format
@@ -85,7 +90,15 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
         keywords: data.keywords || null,
         overview: data.overview || null,
         release_date: data.release_date || null,
+        franchise_id: data.franchise_id || null,
+        is_rewatch: data.is_rewatch || false,
+        original_movie_id: data.original_movie_id || null,
       }, giftCardUsage || []);
+
+      // Sync companion associations
+      if (data.companion_ids) {
+        await syncCompanions(id, data.companion_ids);
+      }
 
       toast.success("Movie updated successfully!");
       router.push(`/movies/${id}`);
@@ -143,6 +156,9 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
       keywords: movie.keywords || undefined,
       overview: movie.overview || undefined,
       release_date: movie.release_date || undefined,
+      franchise_id: movie.franchise_id || undefined,
+      is_rewatch: movie.is_rewatch || false,
+      original_movie_id: movie.original_movie_id || undefined,
     }
     : {};
 
@@ -178,6 +194,10 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               aspects={aspects}
               rewatchOptions={rewatchOptions}
               giftCards={giftCards.filter((gc) => gc.status === "active" || initialGiftCardUsage.some(u => u.gift_card_id === gc.id))}
+              franchises={franchises}
+              companions={companions}
+              allMovies={allMovies}
+              initialCompanionIds={initialCompanionIds}
               onSubmit={handleSubmit}
               isLoading={isSubmitting}
               isEditing

@@ -5,22 +5,45 @@ import Link from "next/link";
 import { Plus, Search, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared";
 import { MovieCard } from "@/components/movies";
-import { useMovies } from "@/hooks";
+import {
+  MovieFiltersSheet,
+  applyFilters,
+  countActiveFilters,
+  DEFAULT_FILTERS,
+  type MovieFilters,
+} from "@/components/movies/movie-filters";
+import { useMovies, useLookupData } from "@/hooks";
 
 export default function MoviesPage() {
   const { movies, isLoading } = useMovies();
+  const { formats, theaters, moods } = useLookupData();
   const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<MovieFilters>(DEFAULT_FILTERS);
+
+  const activeFilterCount = countActiveFilters(filters);
 
   const filteredMovies = useMemo(() => {
-    return movies
-      .filter((movie) =>
+    let result = movies;
+
+    // Apply search
+    if (searchQuery) {
+      result = result.filter((movie) =>
         movie.title.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [movies, searchQuery]);
+      );
+    }
+
+    // Apply filters
+    result = applyFilters(result, filters);
+
+    // Sort by date
+    return result.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [movies, searchQuery, filters]);
 
   return (
     <div className="min-h-screen">
@@ -47,10 +70,58 @@ export default function MoviesPage() {
               className="pl-9"
             />
           </div>
-          <Button variant="outline" size="icon">
-            <Filter className="h-4 w-4" />
-          </Button>
+          <MovieFiltersSheet
+            movies={movies}
+            formats={formats}
+            theaters={theaters}
+            moods={moods}
+            filters={filters}
+            onFiltersChange={setFilters}
+          >
+            <Button variant="outline" size="icon" className="relative">
+              <Filter className="h-4 w-4" />
+              {activeFilterCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+          </MovieFiltersSheet>
         </div>
+
+        {/* Active Filter Tags */}
+        {activeFilterCount > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1">
+            {filters.genres.map((g) => (
+              <Badge key={g} variant="secondary" className="text-xs">
+                {g}
+              </Badge>
+            ))}
+            {(filters.ratingMin > 0 || filters.ratingMax < 10) && (
+              <Badge variant="secondary" className="text-xs">
+                Rating: {filters.ratingMin}-{filters.ratingMax}
+              </Badge>
+            )}
+            {filters.language && (
+              <Badge variant="secondary" className="text-xs">
+                {filters.language}
+              </Badge>
+            )}
+            <button
+              onClick={() => setFilters(DEFAULT_FILTERS)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Result count */}
+        {!isLoading && (searchQuery || activeFilterCount > 0) && (
+          <p className="mb-3 text-xs text-muted-foreground">
+            {filteredMovies.length} of {movies.length} movies
+          </p>
+        )}
 
         {/* Movie List */}
         <div className="space-y-3">
@@ -63,11 +134,13 @@ export default function MoviesPage() {
           ) : filteredMovies.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-muted-foreground">
-                {searchQuery ? "No movies found" : "No movies logged yet"}
+                {searchQuery || activeFilterCount > 0
+                  ? "No movies found"
+                  : "No movies logged yet"}
               </p>
-              {searchQuery ? (
+              {searchQuery || activeFilterCount > 0 ? (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Try a different search term
+                  Try adjusting your search or filters
                 </p>
               ) : (
                 <p className="mt-1 text-sm text-muted-foreground">
