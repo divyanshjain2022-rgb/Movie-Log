@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
-    const usedModel = "gemini-2.5-pro";
+    const usedModel = "gemini-3.1-flash-lite-preview";
     console.log(`[OCR] Using model: ${usedModel}`);
 
     let response;
