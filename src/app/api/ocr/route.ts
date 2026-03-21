@@ -152,7 +152,14 @@ function stripDataUri(data: string): string {
   return data;
 }
 
-// Try models in order of preference — skip to next on quota/rate limit errors
+// Allow larger request bodies for image/PDF uploads (default is 1MB)
+export const config = {
+  api: { bodyParser: { sizeLimit: "10mb" } },
+};
+
+// Increase max duration for Vercel serverless (hobby = 10s, pro = 60s)
+export const maxDuration = 60;
+
 const MODEL_PRIORITY = [
   "gemini-3-flash-preview",
 ];

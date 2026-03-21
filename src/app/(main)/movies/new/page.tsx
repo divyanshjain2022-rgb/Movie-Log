@@ -130,13 +130,18 @@ export default function NewMoviePage() {
   const handleTicketUpload = async (file: File) => {
     setIsUploading(true);
     try {
+      // Check file size — Vercel has a ~4.5MB request body limit
+      if (file.size > 4 * 1024 * 1024) {
+        throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 4MB.`);
+      }
+
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           const result = reader.result as string;
           resolve(result.split(",")[1]);
         };
-        reader.onerror = reject;
+        reader.onerror = () => reject(new Error("Failed to read file"));
         reader.readAsDataURL(file);
       });
 
@@ -191,10 +196,16 @@ export default function NewMoviePage() {
         { duration: 15000 }
       );
     } catch (error: any) {
-      const msg = error?.message || "Unknown error";
-      toast.error(msg.includes("Missing API Key")
-        ? "Google API key not configured. Enter data manually."
-        : `OCR failed: ${msg}`);
+      let msg = error?.message || "Unknown error";
+      // Handle common error types
+      if (error instanceof TypeError && msg.includes("fetch")) {
+        msg = "Network error — check your connection";
+      } else if (msg === "Unknown error" || msg.includes("ProgressEvent")) {
+        msg = "Request failed — file may be too large or network timed out";
+      } else if (msg.includes("Missing API Key")) {
+        msg = "Google API key not configured. Enter data manually.";
+      }
+      toast.error(`OCR failed: ${msg}`);
       console.error("[OCR]", error);
       setShowForm(true);
     } finally {
