@@ -22,6 +22,15 @@ import { getRatingColor, getRatingLabel } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { MovieWithRelations } from "@/types";
 
+// Proxy TMDB images through our rewrite to avoid CORS issues with html2canvas
+function proxyPosterUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  // https://image.tmdb.org/t/p/w500/abc.jpg → /api/img/w500/abc.jpg
+  const match = url.match(/image\.tmdb\.org\/t\/p\/(.+)/);
+  if (match) return `/api/img/${match[1]}`;
+  return url;
+}
+
 interface ShareableCardProps {
   movie: MovieWithRelations;
   children: React.ReactNode;
@@ -45,7 +54,9 @@ export function ShareableCard({ movie, children }: ShareableCardProps) {
         scale: 2,
         backgroundColor: null,
         useCORS: true,
+        allowTaint: false,
         logging: false,
+        proxy: "/api/img",
       });
       return canvas;
     } finally {
@@ -138,7 +149,7 @@ export function ShareableCard({ movie, children }: ShareableCardProps) {
                 <div
                   className="absolute inset-0 opacity-20 blur-xl scale-110"
                   style={{
-                    backgroundImage: `url(${movie.poster_url})`,
+                    backgroundImage: `url(${proxyPosterUrl(movie.poster_url)})`,
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                   }}
@@ -153,7 +164,7 @@ export function ShareableCard({ movie, children }: ShareableCardProps) {
                 <div className={cn("flex gap-3", isStory ? "flex-col items-center text-center" : "")}>
                   {movie.poster_url && (
                     <img
-                      src={movie.poster_url}
+                      src={proxyPosterUrl(movie.poster_url)!}
                       alt={movie.title}
                       className={cn(
                         "rounded-lg object-cover shadow-xl",
