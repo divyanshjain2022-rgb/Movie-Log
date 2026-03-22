@@ -10,7 +10,7 @@ import {
   RecentMovies,
   GCStatus,
 } from "@/components/dashboard";
-import { useMovies, useGiftCards, useWatchlist, useBudgets } from "@/hooks";
+import { useMovies, useGiftCards, useWatchlist, useBudgets, usePassports } from "@/hooks";
 import { formatCurrency, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { items: watchlistItems } = useWatchlist();
   const { budgets } = useBudgets();
+  const { passports } = usePassports();
   const [costMode, setCostMode] = useState<CostMode>("all");
 
   const year = new Date().getFullYear();
@@ -60,10 +61,15 @@ export default function DashboardPage() {
       0
     );
 
-    const passportSavings = yearMovies.reduce(
+    const grossPassportSavings = yearMovies.reduce(
       (sum, m) => sum + (m.passport_savings || 0),
       0
     );
+    const passportCost = passports.reduce(
+      (sum, p) => sum + (p.amount_paid || 0),
+      0
+    );
+    const passportSavings = grossPassportSavings - passportCost;
 
     const totalRuntime = yearMovies.reduce(
       (sum, m) => sum + (m.runtime_minutes || 0),
@@ -72,7 +78,7 @@ export default function DashboardPage() {
 
     return { totalSpend, movieCount, averageRating, greatCount, mehCount, totalSaved, passportSavings, totalRuntime };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movies, giftCards, year, costMode]);
+  }, [movies, giftCards, passports, year, costMode]);
 
   const recentMovies = useMemo(() => {
     return [...movies]

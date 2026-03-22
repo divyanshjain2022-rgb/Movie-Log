@@ -287,12 +287,15 @@ export function MovieForm({
     );
   };
 
-  // All selected GC IDs across both purposes
-  const allSelectedGcIds = [...ticketGiftCards, ...fnbGiftCards].map(u => u.gift_card_id);
+  // Filter available gift cards per purpose (same GC can be used for both ticket and fnb)
+  const ticketSelectedGcIds = ticketGiftCards.map(u => u.gift_card_id);
+  const fnbSelectedGcIds = fnbGiftCards.map(u => u.gift_card_id);
 
-  // Filter out already selected gift cards (across both ticket and fnb)
-  const availableGiftCards = giftCards.filter(
-    gc => gc.status === "active" && !allSelectedGcIds.includes(gc.id)
+  const availableTicketGiftCards = giftCards.filter(
+    gc => gc.status === "active" && !ticketSelectedGcIds.includes(gc.id)
+  );
+  const availableFnbGiftCards = giftCards.filter(
+    gc => gc.status === "active" && !fnbSelectedGcIds.includes(gc.id)
   );
 
   const addGiftCard = (gcId: string, purpose: "ticket" | "fnb") => {
@@ -643,7 +646,7 @@ export function MovieForm({
             purpose="ticket"
             usage={ticketGiftCards}
             allGiftCards={giftCards}
-            availableGiftCards={availableGiftCards}
+            availableGiftCards={availableTicketGiftCards}
             onAdd={(gcId) => addGiftCard(gcId, "ticket")}
             onRemove={(gcId) => removeGiftCard(gcId, "ticket")}
             onUpdateAmount={(gcId, amount) => updateGiftCardAmount(gcId, amount, "ticket")}
@@ -795,7 +798,7 @@ export function MovieForm({
             purpose="fnb"
             usage={fnbGiftCards}
             allGiftCards={giftCards}
-            availableGiftCards={availableGiftCards}
+            availableGiftCards={availableFnbGiftCards}
             onAdd={(gcId) => addGiftCard(gcId, "fnb")}
             onRemove={(gcId) => removeGiftCard(gcId, "fnb")}
             onUpdateAmount={(gcId, amount) => updateGiftCardAmount(gcId, amount, "fnb")}

@@ -106,6 +106,7 @@ export function useMovie(id: string) {
             weakest_part:aspects!movies_weakest_part_id_fkey(*),
             rewatch:rewatch_options(*),
             gift_card:gift_cards(*),
+            movie_gift_cards(*, gift_card:gift_cards(*)),
             franchise:franchises(*),
             movie_companions(id, companion:companions(*))
           `)

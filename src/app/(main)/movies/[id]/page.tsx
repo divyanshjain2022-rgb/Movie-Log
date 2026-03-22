@@ -447,18 +447,6 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                     <span>{formatCurrency(mgc.amount_used)}</span>
                   </div>
                 ))}
-                <div className="flex justify-between font-medium text-positive">
-                  <span>Effective Cost</span>
-                  <span>
-                    {formatCurrency(
-                      movie.total_cost -
-                      movie.movie_gift_cards.reduce((sum, mgc) => {
-                        const discount = mgc.gift_card?.discount_percent || 0;
-                        return sum + mgc.amount_used * (discount / 100);
-                      }, 0)
-                    )}
-                  </span>
-                </div>
               </>
             )}
 

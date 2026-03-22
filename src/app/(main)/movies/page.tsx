@@ -125,7 +125,7 @@ export default function MoviesPage() {
         )}
 
         {/* Movie List */}
-        <div className="space-y-2 stagger">
+        <div className="space-y-3 stagger">
           {isLoading ? (
             <>
               <Skeleton className="h-[112px] rounded-2xl" />
