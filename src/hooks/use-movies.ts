@@ -24,8 +24,8 @@ async function computeValueScore(
     params = (formulaConfig as any).params as FormulaParams;
   }
 
-  // Calculate cost based on use_true_cost setting
-  let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0);
+  // Calculate cost based on use_true_cost setting, subtract passport savings
+  let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0) - (movie.passport_savings || 0);
   if (params.use_true_cost) {
     cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
   }
