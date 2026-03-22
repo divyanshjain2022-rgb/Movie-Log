@@ -145,11 +145,19 @@ export default function NewMoviePage() {
         reader.readAsDataURL(file);
       });
 
+      console.log(`[OCR] Uploading: ${file.name}, type=${file.type}, size=${(file.size / 1024).toFixed(0)}KB`);
+
+      // 30s timeout — Vercel hobby has 10s limit, pro has 60s
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
       const response = await fetch("/api/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64, mimeType: file.type }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -198,7 +206,9 @@ export default function NewMoviePage() {
     } catch (error: any) {
       let msg = error?.message || "Unknown error";
       // Handle common error types
-      if (error instanceof TypeError && msg.includes("fetch")) {
+      if (error?.name === "AbortError") {
+        msg = "Request timed out — try a smaller image or enter manually";
+      } else if (error instanceof TypeError && msg.includes("fetch")) {
         msg = "Network error — check your connection";
       } else if (msg === "Unknown error" || msg.includes("ProgressEvent")) {
         msg = "Request failed — file may be too large or network timed out";

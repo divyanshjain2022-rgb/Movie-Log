@@ -152,10 +152,8 @@ function stripDataUri(data: string): string {
   return data;
 }
 
-// Allow larger request bodies for image/PDF uploads (default is 1MB)
-export const config = {
-  api: { bodyParser: { sizeLimit: "10mb" } },
-};
+// Note: In App Router, request body size is not limited by bodyParser config.
+// The 4MB client-side check in ticket-upload handles oversized files.
 
 // Increase max duration for Vercel serverless (hobby = 10s, pro = 60s)
 export const maxDuration = 60;

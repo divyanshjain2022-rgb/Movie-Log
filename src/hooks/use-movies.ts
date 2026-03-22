@@ -2,9 +2,48 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Movie, MovieWithRelations, MovieInsert, MovieUpdate, GiftCardUsageEntry } from "@/types";
+import { calculateValueScore, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
+import type { Movie, MovieWithRelations, MovieInsert, MovieUpdate, GiftCardUsageEntry, FormulaParams } from "@/types";
 
 const supabase = createClient();
+
+async function computeValueScore(
+  movie: Record<string, any>,
+): Promise<number | null> {
+  const rating = movie.rating;
+  if (!rating || rating <= 0) return null;
+
+  // Get active formula config
+  let params: FormulaParams = DEFAULT_FORMULA_PARAMS;
+  const { data: formulaConfig } = await supabase
+    .from("formula_configs")
+    .select("*")
+    .eq("is_active", true)
+    .maybeSingle();
+  if (formulaConfig) {
+    params = (formulaConfig as any).params as FormulaParams;
+  }
+
+  // Calculate cost based on use_true_cost setting
+  let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0);
+  if (params.use_true_cost) {
+    cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
+  }
+  if (cost <= 0) return null;
+
+  // Get format weight
+  let formatWeight = 1.0;
+  if (movie.format_id) {
+    const { data: format } = await supabase
+      .from("formats")
+      .select("*")
+      .eq("id", movie.format_id)
+      .single();
+    if (format) formatWeight = (format as any).weight || 1.0;
+  }
+
+  return calculateValueScore(rating, cost, formatWeight, params);
+}
 
 export function useMovies() {
   const [movies, setMovies] = useState<MovieWithRelations[]>([]);
@@ -105,8 +144,9 @@ export function useCreateMovie() {
         throw new Error("You must be logged in to create a movie");
       }
 
-      // Set user_id from auth
-      const movieWithUser = { ...movie, user_id: user.id };
+      // Set user_id from auth and compute value score
+      const valueScore = await computeValueScore(movie);
+      const movieWithUser = { ...movie, user_id: user.id, value_score: valueScore };
 
       const { data, error: insertError } = await supabase
         .from("movies")
@@ -156,9 +196,24 @@ export function useUpdateMovie() {
       setIsLoading(true);
       setError(null);
 
+      // Recompute value score if rating or cost fields changed
+      const hasScoreFields = updates.rating !== undefined || updates.ticket_cost !== undefined ||
+        updates.convenience_fee !== undefined || updates.fnb_cost !== undefined ||
+        updates.other_expenses !== undefined || updates.format_id !== undefined;
+
+      let updatesWithScore = { ...updates };
+      if (hasScoreFields) {
+        // Fetch existing movie to merge with updates for score calculation
+        const { data: existing } = await supabase.from("movies").select("*").eq("id", id).single();
+        if (existing) {
+          const merged = { ...(existing as any), ...updates };
+          updatesWithScore.value_score = await computeValueScore(merged);
+        }
+      }
+
       const { data, error: updateError } = await supabase
         .from("movies")
-        .update(updates as never)
+        .update(updatesWithScore as never)
         .eq("id", id)
         .select()
         .single();

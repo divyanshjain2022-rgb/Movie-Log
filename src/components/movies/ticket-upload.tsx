@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef } from "react";
 import { Upload, Camera, Loader2, FileImage } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface TicketUploadProps {
@@ -57,7 +56,6 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
       if (file) {
         handleFile(file);
       }
-      // Reset so the same file can be re-selected
       e.target.value = "";
     },
     [handleFile]
@@ -66,10 +64,10 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
   return (
     <div
       className={cn(
-        "relative rounded-lg border-2 border-dashed p-6 text-center transition-colors",
+        "relative rounded-3xl p-8 text-center transition-all duration-300",
         isDragOver
-          ? "border-primary bg-primary/5"
-          : "border-border hover:border-primary/50",
+          ? "bg-primary/8 ring-1 ring-primary/20"
+          : "bg-card/30",
         isLoading && "pointer-events-none opacity-50"
       )}
       onDrop={handleDrop}
@@ -77,7 +75,6 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
       onDragLeave={handleDragLeave}
     >
       {/* Hidden file inputs */}
-      {/* Gallery/files input - no capture attribute so user gets file picker */}
       <input
         ref={fileInputRef}
         type="file"
@@ -86,7 +83,6 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
         className="hidden"
         disabled={isLoading}
       />
-      {/* Camera input - capture attribute for direct camera on mobile */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -98,44 +94,46 @@ export function TicketUpload({ onUpload, isLoading = false }: TicketUploadProps)
       />
 
       {isLoading ? (
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+          <p className="text-sm font-medium text-muted-foreground/70">
             Extracting ticket data...
           </p>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-5">
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/80 active:scale-95"
+              className="flex flex-col items-center gap-2 rounded-2xl bg-secondary/30 p-4 w-20 transition-all hover:bg-secondary/50 active:scale-95"
             >
-              <Camera className="h-6 w-6 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Camera</span>
+              <Camera className="h-5 w-5 text-muted-foreground/60" strokeWidth={1.75} />
+              <span className="text-[11px] font-medium text-muted-foreground/50">Camera</span>
             </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/80 active:scale-95"
+              className="flex flex-col items-center gap-2 rounded-2xl bg-secondary/30 p-4 w-20 transition-all hover:bg-secondary/50 active:scale-95"
             >
-              <FileImage className="h-6 w-6 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Gallery</span>
+              <FileImage className="h-5 w-5 text-muted-foreground/60" strokeWidth={1.75} />
+              <span className="text-[11px] font-medium text-muted-foreground/50">Gallery</span>
             </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/80 active:scale-95"
+              className="flex flex-col items-center gap-2 rounded-2xl bg-secondary/30 p-4 w-20 transition-all hover:bg-secondary/50 active:scale-95"
             >
-              <Upload className="h-6 w-6 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">File/PDF</span>
+              <Upload className="h-5 w-5 text-muted-foreground/60" strokeWidth={1.75} />
+              <span className="text-[11px] font-medium text-muted-foreground/50">File</span>
             </button>
           </div>
           <div>
-            <p className="font-medium">Upload ticket</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Image or PDF — tap a button or drag and drop
+            <p className="text-sm font-semibold">Upload ticket</p>
+            <p className="mt-1 text-xs text-muted-foreground/40">
+              Image or PDF — tap or drag & drop
             </p>
           </div>
         </div>

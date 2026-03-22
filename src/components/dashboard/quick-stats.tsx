@@ -17,19 +17,15 @@ export function QuickStats({ saved, greatCount, mehCount, passportSavings }: Qui
       label: "GC Saved",
       value: formatCurrency(saved),
       icon: PiggyBank,
-      gradient: "from-emerald-500/20 to-emerald-500/5",
-      iconBg: "bg-emerald-500/20",
-      iconColor: "text-emerald-400",
-      valueColor: "text-emerald-400",
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10",
     },
     {
       label: "Great Films",
       value: greatCount.toString(),
       icon: ThumbsUp,
-      gradient: "from-primary/20 to-primary/5",
-      iconBg: "bg-primary/20",
-      iconColor: "text-primary",
-      valueColor: "text-primary",
+      color: "text-primary",
+      bg: "bg-primary/10",
     },
     ...(passportSavings && passportSavings > 0
       ? [
@@ -37,10 +33,8 @@ export function QuickStats({ saved, greatCount, mehCount, passportSavings }: Qui
             label: "Passport",
             value: formatCurrency(passportSavings),
             icon: Shield,
-            gradient: "from-blue-500/20 to-blue-500/5",
-            iconBg: "bg-blue-500/20",
-            iconColor: "text-blue-400",
-            valueColor: "text-blue-400",
+            color: "text-blue-400",
+            bg: "bg-blue-500/10",
           },
         ]
       : [
@@ -48,31 +42,28 @@ export function QuickStats({ saved, greatCount, mehCount, passportSavings }: Qui
             label: "Meh",
             value: mehCount.toString(),
             icon: Meh,
-            gradient: "from-secondary to-secondary/50",
-            iconBg: "bg-secondary",
-            iconColor: "text-muted-foreground",
-            valueColor: "text-muted-foreground",
+            color: "text-muted-foreground",
+            bg: "bg-secondary",
           },
         ]),
   ];
 
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-3 gap-2">
       {stats.map((stat) => (
         <div
           key={stat.label}
-          className={cn(
-            "relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br p-4",
-            stat.gradient
-          )}
+          className="rounded-2xl bg-card/50 p-3.5 space-y-2.5"
         >
-          <div className={cn("mb-2 flex h-8 w-8 items-center justify-center rounded-lg", stat.iconBg)}>
-            <stat.icon className={cn("h-4 w-4", stat.iconColor)} />
+          <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", stat.bg)}>
+            <stat.icon className={cn("h-[18px] w-[18px]", stat.color)} strokeWidth={1.75} />
           </div>
-          <div className={cn("text-xl font-bold", stat.valueColor)}>
-            {stat.value}
+          <div>
+            <div className={cn("text-xl font-bold tracking-tight", stat.color)}>
+              {stat.value}
+            </div>
+            <div className="text-[11px] text-muted-foreground/70 font-medium">{stat.label}</div>
           </div>
-          <div className="text-xs text-muted-foreground">{stat.label}</div>
         </div>
       ))}
     </div>

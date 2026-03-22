@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CreditCard, AlertTriangle, Plus, ChevronRight } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/formula";
+import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { GiftCardWithUsage } from "@/types";
 
@@ -17,86 +17,85 @@ export function GCStatus({ giftCards }: GCStatusProps) {
   if (activeCards.length === 0) {
     return (
       <Link href="/gift-cards">
-        <div className="flex items-center justify-between rounded-xl border border-dashed border-border/50 bg-card/30 p-4 transition-colors hover:border-primary/30 hover:bg-card/50">
+        <div className="flex items-center justify-between rounded-2xl bg-card/30 p-4 transition-all active:scale-[0.98] hover:bg-card/50">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary">
-              <CreditCard className="h-5 w-5 text-muted-foreground" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/80">
+              <CreditCard className="h-5 w-5 text-muted-foreground/50" strokeWidth={1.5} />
             </div>
             <div>
               <p className="text-sm font-medium">No gift cards</p>
-              <p className="text-xs text-muted-foreground">Add your first gift card</p>
+              <p className="text-xs text-muted-foreground/50">Tap to add</p>
             </div>
           </div>
-          <Plus className="h-5 w-5 text-muted-foreground" />
+          <Plus className="h-4 w-4 text-muted-foreground/40" />
         </div>
       </Link>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {/* Total balance header */}
+    <div className="space-y-2">
+      {/* Total balance */}
       <Link href="/gift-cards">
-        <div className="flex items-center justify-between rounded-xl border border-border/50 bg-gradient-to-r from-emerald-500/10 to-transparent p-4 transition-all hover:border-emerald-500/30">
+        <div className="flex items-center justify-between rounded-2xl bg-emerald-500/[0.06] p-4 transition-all active:scale-[0.98] hover:bg-emerald-500/[0.10]">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
-              <CreditCard className="h-5 w-5 text-emerald-400" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15">
+              <CreditCard className="h-5 w-5 text-emerald-400" strokeWidth={1.75} />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Total Balance</p>
-              <p className="text-xl font-bold text-emerald-400">{formatCurrency(totalBalance)}</p>
+              <p className="text-xs text-muted-foreground/60">Balance</p>
+              <p className="text-lg font-bold text-emerald-400 tracking-tight">{formatCurrency(totalBalance)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <span className="text-sm">{activeCards.length} cards</span>
-            <ChevronRight className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 text-muted-foreground/50">
+            <span className="text-xs">{activeCards.length} cards</span>
+            <ChevronRight className="h-3.5 w-3.5" />
           </div>
         </div>
       </Link>
 
-      {/* Expiring soon alerts */}
+      {/* Expiring soon */}
       {activeCards.some((gc) => {
-        const daysUntilExpiry = Math.ceil(
+        const daysLeft = Math.ceil(
           (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
         );
-        return daysUntilExpiry <= 30 && daysUntilExpiry > 0;
+        return daysLeft <= 30 && daysLeft > 0;
       }) && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
           {activeCards
             .filter((gc) => {
-              const daysUntilExpiry = Math.ceil(
+              const daysLeft = Math.ceil(
                 (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
               );
-              return daysUntilExpiry <= 30 && daysUntilExpiry > 0;
+              return daysLeft <= 30 && daysLeft > 0;
             })
             .map((gc) => {
-              const daysUntilExpiry = Math.ceil(
+              const daysLeft = Math.ceil(
                 (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
               );
+              const urgent = daysLeft <= 7;
 
               return (
                 <div
                   key={gc.id}
                   className={cn(
-                    "flex min-w-[180px] items-center gap-2 rounded-lg border px-3 py-2",
-                    daysUntilExpiry <= 7
-                      ? "border-red-500/30 bg-red-500/10"
-                      : "border-orange-500/30 bg-orange-500/10"
+                    "flex min-w-[160px] items-center gap-2 rounded-xl px-3 py-2",
+                    urgent ? "bg-red-500/8" : "bg-orange-500/8"
                   )}
                 >
                   <AlertTriangle className={cn(
-                    "h-4 w-4 flex-shrink-0",
-                    daysUntilExpiry <= 7 ? "text-red-400" : "text-orange-400"
+                    "h-3.5 w-3.5 flex-shrink-0",
+                    urgent ? "text-red-400/80" : "text-orange-400/80"
                   )} />
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium">
                       {gc.platform?.name || "Gift Card"}
                     </p>
                     <p className={cn(
-                      "text-xs",
-                      daysUntilExpiry <= 7 ? "text-red-400" : "text-orange-400"
+                      "text-[11px]",
+                      urgent ? "text-red-400/70" : "text-orange-400/70"
                     )}>
-                      {formatCurrency(gc.balance)} &bull; {daysUntilExpiry}d left
+                      {formatCurrency(gc.balance)} · {daysLeft}d left
                     </p>
                   </div>
                 </div>

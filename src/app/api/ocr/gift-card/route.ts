@@ -1,309 +1,171 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
 
-// Google Cloud Vision API endpoint
-const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
-interface GiftCardData {
-  card_number: string | null;
-  pin: string | null;
-  face_value: number | null;
-  expiry_date: string | null;
-  platform: string | null;
-  raw_text?: string;
+const EXTRACTION_PROMPT = `You are an expert OCR system for Indian gift card images and voucher screenshots.
+
+Read ALL text in the image carefully, then extract the fields below.
+
+COMMON GIFT CARD FORMATS:
+
+=== PVR INOX GIFT CARD ===
+- Shows "PVR INOX" branding
+- Card number: 16-digit number, often starting with 1000
+- PIN: 4-6 digit number
+- Face value: Amount in ₹
+- Validity/Expiry date
+
+=== WOOHOO / ZINGOY VOUCHER ===
+- Shows platform branding (Woohoo, Zingoy, etc.)
+- Voucher code or card number
+- PIN if present
+- Face value in ₹
+- Validity period
+
+=== BOOKING PLATFORM GIFT CARD (BookMyShow, Amazon Pay) ===
+- Card/voucher code
+- PIN
+- Balance or face value
+- Expiry date
+
+=== EXTRACTION RULES ===
+
+CARD NUMBER: The main card/voucher code (typically 16+ digits for PVR, or alphanumeric for other platforms)
+PIN: The PIN or security code (typically 4-6 digits)
+FACE VALUE: The card's total value in ₹ (not remaining balance). Return as a number without currency symbol.
+EXPIRY DATE: Return strictly as YYYY-MM-DD. Convert any date format.
+PLATFORM: Identify the brand/platform:
+  - "PVR INOX" for PVR/INOX cards
+  - "BookMyShow" for BMS vouchers
+  - "Amazon Pay" for Amazon gift cards
+  - "Zingoy" / "Woohoo" for aggregator vouchers
+  - Return the actual brand name in title case
+
+Return valid JSON. Use null for truly missing fields.`;
+
+const responseSchema = {
+  type: "OBJECT" as const,
+  properties: {
+    card_number: { type: "STRING" as const, description: "Card/voucher code or number", nullable: true },
+    pin: { type: "STRING" as const, description: "PIN or security code", nullable: true },
+    face_value: { type: "NUMBER" as const, description: "Face value amount in rupees", nullable: true },
+    expiry_date: { type: "STRING" as const, description: "Expiry date in YYYY-MM-DD format", nullable: true },
+    platform: { type: "STRING" as const, description: "Gift card platform/brand name", nullable: true },
+  },
+};
+
+export const maxDuration = 60;
+
+function detectMimeType(imageData: string, providedMime?: string): string {
+  const dataUriMatch = imageData.match(/^data:([^;]+);base64,/);
+  if (dataUriMatch) return dataUriMatch[1];
+  if (providedMime) return providedMime;
+
+  try {
+    const raw = atob(imageData.substring(0, 16));
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "application/pdf";
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return "image/webp";
+  } catch {
+    // Fall through
+  }
+
+  return "image/jpeg";
+}
+
+function stripDataUri(data: string): string {
+  const commaIndex = data.indexOf(",");
+  if (commaIndex !== -1 && data.substring(0, commaIndex).includes("base64")) {
+    return data.substring(commaIndex + 1);
+  }
+  return data;
 }
 
 export async function POST(request: NextRequest) {
   try {
     if (!GOOGLE_API_KEY) {
       return NextResponse.json(
-        { error: "GOOGLE_CLOUD_API_KEY not configured" },
+        { error: "Server misconfiguration: Missing API Key" },
         { status: 500 }
       );
     }
 
-    const { image } = await request.json();
+    const body = await request.json();
 
-    if (!image) {
+    if (!body.image) {
       return NextResponse.json(
-        { error: "No image provided" },
+        { error: "No image data provided" },
         { status: 400 }
       );
     }
 
-    // Call Google Cloud Vision API
-    const response = await fetch(`${VISION_API_URL}?key=${GOOGLE_API_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const mimeType = detectMimeType(body.image, body.mimeType);
+    const base64Data = stripDataUri(body.image);
+
+    console.log(`[GC-OCR] Processing image, MIME: ${mimeType}`);
+
+    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      config: {
+        systemInstruction: EXTRACTION_PROMPT,
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
       },
-      body: JSON.stringify({
-        requests: [
-          {
-            image: {
-              content: image,
-            },
-            features: [
-              {
-                type: "DOCUMENT_TEXT_DETECTION",
-                maxResults: 1,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Data,
               },
-            ],
-          },
-        ],
-      }),
+            },
+            {
+              text: "Read every piece of text in this gift card image. Extract the card number, PIN, face value, expiry date, and platform.",
+            },
+          ],
+        },
+      ],
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("Google Vision API error:", error);
-      return NextResponse.json(
-        { error: "Failed to process image" },
-        { status: 500 }
-      );
+    const textResponse = response.text;
+    if (!textResponse) {
+      throw new Error("Empty response from AI model");
     }
 
-    const data = await response.json();
-    const textAnnotations = data.responses?.[0]?.textAnnotations;
+    console.log("[GC-OCR] Raw response:", textResponse.substring(0, 500));
 
-    if (!textAnnotations || textAnnotations.length === 0) {
-      return NextResponse.json(
-        { error: "No text found in image" },
-        { status: 400 }
-      );
+    let geminiData: any;
+    try {
+      const jsonStr = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      geminiData = JSON.parse(jsonStr);
+    } catch (e) {
+      console.error("[GC-OCR] JSON Parse Error:", e);
+      throw new Error("Failed to parse response as JSON");
     }
 
-    const fullText = textAnnotations[0].description || "";
-    const giftCardData = parseGiftCardText(fullText);
+    console.log("[GC-OCR] Parsed:", JSON.stringify(geminiData, null, 2));
 
-    return NextResponse.json(giftCardData);
-  } catch (error) {
-    console.error("Gift Card OCR error:", error);
+    return NextResponse.json({
+      card_number: geminiData.card_number || null,
+      pin: geminiData.pin || null,
+      face_value: geminiData.face_value || null,
+      expiry_date: geminiData.expiry_date || null,
+      platform: geminiData.platform || null,
+    });
+  } catch (error: any) {
+    console.error("[GC-OCR] Error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: `Gift Card OCR Failed: ${error.message || "Unknown error"}` },
       { status: 500 }
     );
   }
-}
-
-function parseGiftCardText(text: string): GiftCardData {
-  const result: GiftCardData = {
-    card_number: null,
-    pin: null,
-    face_value: null,
-    expiry_date: null,
-    platform: null,
-    raw_text: text,
-  };
-
-  // === PLATFORM DETECTION ===
-  result.platform = extractPlatform(text);
-
-  // === CARD NUMBER ===
-  result.card_number = extractCardNumber(text);
-
-  // === PIN ===
-  result.pin = extractPin(text);
-
-  // === FACE VALUE ===
-  result.face_value = extractFaceValue(text);
-
-  // === EXPIRY DATE ===
-  result.expiry_date = extractExpiryDate(text);
-
-  return result;
-}
-
-function extractPlatform(text: string): string | null {
-  const textLower = text.toLowerCase();
-
-  // PVR INOX patterns
-  if (/pvr\s*inox|pvr\s*cinemas|pvr\s*gift\s*card/i.test(text)) {
-    return "PVR INOX";
-  }
-
-  // Other cinema chains
-  if (/cinepolis/i.test(text)) return "Cinepolis";
-  if (/carnival\s*cinemas/i.test(text)) return "Carnival Cinemas";
-  if (/miraj\s*cinemas/i.test(text)) return "Miraj Cinemas";
-
-  // E-commerce/Voucher platforms
-  if (/amazon/i.test(text)) return "Amazon";
-  if (/flipkart/i.test(text)) return "Flipkart";
-  if (/myntra/i.test(text)) return "Myntra";
-  if (/swiggy/i.test(text)) return "Swiggy";
-  if (/zomato/i.test(text)) return "Zomato";
-  if (/bookmyshow/i.test(text)) return "BookMyShow";
-
-  // Check for woohoo (gift card aggregator)
-  if (/woohoo/i.test(text)) {
-    // Try to find the actual brand
-    if (/pvr/i.test(text)) return "PVR INOX";
-  }
-
-  return null;
-}
-
-function extractCardNumber(text: string): string | null {
-  // Pattern 1: "CODE" or "Card Number" followed by a long number
-  // PVR cards typically have 16-digit codes starting with 1000
-  const codePatterns = [
-    /code[:\s]+(\d{13,20})/i,
-    /card\s*number[:\s]+(\d{13,20})/i,
-    /card\s*no\.?[:\s]+(\d{13,20})/i,
-    /voucher\s*(?:code|number)[:\s]+(\d{13,20})/i,
-  ];
-
-  for (const pattern of codePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      return match[1];
-    }
-  }
-
-  // Pattern 2: Look for standalone 16-digit numbers starting with 1000 (PVR format)
-  const pvrCardPattern = text.match(/\b(1000\d{12,16})\b/);
-  if (pvrCardPattern) {
-    return pvrCardPattern[1];
-  }
-
-  // Pattern 3: Any 16-digit number that's not a phone number
-  const longNumberPattern = text.match(/\b(\d{16})\b/);
-  if (longNumberPattern) {
-    // Verify it's not just repeated digits or sequential
-    const num = longNumberPattern[1];
-    if (!/^(\d)\1+$/.test(num) && !/^0123456789/.test(num)) {
-      return num;
-    }
-  }
-
-  return null;
-}
-
-function extractPin(text: string): string | null {
-  // Pattern 1: "PIN" followed by 4-6 digit number
-  const pinPatterns = [
-    /pin[:\s]+(\d{4,6})/i,
-    /pin\s*code[:\s]+(\d{4,6})/i,
-    /security\s*code[:\s]+(\d{4,6})/i,
-  ];
-
-  for (const pattern of pinPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      return match[1];
-    }
-  }
-
-  // Pattern 2: Look for 6-digit number near "PIN" text
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (/pin/i.test(lines[i])) {
-      // Check same line for number
-      const sameLine = lines[i].match(/\b(\d{4,6})\b/);
-      if (sameLine) return sameLine[1];
-
-      // Check next line
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1].match(/^\s*(\d{4,6})\s*$/);
-        if (nextLine) return nextLine[1];
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractFaceValue(text: string): number | null {
-  // Pattern 1: Currency symbol followed by amount
-  const amountPatterns = [
-    /₹\s*([\d,]+(?:\.\d{2})?)/,
-    /rs\.?\s*([\d,]+(?:\.\d{2})?)/i,
-    /inr\s*([\d,]+(?:\.\d{2})?)/i,
-    /amount[:\s]*₹?\s*([\d,]+(?:\.\d{2})?)/i,
-    /value[:\s]*₹?\s*([\d,]+(?:\.\d{2})?)/i,
-    /face\s*value[:\s]*₹?\s*([\d,]+(?:\.\d{2})?)/i,
-  ];
-
-  const amounts: number[] = [];
-
-  for (const pattern of amountPatterns) {
-    const matches = text.matchAll(new RegExp(pattern, 'gi'));
-    for (const match of matches) {
-      const amount = parseFloat(match[1].replace(/,/g, ""));
-      if (amount > 0 && amount <= 50000) {
-        amounts.push(amount);
-      }
-    }
-  }
-
-  // Return the largest amount (likely the face value, not remaining balance)
-  if (amounts.length > 0) {
-    // Sort descending and return largest
-    amounts.sort((a, b) => b - a);
-    return amounts[0];
-  }
-
-  return null;
-}
-
-function extractExpiryDate(text: string): string | null {
-  // Pattern 1: "Validity" or "Valid till" or "Expiry"
-  const validityPatterns = [
-    /validity[:\s]*(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})/i,
-    /valid\s*(?:till|until|upto)[:\s]*(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})/i,
-    /expir(?:y|es)[:\s]*(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})/i,
-    /valid\s*(?:till|until)[:\s]*(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/i,
-  ];
-
-  for (const pattern of validityPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      // Check if it's DD MMM YYYY format or DD/MM/YYYY
-      if (/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(match[2])) {
-        return normalizeDate(match[1], match[2], match[3]);
-      } else {
-        // DD/MM/YYYY format
-        let year = match[3];
-        if (year.length === 2) {
-          year = parseInt(year) > 50 ? `19${year}` : `20${year}`;
-        }
-        return `${year}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
-      }
-    }
-  }
-
-  // Pattern 2: Look for date near "validity" or "expiry" keywords
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (/validity|expir|valid\s*till/i.test(lines[i])) {
-      // Check same line
-      const dateMatch = lines[i].match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})/i);
-      if (dateMatch) {
-        return normalizeDate(dateMatch[1], dateMatch[2], dateMatch[3]);
-      }
-
-      // Check next line
-      if (i + 1 < lines.length) {
-        const nextDateMatch = lines[i + 1].match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})/i);
-        if (nextDateMatch) {
-          return normalizeDate(nextDateMatch[1], nextDateMatch[2], nextDateMatch[3]);
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeDate(day: string, month: string, year: string): string {
-  const months: Record<string, string> = {
-    jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-    jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
-  };
-
-  const m = months[month.toLowerCase().substring(0, 3)];
-  const d = day.padStart(2, "0");
-
-  return `${year}-${m}-${d}`;
 }

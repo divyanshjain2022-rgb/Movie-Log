@@ -2,9 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Plus, Search, Filter } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared";
@@ -17,6 +15,7 @@ import {
   type MovieFilters,
 } from "@/components/movies/movie-filters";
 import { useMovies, useLookupData } from "@/hooks";
+import { cn } from "@/lib/utils";
 
 export default function MoviesPage() {
   const { movies, isLoading } = useMovies();
@@ -29,17 +28,14 @@ export default function MoviesPage() {
   const filteredMovies = useMemo(() => {
     let result = movies;
 
-    // Apply search
     if (searchQuery) {
       result = result.filter((movie) =>
         movie.title.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
-    // Apply filters
     result = applyFilters(result, filters);
 
-    // Sort by date
     return result.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
@@ -48,12 +44,12 @@ export default function MoviesPage() {
   return (
     <div className="min-h-screen">
       <PageHeader
-        title="Movie Log"
+        title="Movies"
         action={
           <Link href="/movies/new">
-            <Button size="icon" className="h-9 w-9">
-              <Plus className="h-5 w-5" />
-            </Button>
+            <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all active:scale-95">
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+            </button>
           </Link>
         }
       />
@@ -62,12 +58,12 @@ export default function MoviesPage() {
         {/* Search and Filter */}
         <div className="mb-4 flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" strokeWidth={1.75} />
+            <input
               placeholder="Search movies..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="w-full rounded-xl border-0 bg-card/50 py-2.5 pl-9 pr-4 text-sm placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-all"
             />
           </div>
           <MovieFiltersSheet
@@ -78,38 +74,43 @@ export default function MoviesPage() {
             filters={filters}
             onFiltersChange={setFilters}
           >
-            <Button variant="outline" size="icon" className="relative">
-              <Filter className="h-4 w-4" />
+            <button className={cn(
+              "flex h-[42px] w-[42px] items-center justify-center rounded-xl transition-all",
+              activeFilterCount > 0
+                ? "bg-primary/12 text-primary"
+                : "bg-card/50 text-muted-foreground/50 hover:text-muted-foreground"
+            )}>
+              <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} />
               {activeFilterCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
                   {activeFilterCount}
                 </span>
               )}
-            </Button>
+            </button>
           </MovieFiltersSheet>
         </div>
 
         {/* Active Filter Tags */}
         {activeFilterCount > 0 && (
-          <div className="mb-3 flex flex-wrap gap-1">
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
             {filters.genres.map((g) => (
-              <Badge key={g} variant="secondary" className="text-xs">
+              <span key={g} className="rounded-lg bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
                 {g}
-              </Badge>
+              </span>
             ))}
             {(filters.ratingMin > 0 || filters.ratingMax < 10) && (
-              <Badge variant="secondary" className="text-xs">
-                Rating: {filters.ratingMin}-{filters.ratingMax}
-              </Badge>
+              <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                {filters.ratingMin}–{filters.ratingMax}
+              </span>
             )}
             {filters.language && (
-              <Badge variant="secondary" className="text-xs">
+              <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
                 {filters.language}
-              </Badge>
+              </span>
             )}
             <button
               onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="text-[11px] font-medium text-muted-foreground/50 hover:text-muted-foreground ml-1"
             >
               Clear
             </button>
@@ -118,35 +119,31 @@ export default function MoviesPage() {
 
         {/* Result count */}
         {!isLoading && (searchQuery || activeFilterCount > 0) && (
-          <p className="mb-3 text-xs text-muted-foreground">
+          <p className="mb-3 text-[11px] text-muted-foreground/40 font-medium">
             {filteredMovies.length} of {movies.length} movies
           </p>
         )}
 
         {/* Movie List */}
-        <div className="space-y-3">
+        <div className="space-y-2 stagger">
           {isLoading ? (
             <>
-              <Skeleton className="h-[120px]" />
-              <Skeleton className="h-[120px]" />
-              <Skeleton className="h-[120px]" />
+              <Skeleton className="h-[112px] rounded-2xl" />
+              <Skeleton className="h-[112px] rounded-2xl" />
+              <Skeleton className="h-[112px] rounded-2xl" />
             </>
           ) : filteredMovies.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <p className="text-muted-foreground">
+            <div className="rounded-3xl bg-card/30 p-10 text-center">
+              <p className="text-sm font-medium text-muted-foreground/70">
                 {searchQuery || activeFilterCount > 0
                   ? "No movies found"
                   : "No movies logged yet"}
               </p>
-              {searchQuery || activeFilterCount > 0 ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try adjusting your search or filters
-                </p>
-              ) : (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Tap the + button to add your first movie
-                </p>
-              )}
+              <p className="mt-1 text-xs text-muted-foreground/40">
+                {searchQuery || activeFilterCount > 0
+                  ? "Try adjusting your search or filters"
+                  : "Tap + to add your first movie"}
+              </p>
             </div>
           ) : (
             filteredMovies.map((movie) => (

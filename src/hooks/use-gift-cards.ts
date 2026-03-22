@@ -91,9 +91,15 @@ export function useCreateGiftCard() {
       setError(null);
       const supabase = createClient();
 
+      // Get authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be logged in to add a gift card");
+      }
+
       const { data, error } = await supabase
         .from("gift_cards")
-        .insert(giftCard as never)
+        .insert({ ...giftCard, user_id: user.id } as never)
         .select()
         .single();
 
