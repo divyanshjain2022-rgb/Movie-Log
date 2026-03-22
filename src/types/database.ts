@@ -82,6 +82,8 @@ export interface Database {
           franchise_id: string | null;
           original_movie_id: string | null;
           is_rewatch: boolean;
+          // Passport (migration 006)
+          passport_id: string | null;
         };
         Insert: {
           id?: string;
@@ -135,6 +137,7 @@ export interface Database {
           franchise_id?: string | null;
           original_movie_id?: string | null;
           is_rewatch?: boolean;
+          passport_id?: string | null;
         };
         Update: {
           id?: string;
@@ -188,6 +191,7 @@ export interface Database {
           franchise_id?: string | null;
           original_movie_id?: string | null;
           is_rewatch?: boolean;
+          passport_id?: string | null;
         };
       };
       fnb_purchases: {
@@ -726,6 +730,42 @@ export interface Database {
           price?: number;
         };
       };
+      passports: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          purchase_date: string;
+          expiry_date: string | null;
+          amount_paid: number;
+          total_uses: number;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name?: string;
+          purchase_date: string;
+          expiry_date?: string | null;
+          amount_paid: number;
+          total_uses?: number;
+          notes?: string | null;
+          is_active?: boolean;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          purchase_date?: string;
+          expiry_date?: string | null;
+          amount_paid?: number;
+          total_uses?: number;
+          notes?: string | null;
+          is_active?: boolean;
+        };
+      };
     };
     Views: object;
     Functions: object;
@@ -781,6 +821,17 @@ export type FnbItemInsert = Database["public"]["Tables"]["fnb_items"]["Insert"];
 
 export type FnbPurchaseItem = Database["public"]["Tables"]["fnb_purchase_items"]["Row"];
 export type FnbPurchaseItemInsert = Database["public"]["Tables"]["fnb_purchase_items"]["Insert"];
+
+export type Passport = Database["public"]["Tables"]["passports"]["Row"];
+export type PassportInsert = Database["public"]["Tables"]["passports"]["Insert"];
+export type PassportUpdate = Database["public"]["Tables"]["passports"]["Update"];
+
+// Passport with computed usage stats
+export interface PassportWithUsage extends Passport {
+  uses_count: number;
+  total_savings: number;
+  net_savings: number; // total_savings - amount_paid
+}
 
 // Extended types with relations
 export interface MovieWithRelations extends Movie {

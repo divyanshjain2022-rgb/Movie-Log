@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions } from "@/hooks";
+import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
 import { cn } from "@/lib/utils";
 import type { MovieFormData, TicketOCRData, GiftCardUsageEntry } from "@/types";
 
@@ -144,6 +144,7 @@ export default function NewMoviePage() {
   const { movies: allMovies } = useMovies();
   const { franchises } = useFranchises();
   const { companions } = useCompanions();
+  const { passports } = usePassports();
   const { syncCompanions } = useSyncMovieCompanions();
 
   const [mode, setMode] = useState<BookingMode>("watched");
@@ -337,6 +338,7 @@ export default function NewMoviePage() {
         remarks: data.remarks || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
+        passport_id: data.passport_id || null,
         status: mode === "advance" ? "upcoming" : "watched",
         watched_with: data.watched_with || null,
         payment_methods: data.payment_methods || [],
@@ -462,6 +464,7 @@ export default function NewMoviePage() {
                 giftCards={giftCards.filter((gc) => gc.status === "active")}
                 franchises={franchises}
                 companions={companions}
+                passports={passports}
                 allMovies={allMovies}
                 onSubmit={handleSubmit}
                 isLoading={isSubmitting}

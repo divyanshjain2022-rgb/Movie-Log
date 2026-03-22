@@ -53,6 +53,7 @@ export interface MovieFormData {
   original_movie_id?: string;
   is_rewatch?: boolean;
   companion_ids?: string[];
+  passport_id?: string;
 }
 
 export interface FnbFormData {

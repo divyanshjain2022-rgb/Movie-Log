@@ -31,6 +31,7 @@ import type {
   Franchise,
   Companion,
   MovieWithRelations,
+  PassportWithUsage,
 } from "@/types";
 import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
 
@@ -171,6 +172,7 @@ const movieFormSchema = z.object({
   franchise_id: z.string().optional(),
   is_rewatch: z.boolean().optional(),
   original_movie_id: z.string().optional(),
+  passport_id: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
@@ -185,6 +187,7 @@ interface MovieFormProps {
   giftCards: GiftCardWithUsage[];
   franchises?: Franchise[];
   companions?: Companion[];
+  passports?: PassportWithUsage[];
   allMovies?: MovieWithRelations[];
   onSubmit: (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => Promise<void>;
   isLoading?: boolean;
@@ -204,6 +207,7 @@ export function MovieForm({
   giftCards,
   franchises = [],
   companions = [],
+  passports = [],
   allMovies = [],
   onSubmit,
   isLoading = false,
@@ -585,6 +589,29 @@ export function MovieForm({
               />
             </div>
           </div>
+
+          {/* Passport selector */}
+          {passports.length > 0 && (
+            <div>
+              <Label>Passport Used</Label>
+              <Select
+                value={watch("passport_id") || ""}
+                onValueChange={(v) => setValue("passport_id", v === "none" ? undefined : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select passport..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {passports.filter(p => p.is_active).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.total_uses - p.uses_count} uses left)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

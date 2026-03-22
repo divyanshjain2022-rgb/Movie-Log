@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/shared";
 import { MovieForm } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions } from "@/hooks";
+import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
 import type { MovieFormData, GiftCardUsageEntry } from "@/types";
 
 interface EditMoviePageProps {
@@ -24,6 +24,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { movies: allMovies } = useMovies();
   const { franchises } = useFranchises();
   const { companions } = useCompanions();
+  const { passports } = usePassports();
   const { companionIds: initialCompanionIds } = useMovieCompanions(id);
   const { syncCompanions } = useSyncMovieCompanions();
 
@@ -197,6 +198,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               giftCards={giftCards.filter((gc) => gc.status === "active" || initialGiftCardUsage.some(u => u.gift_card_id === gc.id))}
               franchises={franchises}
               companions={companions}
+              passports={passports}
               allMovies={allMovies}
               initialCompanionIds={initialCompanionIds}
               onSubmit={handleSubmit}

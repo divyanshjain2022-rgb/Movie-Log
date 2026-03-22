@@ -13,6 +13,7 @@ import {
   Wallet,
   Users,
   Clapperboard,
+  Shield,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared";
 
@@ -28,6 +29,7 @@ const settingsGroups = [
     title: "Features",
     items: [
       { href: "/settings/budget", icon: Wallet, label: "Budget", desc: "Monthly limits" },
+      { href: "/settings/passport", icon: Shield, label: "Passports", desc: "Track PVR Passport" },
       { href: "/companions", icon: Users, label: "Companions", desc: "Watch buddies" },
       { href: "/franchises", icon: Clapperboard, label: "Franchises", desc: "Movie series" },
     ],
