@@ -41,12 +41,13 @@ export default function FormulaPage() {
     const supabase = createClient();
 
     useEffect(() => {
-        async function fetchConfig() {
+        async function fetchOrCreateConfig() {
+            // Try to find existing active config
             const { data } = await supabase
                 .from("formula_configs")
                 .select("*")
                 .eq("is_active", true)
-                .single();
+                .maybeSingle();
 
             if (data) {
                 const formulaConfig = data as FormulaConfig;
@@ -54,10 +55,33 @@ export default function FormulaPage() {
                     id: formulaConfig.id,
                     params: (formulaConfig.params as unknown as FormulaParams) || DEFAULT_PARAMS,
                 });
+            } else {
+                // No config exists — create one with defaults
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: created } = await supabase
+                        .from("formula_configs")
+                        .insert({
+                            user_id: user.id,
+                            name: "Default Formula",
+                            params: DEFAULT_PARAMS as unknown,
+                            is_active: true,
+                        } as never)
+                        .select()
+                        .single();
+
+                    if (created) {
+                        const fc = created as FormulaConfig;
+                        setConfig({
+                            id: fc.id,
+                            params: (fc.params as unknown as FormulaParams) || DEFAULT_PARAMS,
+                        });
+                    }
+                }
             }
             setIsLoading(false);
         }
-        fetchConfig();
+        fetchOrCreateConfig();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
