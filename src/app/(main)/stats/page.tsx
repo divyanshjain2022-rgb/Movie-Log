@@ -26,15 +26,20 @@ import { formatCurrency } from "@/lib/formula";
 
 export default function StatsPage() {
   const { movies, isLoading } = useMovies();
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedFormat, setSelectedFormat] = useState<string>("all");
   const [selectedTheater, setSelectedTheater] = useState<string>("all");
+
+  const availableYears = useMemo(() => {
+    const years = [...new Set(movies.map((m) => new Date(m.date).getFullYear()))].sort((a, b) => b - a);
+    return years.length > 0 ? years : [new Date().getFullYear()];
+  }, [movies]);
 
   // Price fluctuation data for Insights tab
   const priceFluctuation = useMemo(() => {
     if (movies.length === 0) return null;
 
-    const year = new Date().getFullYear();
-    const yearMovies = movies.filter((m) => new Date(m.date).getFullYear() === year);
+    const yearMovies = movies.filter((m) => new Date(m.date).getFullYear() === selectedYear);
 
     // Get unique formats and theaters
     const formats = [...new Set(yearMovies.map((m) => m.format?.name).filter(Boolean))] as string[];
@@ -103,16 +108,15 @@ export default function StatsPage() {
     });
 
     return { formats, theaters, dayData, timeData, timeSlotData, totalFiltered: filtered.length };
-  }, [movies, selectedFormat, selectedTheater]);
+  }, [movies, selectedYear, selectedFormat, selectedTheater]);
 
   const stats = useMemo(() => {
     if (movies.length === 0) {
       return null;
     }
 
-    const year = new Date().getFullYear();
     const yearMovies = movies.filter(
-      (m) => new Date(m.date).getFullYear() === year
+      (m) => new Date(m.date).getFullYear() === selectedYear
     );
 
     // Basic stats
@@ -263,7 +267,7 @@ export default function StatsPage() {
     }).filter((d) => d.count > 0);
 
     return {
-      year,
+      year: selectedYear,
       totalMovies,
       totalSpend,
       avgCost,
@@ -284,13 +288,32 @@ export default function StatsPage() {
       costPerMinuteByFormat,
       priceTrends,
     };
-  }, [movies]);
+  }, [movies, selectedYear]);
 
   return (
     <div className="min-h-screen">
       <PageHeader title="Statistics" />
 
       <div className="p-4">
+        {availableYears.length > 1 && (
+          <div className="mb-3 flex gap-1.5">
+            {availableYears.map((y) => (
+              <button
+                key={y}
+                onClick={() => setSelectedYear(y)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                  selectedYear === y
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
+        )}
+
         <Tabs defaultValue="overview">
           <TabsList className="mb-4 w-full">
             <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>

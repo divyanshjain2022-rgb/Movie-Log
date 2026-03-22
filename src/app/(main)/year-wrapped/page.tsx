@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
     Film,
     DollarSign,
@@ -28,13 +28,18 @@ import { cn } from "@/lib/utils";
 export default function YearWrappedPage() {
     const { movies, isLoading: moviesLoading } = useMovies();
     const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+    const availableYears = useMemo(() => {
+        const years = [...new Set(movies.map((m) => new Date(m.date).getFullYear()))].sort((a, b) => b - a);
+        return years.length > 0 ? years : [new Date().getFullYear()];
+    }, [movies]);
 
     const stats = useMemo(() => {
         if (!movies.length) return null;
 
-        const currentYear = new Date().getFullYear();
         const yearMovies = movies.filter(
-            (m) => new Date(m.date).getFullYear() === currentYear
+            (m) => new Date(m.date).getFullYear() === selectedYear
         );
 
         if (!yearMovies.length) return null;
@@ -198,7 +203,7 @@ export default function YearWrappedPage() {
         const favDayIdx = dayCounts.indexOf(Math.max(...dayCounts));
 
         return {
-            year: currentYear,
+            year: selectedYear,
             totalMovies,
             totalSpent,
             avgRating,
@@ -223,7 +228,7 @@ export default function YearWrappedPage() {
             favoriteDay: dayNames[favDayIdx],
             favoriteDayCount: dayCounts[favDayIdx],
         };
-    }, [movies, giftCards]);
+    }, [movies, giftCards, selectedYear]);
 
     const isLoading = moviesLoading || giftCardsLoading;
 
@@ -297,6 +302,24 @@ export default function YearWrappedPage() {
             <PageHeader title={`${stats.year} Wrapped`} showBack />
 
             <div className="space-y-4 p-4">
+                {availableYears.length > 1 && (
+                    <div className="flex gap-1.5">
+                        {availableYears.map((y) => (
+                            <button
+                                key={y}
+                                onClick={() => setSelectedYear(y)}
+                                className={cn(
+                                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                                    selectedYear === y
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                {y}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {/* Hero Stats */}
                 <div className="rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent p-6 text-center">
                     <Sparkles className="mx-auto h-8 w-8 text-primary" />

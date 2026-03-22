@@ -23,8 +23,7 @@ export default function DashboardPage() {
   const { budgets } = useBudgets();
   const { passports } = usePassports();
   const [costMode, setCostMode] = useState<CostMode>("all");
-
-  const year = new Date().getFullYear();
+  const [year, setYear] = useState(new Date().getFullYear());
 
   const getMovieCost = (m: (typeof movies)[number], mode: CostMode) => {
     // GC discount savings
@@ -86,6 +85,11 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [movies]);
 
+  const availableYears = useMemo(() => {
+    const years = [...new Set(movies.map((m) => new Date(m.date).getFullYear()))].sort((a, b) => b - a);
+    return years.length > 0 ? years : [new Date().getFullYear()];
+  }, [movies]);
+
   const isLoading = moviesLoading || giftCardsLoading;
 
   return (
@@ -107,8 +111,26 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Cost Mode Toggle */}
-      <div className="px-4 pt-3">
+      {/* Year + Cost Mode */}
+      <div className="px-4 pt-3 space-y-2">
+        {availableYears.length > 1 && (
+          <div className="flex gap-1.5">
+            {availableYears.map((y) => (
+              <button
+                key={y}
+                onClick={() => setYear(y)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                  year === y
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex rounded-xl bg-secondary/50 p-1">
           {([
             { key: "ticket" as CostMode, label: "Ticket" },

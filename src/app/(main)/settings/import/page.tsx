@@ -373,11 +373,57 @@ export default function ImportPage() {
           status: "watched" as const,
         };
 
-        const { error } = await supabase.from("movies").insert(movieData as never);
+        const { data: insertedMovie, error } = await supabase
+          .from("movies")
+          .insert(movieData as never)
+          .select("id")
+          .single();
         if (error) {
           log.push(`Failed "${title}": ${error.message}`);
           failed++;
         } else {
+          // TMDB enrichment
+          try {
+            const searchRes = await fetch(`/api/tmdb?query=${encodeURIComponent(title)}`);
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const tmdbMatch = searchData.results?.[0];
+              if (tmdbMatch?.tmdb_id) {
+                const detailRes = await fetch(`/api/tmdb?id=${tmdbMatch.tmdb_id}`);
+                if (detailRes.ok) {
+                  const tmdb = await detailRes.json();
+                  const enrichment: Record<string, unknown> = {
+                    tmdb_id: tmdb.tmdb_id,
+                    poster_url: tmdb.poster_url,
+                    director: tmdb.director || movieData.director,
+                    cast_members: tmdb.cast_members,
+                    composer: tmdb.composer,
+                    cinematographer: tmdb.cinematographer,
+                    budget: tmdb.budget,
+                    box_office: tmdb.box_office,
+                    tmdb_rating: tmdb.tmdb_rating,
+                    tmdb_vote_count: tmdb.tmdb_vote_count,
+                    certification: tmdb.certification,
+                    trailer_url: tmdb.trailer_url,
+                    keywords: tmdb.keywords,
+                    overview: tmdb.overview,
+                    release_date: tmdb.release_date,
+                  };
+                  // Only override runtime/genres if not already set from CSV
+                  if (!runtime && tmdb.runtime_minutes) enrichment.runtime_minutes = tmdb.runtime_minutes;
+                  if (!genres && tmdb.genres) enrichment.genres = tmdb.genres;
+
+                  await supabase
+                    .from("movies")
+                    .update(enrichment as never)
+                    .eq("id", (insertedMovie as any).id);
+                }
+              }
+            }
+          } catch {
+            // TMDB enrichment is best-effort, don't fail the import
+          }
+
           const warnings: string[] = [];
           if (formatName && !format) warnings.push(`format "${formatName}" not found`);
           if (theaterName && !theater) warnings.push(`theater "${theaterName}" not found`);
