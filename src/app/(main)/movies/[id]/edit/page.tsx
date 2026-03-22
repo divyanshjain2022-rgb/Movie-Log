@@ -172,6 +172,18 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
     purpose: (mgc as any).purpose || "ticket" as "ticket" | "fnb",
   })).filter(u => u.gift_card_id) || [];
 
+  // When editing, add back this movie's GC usage to each card's balance
+  // so the user can adjust amounts without being capped at 0
+  const adjustedGiftCards = giftCards.map(gc => {
+    const movieUsage = initialGiftCardUsage
+      .filter(u => u.gift_card_id === gc.id)
+      .reduce((sum, u) => sum + u.amount_used, 0);
+    if (movieUsage > 0) {
+      return { ...gc, balance: gc.balance + movieUsage, status: "active" as const };
+    }
+    return gc;
+  });
+
   return (
     <div className="flex min-h-screen flex-col">
       <PageHeader title="Edit Movie" showBack />
@@ -197,7 +209,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               moods={moods}
               aspects={aspects}
               rewatchOptions={rewatchOptions}
-              giftCards={giftCards.filter((gc) => gc.status === "active" || initialGiftCardUsage.some(u => u.gift_card_id === gc.id))}
+              giftCards={adjustedGiftCards.filter((gc) => gc.status === "active" || initialGiftCardUsage.some(u => u.gift_card_id === gc.id))}
               franchises={franchises}
               companions={companions}
               passports={passports}

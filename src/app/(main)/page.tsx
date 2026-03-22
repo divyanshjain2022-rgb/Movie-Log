@@ -243,7 +243,7 @@ export default function DashboardPage() {
               <Skeleton className="h-[88px] rounded-2xl" />
             </div>
           ) : (
-            <RecentMovies movies={recentMovies} />
+            <RecentMovies movies={recentMovies} costMode={costMode} />
           )}
         </section>
 
