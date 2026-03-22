@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Edit, Trash2, ExternalLink, Share2 } from "lucide-react";
@@ -31,7 +31,6 @@ import {
   formatTime,
   getRatingColor,
   getRatingLabel,
-  getEffectiveCost,
 } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +45,31 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const { movies: allMovies } = useMovies();
   const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [costToggles, setCostToggles] = useState({
+    ticket: true,
+    bookingFee: true,
+    fnb: true,
+    other: true,
+  });
+
+  const customTotal = useMemo(() => {
+    if (!movie) return 0;
+    const m = movie as any;
+    let cost = 0;
+    if (costToggles.ticket) cost += m.ticket_cost || 0;
+    if (costToggles.bookingFee) cost += m.convenience_fee || 0;
+    if (costToggles.fnb) cost += m.fnb_cost || 0;
+    if (costToggles.other) cost += m.other_expenses || 0;
+    cost -= m.passport_savings || 0;
+    const gcSavings = (m.movie_gift_cards || []).reduce((sum: number, mgc: any) => {
+      const discount = mgc.gift_card?.discount_percent || 0;
+      return sum + mgc.amount_used * (discount / 100);
+    }, 0);
+    cost -= gcSavings;
+    return Math.max(cost, 0);
+  }, [movie, costToggles]);
+
+  const isCustomCost = !costToggles.ticket || !costToggles.bookingFee || !costToggles.fnb || !costToggles.other;
 
   const handleDelete = async () => {
     try {
@@ -399,70 +423,138 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
         <section className="mb-6">
           <h2 className="mb-3 font-semibold">Spending</h2>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Ticket</span>
-              <span>{formatCurrency(movie.ticket_cost)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Booking Fee</span>
-              <span>{formatCurrency(movie.convenience_fee)}</span>
-            </div>
-            {movie.passport_savings > 0 && (
-              <div className="flex justify-between text-positive">
-                <span>Passport Savings</span>
-                <span>-{formatCurrency(movie.passport_savings)}</span>
-              </div>
-            )}
+            {/* Gross Costs */}
+            <label className="flex items-center justify-between cursor-pointer">
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={costToggles.ticket}
+                  onChange={() => setCostToggles(p => ({ ...p, ticket: !p.ticket }))}
+                  className="h-3.5 w-3.5 rounded border-border accent-primary"
+                />
+                <span className={cn(costToggles.ticket ? "text-muted-foreground" : "text-muted-foreground/30 line-through")}>Ticket</span>
+              </span>
+              <span className={cn(!costToggles.ticket && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.ticket_cost)}</span>
+            </label>
+            <label className="flex items-center justify-between cursor-pointer">
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={costToggles.bookingFee}
+                  onChange={() => setCostToggles(p => ({ ...p, bookingFee: !p.bookingFee }))}
+                  className="h-3.5 w-3.5 rounded border-border accent-primary"
+                />
+                <span className={cn(costToggles.bookingFee ? "text-muted-foreground" : "text-muted-foreground/30 line-through")}>Booking Fee</span>
+              </span>
+              <span className={cn(!costToggles.bookingFee && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.convenience_fee)}</span>
+            </label>
             {movie.fnb_cost && movie.fnb_cost > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  F&B {movie.fnb_items && `(${movie.fnb_items})`}
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={costToggles.fnb}
+                    onChange={() => setCostToggles(p => ({ ...p, fnb: !p.fnb }))}
+                    className="h-3.5 w-3.5 rounded border-border accent-primary"
+                  />
+                  <span className={cn(costToggles.fnb ? "text-muted-foreground" : "text-muted-foreground/30 line-through")}>
+                    F&B {movie.fnb_items && `(${movie.fnb_items})`}
+                  </span>
                 </span>
-                <span>{formatCurrency(movie.fnb_cost)}</span>
-              </div>
+                <span className={cn(!costToggles.fnb && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.fnb_cost)}</span>
+              </label>
             )}
             {movie.other_expenses && movie.other_expenses > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Other Expenses</span>
-                <span>{formatCurrency(movie.other_expenses)}</span>
-              </div>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={costToggles.other}
+                    onChange={() => setCostToggles(p => ({ ...p, other: !p.other }))}
+                    className="h-3.5 w-3.5 rounded border-border accent-primary"
+                  />
+                  <span className={cn(costToggles.other ? "text-muted-foreground" : "text-muted-foreground/30 line-through")}>Other Expenses</span>
+                </span>
+                <span className={cn(!costToggles.other && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.other_expenses)}</span>
+              </label>
             )}
+
+            {/* Gross Total */}
             <Separator className="my-2" />
             <div className="flex justify-between font-medium">
-              <span>Effective Total</span>
-              <span>{formatCurrency(getEffectiveCost(movie as any))}</span>
+              <span>Gross Total</span>
+              <span>{formatCurrency(
+                (costToggles.ticket ? (movie.ticket_cost || 0) : 0) +
+                (costToggles.bookingFee ? (movie.convenience_fee || 0) : 0) +
+                (costToggles.fnb ? (movie.fnb_cost || 0) : 0) +
+                (costToggles.other ? (movie.other_expenses || 0) : 0)
+              )}</span>
             </div>
 
-            {/* Multi-GC display */}
-            {movie.movie_gift_cards && movie.movie_gift_cards.length > 0 && (
+            {/* Savings */}
+            {(movie.passport_savings > 0 || (movie.movie_gift_cards && movie.movie_gift_cards.length > 0)) && (
               <>
                 <Separator className="my-2" />
-                <p className="text-xs font-medium text-muted-foreground">Gift Cards Used</p>
-                {movie.movie_gift_cards.map((mgc) => (
-                  <div key={mgc.id} className="flex justify-between text-positive">
-                    <span>
-                      {(mgc as any).purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}{" "}
-                      {mgc.gift_card?.discount_percent ? `(${mgc.gift_card.discount_percent.toFixed(0)}% off)` : ""}
-                    </span>
-                    <span>{formatCurrency(mgc.amount_used)}</span>
+                <p className="text-xs font-medium text-muted-foreground/50">Savings</p>
+                {movie.passport_savings > 0 && (
+                  <div className="flex justify-between text-positive">
+                    <span>Passport</span>
+                    <span>-{formatCurrency(movie.passport_savings)}</span>
                   </div>
-                ))}
+                )}
+                {movie.movie_gift_cards && movie.movie_gift_cards.map((mgc) => {
+                  const discount = mgc.gift_card?.discount_percent || 0;
+                  const savings = mgc.amount_used * (discount / 100);
+                  if (savings <= 0) return null;
+                  return (
+                    <div key={mgc.id} className="flex justify-between text-positive">
+                      <span>
+                        {(mgc as any).purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}{" "}
+                        {discount > 0 && `${discount.toFixed(0)}% off on ${formatCurrency(mgc.amount_used)}`}
+                      </span>
+                      <span>-{formatCurrency(savings)}</span>
+                    </div>
+                  );
+                })}
               </>
             )}
 
-            {/* Payment methods */}
-            {movie.payment_methods && (movie.payment_methods as Array<{method: string; amount: number}>).length > 0 && (
-              <>
-                <Separator className="my-2" />
-                <p className="text-xs font-medium text-muted-foreground">Payment Breakdown</p>
-                {(movie.payment_methods as Array<{method: string; amount: number}>).map((pm, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span className="text-muted-foreground">{pm.method}</span>
-                    <span>{formatCurrency(pm.amount)}</span>
-                  </div>
-                ))}
-              </>
-            )}
+            {/* Effective Total */}
+            <Separator className="my-2" />
+            <div className="flex justify-between font-semibold text-[15px]">
+              <span>
+                Effective Total
+                {isCustomCost && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground/50">(filtered)</span>}
+              </span>
+              <span>{formatCurrency(customTotal)}</span>
+            </div>
+
+            {/* Payment Breakdown */}
+            {(() => {
+              const gcUsages = movie.movie_gift_cards || [];
+              const payments = (movie.payment_methods as Array<{method: string; amount: number}>) || [];
+              if (gcUsages.length === 0 && payments.length === 0) return null;
+              return (
+                <>
+                  <Separator className="my-2" />
+                  <p className="text-xs font-medium text-muted-foreground/50">Paid Via</p>
+                  {gcUsages.map((mgc) => (
+                    <div key={mgc.id} className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        {(mgc as any).purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}
+                      </span>
+                      <span>{formatCurrency(mgc.amount_used)}</span>
+                    </div>
+                  ))}
+                  {payments.map((pm, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span className="text-muted-foreground">{pm.method}</span>
+                      <span>{formatCurrency(pm.amount)}</span>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
           </div>
         </section>
 
