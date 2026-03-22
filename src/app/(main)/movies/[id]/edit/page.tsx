@@ -1,10 +1,10 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared";
-import { MovieForm } from "@/components/movies";
+import { MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
@@ -27,6 +27,32 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { passports } = usePassports();
   const { companionIds: initialCompanionIds } = useMovieCompanions(id);
   const { syncCompanions } = useSyncMovieCompanions();
+
+  const [tmdbOverrides, setTmdbOverrides] = useState<Partial<MovieFormData>>({});
+
+  const handleTMDBSelect = (tmdb: any) => {
+    setTmdbOverrides({
+      title: tmdb.title,
+      tmdb_id: tmdb.tmdb_id,
+      runtime_minutes: tmdb.runtime_minutes,
+      genres: tmdb.genres,
+      language: tmdb.language,
+      director: tmdb.director,
+      poster_url: tmdb.poster_url,
+      cast_members: tmdb.cast_members,
+      composer: tmdb.composer,
+      cinematographer: tmdb.cinematographer,
+      budget: tmdb.budget || undefined,
+      box_office: tmdb.box_office || undefined,
+      tmdb_rating: tmdb.tmdb_rating || undefined,
+      tmdb_vote_count: tmdb.tmdb_vote_count || undefined,
+      certification: tmdb.certification || undefined,
+      trailer_url: tmdb.trailer_url || undefined,
+      keywords: tmdb.keywords,
+      overview: tmdb.overview || undefined,
+      release_date: tmdb.release_date || undefined,
+    });
+  };
 
   const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     // Convert 12-hour time to 24-hour format
@@ -165,6 +191,9 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
     }
     : {};
 
+  // Merge TMDB overrides into initial data
+  const mergedData = { ...initialData, ...tmdbOverrides };
+
   // Pre-populate gift card usage from junction table
   const initialGiftCardUsage = movie?.movie_gift_cards?.map(mgc => ({
     gift_card_id: mgc.gift_card?.id || "",
@@ -202,8 +231,23 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               <p className="text-muted-foreground">Movie not found</p>
             </div>
           ) : (
-            <MovieForm
-              initialData={initialData}
+            <>
+              {/* TMDB Search for enrichment */}
+              {!movie.tmdb_id && !tmdbOverrides.tmdb_id && (
+                <div className="mb-4 space-y-2">
+                  <label className="text-sm font-medium">Search TMDB</label>
+                  <TMDBSearch
+                    initialTitle={movie.title || ""}
+                    onSelect={handleTMDBSelect}
+                    selectedTmdbId={tmdbOverrides.tmdb_id}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Search to auto-fill poster, director, cast and more
+                  </p>
+                </div>
+              )}
+              <MovieForm
+                initialData={mergedData}
               formats={formats}
               theaters={theaters}
               moods={moods}
@@ -220,6 +264,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               isEditing
               initialGiftCardUsage={initialGiftCardUsage}
             />
+            </>
           )}
         </div>
       </ScrollArea>
