@@ -52,8 +52,11 @@ export default function RewatchPage() {
         setIsSubmitting(true);
 
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             const { data, error } = await supabase.from("rewatch_options").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 value: parseInt(formData.get("value") as string) || 0,
                 sort_order: options.length,

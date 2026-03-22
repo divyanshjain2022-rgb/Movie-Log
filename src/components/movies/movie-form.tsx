@@ -246,6 +246,7 @@ export function MovieForm({
       remarks: initialData?.remarks || "",
       other_expenses: initialData?.other_expenses || 0,
       passport_savings: initialData?.passport_savings || 0,
+      passport_id: initialData?.passport_id || "",
       watched_with: initialData?.watched_with || "",
       language: initialData?.language || "",
     },

@@ -11,7 +11,7 @@ import {
   GCStatus,
 } from "@/components/dashboard";
 import { useMovies, useGiftCards, useWatchlist, useBudgets } from "@/hooks";
-import { formatCurrency } from "@/lib/formula";
+import { formatCurrency, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
 type CostMode = "ticket" | "ticket_fnb" | "all";
@@ -26,13 +26,16 @@ export default function DashboardPage() {
   const year = new Date().getFullYear();
 
   const getMovieCost = (m: (typeof movies)[number], mode: CostMode) => {
+    // GC discount savings
+    const gcSavings = ((m as any).movie_gift_cards || []).reduce((sum: number, mgc: any) => {
+      const discount = mgc.gift_card?.discount_percent || 0;
+      return sum + mgc.amount_used * (discount / 100);
+    }, 0);
     const passport = m.passport_savings || 0;
-    const ticket = (m.ticket_cost || 0) + (m.convenience_fee || 0) - passport;
+    const ticket = (m.ticket_cost || 0) + (m.convenience_fee || 0) - passport - gcSavings;
     if (mode === "ticket") return Math.max(ticket, 0);
     const fnb = m.fnb_cost || 0;
     if (mode === "ticket_fnb") return Math.max(ticket + fnb, 0);
-    // "all" mode: total_cost already includes passport savings subtracted (after migration)
-    // Fallback: compute manually for backward compat
     const other = m.other_expenses || 0;
     return Math.max(ticket + fnb + other, 0);
   };

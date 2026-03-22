@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
 import { useFormats } from "@/hooks";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Format } from "@/types";
 
@@ -41,8 +42,12 @@ export default function FormatsPage() {
         setIsSubmitting(true);
 
         try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             await addFormat({
-                user_id: "", // Set by RLS
+                user_id: user.id,
                 name: formData.get("name") as string,
                 weight: parseFloat(formData.get("weight") as string) || 1.0,
                 sort_order: formats.length,

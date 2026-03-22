@@ -62,8 +62,11 @@ export default function MoodsPage() {
         setIsSubmitting(true);
 
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             const { data, error } = await supabase.from("moods").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 emoji: (formData.get("emoji") as string) || null,
                 sentiment: formData.get("sentiment") as string,

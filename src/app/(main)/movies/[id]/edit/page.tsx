@@ -94,6 +94,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
         franchise_id: data.franchise_id || null,
         is_rewatch: data.is_rewatch || false,
         original_movie_id: data.original_movie_id || null,
+        passport_id: data.passport_id || null,
       }, giftCardUsage || []);
 
       // Sync companion associations
@@ -160,6 +161,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
       franchise_id: movie.franchise_id || undefined,
       is_rewatch: movie.is_rewatch || false,
       original_movie_id: movie.original_movie_id || undefined,
+      passport_id: (movie as any).passport_id || undefined,
     }
     : {};
 

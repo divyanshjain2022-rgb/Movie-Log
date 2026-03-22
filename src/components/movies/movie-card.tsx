@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Film } from "lucide-react";
-import { formatCurrency, formatDate, getRatingColor } from "@/lib/formula";
+import { formatCurrency, formatDate, getRatingColor, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { MovieWithRelations } from "@/types";
 
@@ -19,6 +19,8 @@ function getRatingBg(rating: number) {
 }
 
 export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
+  const effectiveCost = getEffectiveCost(movie as any);
+
   if (variant === "compact") {
     return (
       <Link href={`/movies/${movie.id}`}>
@@ -44,7 +46,7 @@ export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
             </p>
           </div>
           <div className="text-xs font-medium text-muted-foreground/50">
-            {formatCurrency(movie.total_cost)}
+            {formatCurrency(effectiveCost)}
           </div>
         </div>
       </Link>
@@ -105,7 +107,7 @@ export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
               )}
             </div>
             <span className="text-xs font-semibold text-muted-foreground/50">
-              {formatCurrency(movie.total_cost)}
+              {formatCurrency(effectiveCost)}
             </span>
           </div>
         </div>

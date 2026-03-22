@@ -31,6 +31,7 @@ import {
   formatTime,
   getRatingColor,
   getRatingLabel,
+  getEffectiveCost,
 } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
@@ -428,12 +429,8 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             )}
             <Separator className="my-2" />
             <div className="flex justify-between font-medium">
-              <span>Total</span>
-              <span>{formatCurrency(
-                (movie.ticket_cost || 0) + (movie.convenience_fee || 0) +
-                (movie.fnb_cost || 0) + (movie.other_expenses || 0) -
-                (movie.passport_savings || 0)
-              )}</span>
+              <span>Effective Total</span>
+              <span>{formatCurrency(getEffectiveCost(movie as any))}</span>
             </div>
 
             {/* Multi-GC display */}

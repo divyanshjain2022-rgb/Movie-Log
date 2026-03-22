@@ -67,8 +67,11 @@ export default function AspectsPage() {
         setIsSubmitting(true);
 
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             const { data, error } = await supabase.from("aspects").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 category: formData.get("category") as string,
             } as never).select().single();

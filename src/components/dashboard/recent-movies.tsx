@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Star, Film } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/formula";
+import { formatCurrency, formatDate, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { MovieWithRelations } from "@/types";
 
@@ -85,7 +85,7 @@ export function RecentMovies({ movies }: RecentMoviesProps) {
               </div>
 
               <div className="mt-1 text-xs font-medium text-muted-foreground/50">
-                {formatCurrency(movie.total_cost)}
+                {formatCurrency(getEffectiveCost(movie as any))}
                 {movie.theater && (
                   <span> · {movie.theater.name}</span>
                 )}

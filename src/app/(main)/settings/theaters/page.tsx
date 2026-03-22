@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
 import { useTheaters } from "@/hooks";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Theater } from "@/types";
 
@@ -47,8 +48,12 @@ export default function TheatersPage() {
             : [];
 
         try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             await addTheater({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 city: (formData.get("city") as string) || null,
                 has_imax: formData.get("has_imax") === "on",

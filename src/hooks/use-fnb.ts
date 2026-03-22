@@ -96,10 +96,14 @@ export function useCreateFnbPurchase() {
       setError(null);
       const supabase = createClient();
 
+      // Get authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
       // Create the F&B purchase
       const { data: insertedData, error: insertError } = await supabase
         .from("fnb_purchases")
-        .insert(fnbPurchase as never)
+        .insert({ ...fnbPurchase, user_id: user.id } as never)
         .select()
         .single();
 

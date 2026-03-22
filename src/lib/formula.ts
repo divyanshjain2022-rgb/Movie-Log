@@ -50,6 +50,34 @@ export function calculateTrueCost(
   return totalCost * (1 - gcDiscountPercent / 100);
 }
 
+/** Compute the effective cost of a movie after passport savings and GC discounts */
+export function getEffectiveCost(movie: {
+  ticket_cost: number;
+  convenience_fee: number;
+  fnb_cost?: number | null;
+  other_expenses?: number | null;
+  passport_savings?: number;
+  movie_gift_cards?: Array<{
+    amount_used: number;
+    gift_card?: { discount_percent?: number } | null;
+  }>;
+}): number {
+  const gross =
+    (movie.ticket_cost || 0) +
+    (movie.convenience_fee || 0) +
+    (movie.fnb_cost || 0) +
+    (movie.other_expenses || 0) -
+    (movie.passport_savings || 0);
+
+  // Subtract the GC discount portion (amount_used × discount_percent / 100)
+  const gcSavings = (movie.movie_gift_cards || []).reduce((sum, mgc) => {
+    const discount = mgc.gift_card?.discount_percent || 0;
+    return sum + mgc.amount_used * (discount / 100);
+  }, 0);
+
+  return Math.max(gross - gcSavings, 0);
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
