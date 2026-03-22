@@ -346,8 +346,6 @@ export default function ImportPage() {
           }
         }
 
-        const totalCost = ticketCost + convenienceFee + fnbCost + otherExpenses - passportSavings;
-
         const movieData: Record<string, unknown> = {
           user_id: user.id,
           title,
@@ -362,7 +360,6 @@ export default function ImportPage() {
           fnb_cost: fnbCost || null,
           fnb_items: getValue("fnb_items") || null,
           other_expenses: otherExpenses || null,
-          total_cost: Math.max(totalCost, 0),
           rating,
           review: getValue("review") || null,
           remarks: getValue("remarks") || null,
