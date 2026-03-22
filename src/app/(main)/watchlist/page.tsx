@@ -206,7 +206,7 @@ export default function WatchlistPage() {
           <>
             {/* Unwatched */}
             {unwatched.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {unwatched.map((item) => (
                   <div
                     key={item.id}
@@ -275,7 +275,7 @@ export default function WatchlistPage() {
                 <h3 className="mb-2 text-sm font-medium text-muted-foreground">
                   Watched ({watched.length})
                 </h3>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {watched.map((item) => (
                     <div
                       key={item.id}

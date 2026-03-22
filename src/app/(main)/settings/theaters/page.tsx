@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, MapPin, Star, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,16 +25,20 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
-import { useTheaters } from "@/hooks";
+import { useTheaters, useTheaterRatings } from "@/hooks";
+import { computeTheaterAvgRatings } from "@/hooks/use-theater-ratings";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { Theater } from "@/types";
 
 export default function TheatersPage() {
     const { theaters, isLoading, addTheater, updateTheater, deleteTheater } = useTheaters();
+    const { ratings: allRatings } = useTheaterRatings();
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [editingTheater, setEditingTheater] = useState<Theater | null>(null);
     const [deletingTheater, setDeletingTheater] = useState<Theater | null>(null);
+    const [expandedTheater, setExpandedTheater] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -237,7 +241,7 @@ export default function TheatersPage() {
 
             <div className="p-4">
                 {isLoading ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         <Skeleton className="h-20" />
                         <Skeleton className="h-20" />
                     </div>
@@ -247,34 +251,122 @@ export default function TheatersPage() {
                         <p className="mt-3 text-muted-foreground">No theaters yet</p>
                     </div>
                 ) : (
-                    <div className="space-y-2">
-                        {theaters.map((theater) => (
-                            <Card key={theater.id}>
-                                <CardContent className="flex items-center justify-between p-4">
-                                    <div>
-                                        <p className="font-medium">{theater.name}</p>
-                                        {theater.city && (
-                                            <p className="text-sm text-muted-foreground">{theater.city}</p>
-                                        )}
-                                        <div className="mt-1 flex flex-wrap gap-1">
-                                            {theater.has_imax && <Badge variant="secondary" className="text-xs">IMAX</Badge>}
-                                            {theater.has_4dx && <Badge variant="secondary" className="text-xs">4DX</Badge>}
-                                            {theater.capabilities?.map((cap) => (
-                                                <Badge key={cap} variant="outline" className="text-xs">{cap}</Badge>
-                                            ))}
+                    <div className="space-y-3">
+                        {theaters.map((theater) => {
+                            const theaterRatings = allRatings.filter(r => r.theater_id === theater.id);
+                            const avg = computeTheaterAvgRatings(theaterRatings);
+                            const isExpanded = expandedTheater === theater.id;
+
+                            return (
+                                <Card key={theater.id}>
+                                    <CardContent className="p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-medium">{theater.name}</p>
+                                                    {avg.count > 0 && (
+                                                        <div className="flex items-center gap-0.5 text-xs text-yellow-400">
+                                                            <Star className="h-3 w-3 fill-yellow-400" />
+                                                            <span className="font-medium">{avg.overall.toFixed(1)}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {theater.city && (
+                                                    <p className="text-sm text-muted-foreground">{theater.city}</p>
+                                                )}
+                                                <div className="mt-1 flex flex-wrap gap-1">
+                                                    {theater.has_imax && <Badge variant="secondary" className="text-xs">IMAX</Badge>}
+                                                    {theater.has_4dx && <Badge variant="secondary" className="text-xs">4DX</Badge>}
+                                                    {theater.capabilities?.map((cap) => (
+                                                        <Badge key={cap} variant="outline" className="text-xs">{cap}</Badge>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                {avg.count > 0 && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8"
+                                                        onClick={() => setExpandedTheater(isExpanded ? null : theater.id)}
+                                                    >
+                                                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                    </Button>
+                                                )}
+                                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTheater(theater)}>
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeletingTheater(theater)}>
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTheater(theater)}>
-                                            <Pencil className="h-4 w-4" />
-                                        </Button>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeletingTheater(theater)}>
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+
+                                        {/* Expanded ratings detail */}
+                                        {isExpanded && avg.count > 0 && (
+                                            <div className="mt-3 space-y-2 border-t pt-3">
+                                                <p className="text-xs font-medium text-muted-foreground">
+                                                    Average Ratings ({avg.count} {avg.count === 1 ? "review" : "reviews"})
+                                                </p>
+                                                {[
+                                                    { label: "Sound", value: avg.sound },
+                                                    { label: "Seats", value: avg.seat },
+                                                    { label: "Screen", value: avg.screen },
+                                                    { label: "Cleanliness", value: avg.cleanliness },
+                                                ].map(({ label, value }) => (
+                                                    <div key={label} className="flex items-center justify-between text-sm">
+                                                        <span className="text-muted-foreground">{label}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <div className="flex gap-0.5">
+                                                                {[1, 2, 3, 4, 5].map((s) => (
+                                                                    <Star
+                                                                        key={s}
+                                                                        className={cn(
+                                                                            "h-3.5 w-3.5",
+                                                                            s <= Math.round(value)
+                                                                                ? "fill-yellow-400 text-yellow-400"
+                                                                                : "text-muted-foreground/20"
+                                                                        )}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                            <span className="text-xs font-medium w-6 text-right">
+                                                                {value > 0 ? value.toFixed(1) : "–"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {/* Per-audi breakdown if multiple audis */}
+                                                {(() => {
+                                                    const audis = [...new Set(theaterRatings.filter(r => r.audi).map(r => r.audi!))];
+                                                    if (audis.length <= 1) return null;
+                                                    return (
+                                                        <div className="mt-2 space-y-1.5">
+                                                            <p className="text-xs font-medium text-muted-foreground">By Audi</p>
+                                                            {audis.map(audi => {
+                                                                const audiRatings = theaterRatings.filter(r => r.audi === audi);
+                                                                const audiAvg = computeTheaterAvgRatings(audiRatings);
+                                                                return (
+                                                                    <div key={audi} className="flex items-center justify-between text-xs">
+                                                                        <span>Audi {audi}</span>
+                                                                        <div className="flex items-center gap-1">
+                                                                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                                                                            <span className="font-medium">{audiAvg.overall.toFixed(1)}</span>
+                                                                            <span className="text-muted-foreground">({audiRatings.length})</span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
                     </div>
                 )}
             </div>

@@ -14,6 +14,7 @@ import {
   Users,
   Clapperboard,
   Shield,
+  MonitorPlay,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared";
 
@@ -38,6 +39,7 @@ const settingsGroups = [
     title: "Customize",
     items: [
       { href: "/settings/theaters", icon: MapPin, label: "Theaters", desc: "Your cinemas" },
+      { href: "/settings/formats", icon: MonitorPlay, label: "Formats", desc: "IMAX, MX4D, Dolby..." },
       { href: "/settings/moods", icon: Smile, label: "Moods", desc: "Post-movie feels" },
       { href: "/settings/aspects", icon: Star, label: "Aspects", desc: "Rating criteria" },
       { href: "/settings/rewatch", icon: RotateCcw, label: "Rewatch", desc: "Would you again?" },

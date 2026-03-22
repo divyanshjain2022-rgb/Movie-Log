@@ -135,7 +135,7 @@ export default function CompanionsPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {companionStats.map((c) => (
               <div
                 key={c.id}

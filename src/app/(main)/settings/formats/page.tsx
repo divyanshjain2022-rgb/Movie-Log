@@ -122,7 +122,7 @@ export default function FormatsPage() {
                     className="mt-1"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
-                    Higher weight = higher expected value. Default is 1.0
+                    Multiplier for value score. Premium formats like IMAX (1.6) or MX4D (1.8) get a higher multiplier. Default 2D = 1.0
                 </p>
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -187,7 +187,7 @@ export default function FormatsPage() {
 
             <div className="p-4">
                 {isLoading ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         <Skeleton className="h-16" />
                         <Skeleton className="h-16" />
                         <Skeleton className="h-16" />
@@ -200,7 +200,7 @@ export default function FormatsPage() {
                         </p>
                     </div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {formats.map((format) => (
                             <Card key={format.id}>
                                 <CardContent className="flex items-center justify-between p-4">

@@ -103,7 +103,7 @@ export default function FranchisesPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {franchises.map((f) => {
               const fMovies = movies.filter((m) => m.franchise_id === f.id);
               const avgRating =

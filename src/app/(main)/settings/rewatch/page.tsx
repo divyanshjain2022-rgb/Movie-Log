@@ -153,7 +153,7 @@ export default function RewatchPage() {
                 {isLoading ? <Skeleton className="h-40" /> : options.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">No options yet</div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {options.map(option => (
                             <Card key={option.id}>
                                 <CardContent className="flex items-center justify-between p-4">

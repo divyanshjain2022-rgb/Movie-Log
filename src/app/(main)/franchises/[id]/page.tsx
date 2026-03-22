@@ -80,7 +80,7 @@ export default function FranchiseDetailPage({ params }: FranchiseDetailPageProps
 
         {/* Timeline */}
         {movies.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <h2 className="mb-3 font-semibold">Timeline</h2>
             {movies.map((movie, i) => (
               <Link

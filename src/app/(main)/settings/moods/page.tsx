@@ -197,11 +197,11 @@ export default function MoodsPage() {
 
             <div className="p-4">
                 {isLoading ? (
-                    <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
+                    <div className="space-y-3"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
                 ) : moods.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">No moods yet</div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {moods.map((mood) => (
                             <Card key={mood.id}>
                                 <CardContent className="flex items-center justify-between p-4">

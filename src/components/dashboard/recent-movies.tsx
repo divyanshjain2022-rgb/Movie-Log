@@ -39,7 +39,7 @@ export function RecentMovies({ movies }: RecentMoviesProps) {
   }
 
   return (
-    <div className="space-y-3 stagger">
+    <div className="space-y-4 stagger">
       {movies.map((movie) => (
         <Link key={movie.id} href={`/movies/${movie.id}`}>
           <div className="group flex gap-3.5 rounded-2xl bg-card/40 p-3 transition-all duration-300 active:scale-[0.98] hover:bg-card/70">
