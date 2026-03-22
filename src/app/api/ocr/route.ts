@@ -152,11 +152,8 @@ function stripDataUri(data: string): string {
   return data;
 }
 
-// Note: In App Router, request body size is not limited by bodyParser config.
-// The 4MB client-side check in ticket-upload handles oversized files.
-
-// Increase max duration for Vercel serverless (hobby = 10s, pro = 60s)
-export const maxDuration = 60;
+// Edge Runtime: 30s timeout on Hobby (vs 10s for Node.js serverless)
+export const runtime = "edge";
 
 const MODEL_PRIORITY = [
   "gemini-3-flash-preview",

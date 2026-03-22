@@ -202,9 +202,9 @@ export default function NewMoviePage() {
 
       console.log(`[OCR] Uploading: ${file.name}, type=${mimeType}, size=${(base64.length * 0.75 / 1024).toFixed(0)}KB`);
 
-      // 15s timeout — Vercel hobby has 10s limit, should respond or fail within that
+      // 28s timeout — Edge Runtime gives us 30s on Vercel Hobby
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 28000);
 
       const response = await fetch("/api/ocr", {
         method: "POST",

@@ -55,7 +55,8 @@ const responseSchema = {
   },
 };
 
-export const maxDuration = 60;
+// Edge Runtime: 30s timeout on Hobby (vs 10s for Node.js serverless)
+export const runtime = "edge";
 
 function detectMimeType(imageData: string, providedMime?: string): string {
   const dataUriMatch = imageData.match(/^data:([^;]+);base64,/);
