@@ -2,11 +2,11 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Plus, Search, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared";
-import { MovieCard } from "@/components/movies";
+import { MovieCard, DEFAULT_COST_COMPONENTS, type CostComponents } from "@/components/movies/movie-card";
 import {
   MovieFiltersSheet,
   applyFilters,
@@ -14,6 +14,11 @@ import {
   DEFAULT_FILTERS,
   type MovieFilters,
 } from "@/components/movies/movie-filters";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useMovies, useLookupData } from "@/hooks";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +27,13 @@ export default function MoviesPage() {
   const { formats, theaters, moods } = useLookupData();
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<MovieFilters>(DEFAULT_FILTERS);
+  const [costComponents, setCostComponents] = useState<CostComponents>(DEFAULT_COST_COMPONENTS);
+
+  const toggleCost = (key: keyof CostComponents) => {
+    setCostComponents(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const isCustomCost = !costComponents.ticket || !costComponents.bookingFee || !costComponents.fnb || !costComponents.other;
 
   const activeFilterCount = countActiveFilters(filters);
 
@@ -55,6 +67,48 @@ export default function MoviesPage() {
       />
 
       <div className="p-4">
+        {/* Cost Components */}
+        <div className="mb-3 flex items-center gap-1.5">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all",
+                isCustomCost
+                  ? "bg-primary/12 text-primary"
+                  : "bg-card/50 text-muted-foreground/60 hover:text-muted-foreground"
+              )}>
+                Cost
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-48 p-2">
+              <p className="px-2 pb-1.5 text-[11px] font-medium text-muted-foreground/50">Include in displayed cost</p>
+              {([
+                { key: "ticket" as const, label: "Ticket" },
+                { key: "bookingFee" as const, label: "Booking Fee" },
+                { key: "fnb" as const, label: "F&B" },
+                { key: "other" as const, label: "Other Expenses" },
+              ]).map(({ key, label }) => (
+                <label
+                  key={key}
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-secondary/30 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={costComponents[key]}
+                    onChange={() => toggleCost(key)}
+                    className="h-3.5 w-3.5 rounded border-border accent-primary"
+                  />
+                  <span className="text-xs">{label}</span>
+                </label>
+              ))}
+            </PopoverContent>
+          </Popover>
+          <span className="text-[10px] text-muted-foreground/30">
+            Passport & GC discounts always applied
+          </span>
+        </div>
+
         {/* Search and Filter */}
         <div className="mb-4 flex gap-2">
           <div className="relative flex-1">
@@ -147,7 +201,7 @@ export default function MoviesPage() {
             </div>
           ) : (
             filteredMovies.map((movie) => (
-              <MovieCard key={movie.id} movie={movie} />
+              <MovieCard key={movie.id} movie={movie} costComponents={costComponents} />
             ))
           )}
         </div>

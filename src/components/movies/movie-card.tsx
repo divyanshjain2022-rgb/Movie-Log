@@ -6,9 +6,43 @@ import { formatCurrency, formatDate, getRatingColor, getEffectiveCost } from "@/
 import { cn } from "@/lib/utils";
 import type { MovieWithRelations } from "@/types";
 
+export interface CostComponents {
+  ticket: boolean;
+  bookingFee: boolean;
+  fnb: boolean;
+  other: boolean;
+}
+
+export const DEFAULT_COST_COMPONENTS: CostComponents = {
+  ticket: true,
+  bookingFee: true,
+  fnb: true,
+  other: true,
+};
+
+function getCustomCost(movie: MovieWithRelations, components: CostComponents): number {
+  const m = movie as any;
+  let cost = 0;
+  if (components.ticket) cost += m.ticket_cost || 0;
+  if (components.bookingFee) cost += m.convenience_fee || 0;
+  if (components.fnb) cost += m.fnb_cost || 0;
+  if (components.other) cost += m.other_expenses || 0;
+
+  // Always subtract passport savings and GC discounts from active components
+  cost -= m.passport_savings || 0;
+  const gcSavings = (m.movie_gift_cards || []).reduce((sum: number, mgc: any) => {
+    const discount = mgc.gift_card?.discount_percent || 0;
+    return sum + mgc.amount_used * (discount / 100);
+  }, 0);
+  cost -= gcSavings;
+
+  return Math.max(cost, 0);
+}
+
 interface MovieCardProps {
   movie: MovieWithRelations;
   variant?: "default" | "compact";
+  costComponents?: CostComponents;
 }
 
 function getRatingBg(rating: number) {
@@ -18,12 +52,14 @@ function getRatingBg(rating: number) {
   return "bg-red-500/12 text-red-400";
 }
 
-export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
-  const effectiveCost = getEffectiveCost(movie as any);
+export function MovieCard({ movie, variant = "default", costComponents }: MovieCardProps) {
+  const displayCost = costComponents
+    ? getCustomCost(movie, costComponents)
+    : getEffectiveCost(movie as any);
 
   if (variant === "compact") {
     return (
-      <Link href={`/movies/${movie.id}`}>
+      <Link href={`/movies/${movie.id}`} className="block">
         <div className="flex items-center gap-3 rounded-2xl bg-card/40 p-3 transition-all active:scale-[0.98] hover:bg-card/60">
           {movie.poster_url ? (
             <div className="h-12 w-8 flex-shrink-0 overflow-hidden rounded-lg">
@@ -46,7 +82,7 @@ export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
             </p>
           </div>
           <div className="text-xs font-medium text-muted-foreground/50">
-            {formatCurrency(effectiveCost)}
+            {formatCurrency(displayCost)}
           </div>
         </div>
       </Link>
@@ -54,11 +90,11 @@ export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
   }
 
   return (
-    <Link href={`/movies/${movie.id}`}>
-      <div className="group flex gap-3.5 rounded-2xl bg-card/40 p-3 transition-all duration-200 active:scale-[0.98] hover:bg-card/60">
+    <Link href={`/movies/${movie.id}`} className="block">
+      <div className="group flex gap-3.5 rounded-2xl bg-card/40 p-3.5 transition-all duration-200 active:scale-[0.98] hover:bg-card/60">
         {/* Poster */}
         {movie.poster_url ? (
-          <div className="relative h-[100px] w-[67px] flex-shrink-0 overflow-hidden rounded-xl">
+          <div className="relative h-[110px] w-[73px] flex-shrink-0 overflow-hidden rounded-xl">
             <img
               src={movie.poster_url}
               alt={movie.title}
@@ -66,7 +102,7 @@ export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
             />
           </div>
         ) : (
-          <div className="flex h-[100px] w-[67px] flex-shrink-0 items-center justify-center rounded-xl bg-secondary/30">
+          <div className="flex h-[110px] w-[73px] flex-shrink-0 items-center justify-center rounded-xl bg-secondary/30">
             <Film className="h-6 w-6 text-muted-foreground/20" strokeWidth={1.5} />
           </div>
         )}
@@ -89,25 +125,33 @@ export function MovieCard({ movie, variant = "default" }: MovieCardProps) {
             </div>
             <p className="mt-1 text-xs text-muted-foreground/50">
               {formatDate(movie.date)}
-              {movie.theater && ` · ${movie.theater.name}`}
+              {movie.language && ` · ${movie.language}`}
             </p>
           </div>
 
-          <div className="flex items-center justify-between mt-2">
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            {movie.format && (
+              <span className="rounded-md bg-secondary/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground/60">
+                {movie.format.name}
+              </span>
+            )}
+            {movie.theater && (
+              <span className="text-[11px] text-muted-foreground/40">
+                {movie.theater.name}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between mt-1.5">
             <div className="flex items-center gap-1.5">
-              {movie.format && (
-                <span className="rounded-md bg-secondary/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground/60">
-                  {movie.format.name}
-                </span>
-              )}
               {movie.genres && movie.genres.length > 0 && (
                 <span className="text-[11px] text-muted-foreground/40">
                   {movie.genres.slice(0, 2).join(" · ")}
                 </span>
               )}
             </div>
-            <span className="text-xs font-semibold text-muted-foreground/50">
-              {formatCurrency(effectiveCost)}
+            <span className="text-xs font-bold tabular-nums text-muted-foreground/60">
+              {formatCurrency(displayCost)}
             </span>
           </div>
         </div>

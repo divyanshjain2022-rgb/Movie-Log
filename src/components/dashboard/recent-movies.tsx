@@ -59,8 +59,8 @@ export function RecentMovies({ movies, costMode = "all" }: RecentMoviesProps) {
   return (
     <div className="space-y-4 stagger">
       {movies.map((movie) => (
-        <Link key={movie.id} href={`/movies/${movie.id}`}>
-          <div className="group flex gap-3.5 rounded-2xl bg-card/40 p-3 transition-all duration-300 active:scale-[0.98] hover:bg-card/70">
+        <Link key={movie.id} href={`/movies/${movie.id}`} className="block">
+          <div className="group flex gap-3.5 rounded-2xl bg-card/40 p-3.5 transition-all duration-300 active:scale-[0.98] hover:bg-card/70">
             {/* Poster */}
             {movie.poster_url ? (
               <div className="relative h-[72px] w-12 flex-shrink-0 overflow-hidden rounded-xl">

@@ -9,6 +9,7 @@ const supabase = createClient();
 
 async function computeValueScore(
   movie: Record<string, any>,
+  movieId?: string,
 ): Promise<number | null> {
   const rating = movie.rating;
   if (!rating || rating <= 0) return null;
@@ -29,6 +30,22 @@ async function computeValueScore(
   if (params.use_true_cost) {
     cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
   }
+
+  // Subtract GC discount savings if movie already exists
+  if (movieId) {
+    const { data: gcUsage } = await supabase
+      .from("movie_gift_cards")
+      .select("amount_used, gift_card:gift_cards(discount_percent)")
+      .eq("movie_id", movieId);
+    if (gcUsage) {
+      const gcSavings = gcUsage.reduce((sum: number, mgc: any) => {
+        const discount = mgc.gift_card?.discount_percent || 0;
+        return sum + mgc.amount_used * (discount / 100);
+      }, 0);
+      cost -= gcSavings;
+    }
+  }
+
   if (cost <= 0) return null;
 
   // Get format weight
@@ -145,7 +162,7 @@ export function useCreateMovie() {
         throw new Error("You must be logged in to create a movie");
       }
 
-      // Set user_id from auth and compute value score
+      // Set user_id from auth and compute initial value score (without GC discount)
       const valueScore = await computeValueScore(movie);
       const movieWithUser = { ...movie, user_id: user.id, value_score: valueScore };
 
@@ -157,10 +174,12 @@ export function useCreateMovie() {
 
       if (insertError) throw insertError;
 
+      const createdMovie = data as Movie;
+
       // If gift cards were used, save to junction table
       if (giftCardUsage && giftCardUsage.length > 0 && data) {
         const movieGiftCards = giftCardUsage.map(gc => ({
-          movie_id: (data as Movie).id,
+          movie_id: createdMovie.id,
           gift_card_id: gc.gift_card_id,
           amount_used: gc.amount_used,
           purpose: gc.purpose || "ticket",
@@ -172,7 +191,12 @@ export function useCreateMovie() {
 
         if (gcError) {
           console.error("Failed to save gift card usage:", gcError);
-          // Don't throw - movie was created successfully
+        } else {
+          // Recompute value score now that GC usage is saved
+          const updatedScore = await computeValueScore(movie, createdMovie.id);
+          if (updatedScore !== valueScore) {
+            await supabase.from("movies").update({ value_score: updatedScore } as never).eq("id", createdMovie.id);
+          }
         }
       }
 
@@ -201,7 +225,8 @@ export function useUpdateMovie() {
       // Recompute value score if rating or cost fields changed
       const hasScoreFields = updates.rating !== undefined || updates.ticket_cost !== undefined ||
         updates.convenience_fee !== undefined || updates.fnb_cost !== undefined ||
-        updates.other_expenses !== undefined || updates.format_id !== undefined;
+        updates.other_expenses !== undefined || updates.format_id !== undefined ||
+        updates.passport_savings !== undefined;
 
       let updatesWithScore = { ...updates };
       if (hasScoreFields) {
@@ -209,7 +234,7 @@ export function useUpdateMovie() {
         const { data: existing } = await supabase.from("movies").select("*").eq("id", id).single();
         if (existing) {
           const merged = { ...(existing as any), ...updates };
-          updatesWithScore.value_score = await computeValueScore(merged);
+          updatesWithScore.value_score = await computeValueScore(merged, id);
         }
       }
 
