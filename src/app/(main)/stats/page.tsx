@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,13 +15,95 @@ import {
   Tooltip,
   LineChart,
   Line,
+  ScatterChart,
+  Scatter,
   ResponsiveContainer,
   Legend,
+  Cell,
 } from "recharts";
+import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formula";
 
 export default function StatsPage() {
   const { movies, isLoading } = useMovies();
+  const [selectedFormat, setSelectedFormat] = useState<string>("all");
+  const [selectedTheater, setSelectedTheater] = useState<string>("all");
+
+  // Price fluctuation data for Insights tab
+  const priceFluctuation = useMemo(() => {
+    if (movies.length === 0) return null;
+
+    const year = new Date().getFullYear();
+    const yearMovies = movies.filter((m) => new Date(m.date).getFullYear() === year);
+
+    // Get unique formats and theaters
+    const formats = [...new Set(yearMovies.map((m) => m.format?.name).filter(Boolean))] as string[];
+    const theaters = [...new Set(yearMovies.map((m) => m.theater?.name).filter(Boolean))] as string[];
+
+    // Filter movies based on selections
+    let filtered = yearMovies;
+    if (selectedFormat !== "all") {
+      filtered = filtered.filter((m) => m.format?.name === selectedFormat);
+    }
+    if (selectedTheater !== "all") {
+      filtered = filtered.filter((m) => m.theater?.name === selectedTheater);
+    }
+
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    // By day of week
+    const byDay: Record<string, { prices: number[]; total: number; count: number }> = {};
+    dayNames.forEach((d) => { byDay[d] = { prices: [], total: 0, count: 0 }; });
+    filtered.forEach((m) => {
+      const day = dayNames[new Date(m.date).getDay()];
+      const price = m.ticket_cost || 0;
+      byDay[day].prices.push(price);
+      byDay[day].total += price;
+      byDay[day].count += 1;
+    });
+    const dayData = dayNames.map((day) => ({
+      day,
+      avg: byDay[day].count > 0 ? Math.round(byDay[day].total / byDay[day].count) : 0,
+      min: byDay[day].prices.length > 0 ? Math.min(...byDay[day].prices) : 0,
+      max: byDay[day].prices.length > 0 ? Math.max(...byDay[day].prices) : 0,
+      count: byDay[day].count,
+    }));
+
+    // By time of day (scatter: each movie as a point)
+    const timeData = filtered
+      .filter((m) => m.showtime)
+      .map((m) => {
+        const [h, min] = (m.showtime || "12:00").split(":").map(Number);
+        const hourDecimal = h + (min || 0) / 60;
+        return {
+          time: hourDecimal,
+          timeLabel: `${h}:${String(min || 0).padStart(2, "0")}`,
+          price: m.ticket_cost || 0,
+          title: m.title,
+          format: m.format?.name || "—",
+          theater: m.theater?.name || "—",
+        };
+      })
+      .sort((a, b) => a.time - b.time);
+
+    // By time slot (grouped averages)
+    const timeSlots = [
+      { label: "Morning", min: 0, max: 12 },
+      { label: "Afternoon", min: 12, max: 16 },
+      { label: "Evening", min: 16, max: 20 },
+      { label: "Night", min: 20, max: 24 },
+    ];
+    const timeSlotData = timeSlots.map((slot) => {
+      const slotMovies = timeData.filter((m) => m.time >= slot.min && m.time < slot.max);
+      return {
+        slot: slot.label,
+        avg: slotMovies.length > 0 ? Math.round(slotMovies.reduce((s, m) => s + m.price, 0) / slotMovies.length) : 0,
+        count: slotMovies.length,
+      };
+    });
+
+    return { formats, theaters, dayData, timeData, timeSlotData, totalFiltered: filtered.length };
+  }, [movies, selectedFormat, selectedTheater]);
 
   const stats = useMemo(() => {
     if (movies.length === 0) {
@@ -578,6 +660,188 @@ export default function StatsPage() {
               </TabsContent>
 
               <TabsContent value="insights" className="space-y-4">
+                {/* Ticket Price Fluctuation */}
+                {priceFluctuation && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Ticket Price Fluctuation</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Filters */}
+                      <div className="space-y-2">
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground/50">Format</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              onClick={() => setSelectedFormat("all")}
+                              className={cn(
+                                "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
+                                selectedFormat === "all"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                              )}
+                            >
+                              All
+                            </button>
+                            {priceFluctuation.formats.map((f) => (
+                              <button
+                                key={f}
+                                onClick={() => setSelectedFormat(f)}
+                                className={cn(
+                                  "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
+                                  selectedFormat === f
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                )}
+                              >
+                                {f}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground/50">Theater</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              onClick={() => setSelectedTheater("all")}
+                              className={cn(
+                                "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
+                                selectedTheater === "all"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                              )}
+                            >
+                              All
+                            </button>
+                            {priceFluctuation.theaters.map((t) => (
+                              <button
+                                key={t}
+                                onClick={() => setSelectedTheater(t)}
+                                className={cn(
+                                  "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
+                                  selectedTheater === t
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                )}
+                              >
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {priceFluctuation.totalFiltered === 0 ? (
+                        <p className="py-6 text-center text-sm text-muted-foreground/50">No movies match this filter</p>
+                      ) : (
+                        <>
+                          {/* By Day of Week */}
+                          <div>
+                            <p className="mb-2 text-xs font-medium text-muted-foreground">Avg Ticket by Day of Week</p>
+                            <ResponsiveContainer width="100%" height={180}>
+                              <BarChart data={priceFluctuation.dayData}>
+                                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v}`} />
+                                <Tooltip
+                                  content={({ active, payload }) => {
+                                    if (!active || !payload?.length) return null;
+                                    const d = payload[0].payload;
+                                    if (d.count === 0) return null;
+                                    return (
+                                      <div className="rounded-lg border border-border bg-card p-2 text-xs shadow-lg">
+                                        <p className="font-medium">{d.day}</p>
+                                        <p>Avg: ₹{d.avg}</p>
+                                        <p>Range: ₹{d.min} – ₹{d.max}</p>
+                                        <p className="text-muted-foreground">{d.count} {d.count === 1 ? "movie" : "movies"}</p>
+                                      </div>
+                                    );
+                                  }}
+                                />
+                                <Bar dataKey="avg" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]}>
+                                  {priceFluctuation.dayData.map((entry, i) => (
+                                    <Cell key={i} opacity={entry.count > 0 ? 1 : 0.15} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          {/* By Time Slot */}
+                          <div>
+                            <p className="mb-2 text-xs font-medium text-muted-foreground">Avg Ticket by Time of Day</p>
+                            <ResponsiveContainer width="100%" height={160}>
+                              <BarChart data={priceFluctuation.timeSlotData}>
+                                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                <XAxis dataKey="slot" tick={{ fontSize: 11 }} />
+                                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v}`} />
+                                <Tooltip
+                                  content={({ active, payload }) => {
+                                    if (!active || !payload?.length) return null;
+                                    const d = payload[0].payload;
+                                    if (d.count === 0) return null;
+                                    return (
+                                      <div className="rounded-lg border border-border bg-card p-2 text-xs shadow-lg">
+                                        <p className="font-medium">{d.slot}</p>
+                                        <p>Avg: ₹{d.avg}</p>
+                                        <p className="text-muted-foreground">{d.count} {d.count === 1 ? "movie" : "movies"}</p>
+                                      </div>
+                                    );
+                                  }}
+                                />
+                                <Bar dataKey="avg" fill="hsl(var(--primary) / 0.7)" radius={[4, 4, 0, 0]}>
+                                  {priceFluctuation.timeSlotData.map((entry, i) => (
+                                    <Cell key={i} opacity={entry.count > 0 ? 1 : 0.15} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          {/* Individual Movie Scatter */}
+                          {priceFluctuation.timeData.length > 0 && (
+                            <div>
+                              <p className="mb-2 text-xs font-medium text-muted-foreground">Each Movie by Showtime</p>
+                              <ResponsiveContainer width="100%" height={180}>
+                                <ScatterChart>
+                                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                  <XAxis
+                                    dataKey="time"
+                                    type="number"
+                                    domain={[8, 24]}
+                                    tick={{ fontSize: 11 }}
+                                    tickFormatter={(v) => `${Math.floor(v)}:00`}
+                                    label={{ value: "Showtime", position: "insideBottom", offset: -2, fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                                  />
+                                  <YAxis
+                                    dataKey="price"
+                                    tick={{ fontSize: 11 }}
+                                    tickFormatter={(v) => `₹${v}`}
+                                  />
+                                  <Tooltip
+                                    content={({ active, payload }) => {
+                                      if (!active || !payload?.length) return null;
+                                      const d = payload[0].payload;
+                                      return (
+                                        <div className="rounded-lg border border-border bg-card p-2 text-xs shadow-lg">
+                                          <p className="font-medium">{d.title}</p>
+                                          <p>₹{d.price} at {d.timeLabel}</p>
+                                          <p className="text-muted-foreground">{d.format} · {d.theater}</p>
+                                        </div>
+                                      );
+                                    }}
+                                  />
+                                  <Scatter data={priceFluctuation.timeData} fill="hsl(var(--primary))" />
+                                </ScatterChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Your Rating vs TMDB */}
                 {stats.ratingComparisons.length > 0 && (
                   <Card>
