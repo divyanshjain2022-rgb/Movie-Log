@@ -234,6 +234,7 @@ export interface Database {
           movie_id: string;
           gift_card_id: string;
           amount_used: number;
+          purpose: "ticket" | "fnb";
           created_at: string;
         };
         Insert: {
@@ -241,6 +242,7 @@ export interface Database {
           movie_id: string;
           gift_card_id: string;
           amount_used: number;
+          purpose?: "ticket" | "fnb";
           created_at?: string;
         };
         Update: {
@@ -248,6 +250,7 @@ export interface Database {
           movie_id?: string;
           gift_card_id?: string;
           amount_used?: number;
+          purpose?: "ticket" | "fnb";
           created_at?: string;
         };
       };
@@ -830,4 +833,5 @@ export interface FnbPurchaseWithRelations extends FnbPurchase {
 export interface GiftCardUsageEntry {
   gift_card_id: string;
   amount_used: number;
+  purpose?: "ticket" | "fnb";
 }

@@ -64,7 +64,7 @@ export function useMovies() {
           weakest_part:aspects!movies_weakest_part_id_fkey(*),
           rewatch:rewatch_options(*),
           gift_card:gift_cards(*),
-          movie_gift_cards(id, amount_used, gift_card:gift_cards(*)),
+          movie_gift_cards(id, amount_used, purpose, gift_card:gift_cards(*)),
           franchise:franchises(*),
           movie_companions(id, companion:companions(*))
         `)
@@ -162,6 +162,7 @@ export function useCreateMovie() {
           movie_id: (data as Movie).id,
           gift_card_id: gc.gift_card_id,
           amount_used: gc.amount_used,
+          purpose: gc.purpose || "ticket",
         }));
 
         const { error: gcError } = await supabase
@@ -238,6 +239,7 @@ export function useUpdateMovie() {
             movie_id: id,
             gift_card_id: gc.gift_card_id,
             amount_used: gc.amount_used,
+            purpose: gc.purpose || "ticket",
           }));
 
           const { error: gcError } = await supabase

@@ -166,6 +166,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const initialGiftCardUsage = movie?.movie_gift_cards?.map(mgc => ({
     gift_card_id: mgc.gift_card?.id || "",
     amount_used: mgc.amount_used,
+    purpose: (mgc as any).purpose || "ticket" as "ticket" | "fnb",
   })).filter(u => u.gift_card_id) || [];
 
   return (

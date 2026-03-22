@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Film, Sparkles, Calendar, ListTodo } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,20 +14,31 @@ import { useMovies, useGiftCards, useWatchlist, useBudgets } from "@/hooks";
 import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
+type CostMode = "ticket" | "ticket_fnb" | "all";
+
 export default function DashboardPage() {
   const { movies, isLoading: moviesLoading } = useMovies();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { items: watchlistItems } = useWatchlist();
   const { budgets } = useBudgets();
+  const [costMode, setCostMode] = useState<CostMode>("all");
 
   const year = new Date().getFullYear();
+
+  const getMovieCost = (m: (typeof movies)[number], mode: CostMode) => {
+    const ticket = (m.ticket_cost || 0) + (m.convenience_fee || 0);
+    if (mode === "ticket") return ticket;
+    const fnb = m.fnb_cost || 0;
+    if (mode === "ticket_fnb") return ticket + fnb;
+    return m.total_cost || 0; // all = ticket + convenience + fnb + other
+  };
 
   const stats = useMemo(() => {
     const yearMovies = movies.filter(
       (m) => new Date(m.date).getFullYear() === year
     );
 
-    const totalSpend = yearMovies.reduce((sum, m) => sum + (m.total_cost || 0), 0);
+    const totalSpend = yearMovies.reduce((sum, m) => sum + getMovieCost(m, costMode), 0);
     const movieCount = yearMovies.length;
     const ratedMovies = yearMovies.filter((m) => m.rating != null && m.rating > 0);
     const averageRating =
@@ -53,7 +64,8 @@ export default function DashboardPage() {
     );
 
     return { totalSpend, movieCount, averageRating, greatCount, mehCount, totalSaved, passportSavings, totalRuntime };
-  }, [movies, giftCards, year]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movies, giftCards, year, costMode]);
 
   const recentMovies = useMemo(() => {
     return [...movies]
@@ -81,6 +93,30 @@ export default function DashboardPage() {
           </Link>
         </div>
       </header>
+
+      {/* Cost Mode Toggle */}
+      <div className="px-4 pt-3">
+        <div className="flex rounded-xl bg-secondary/50 p-1">
+          {([
+            { key: "ticket" as CostMode, label: "Ticket" },
+            { key: "ticket_fnb" as CostMode, label: "Ticket + F&B" },
+            { key: "all" as CostMode, label: "All Costs" },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setCostMode(key)}
+              className={cn(
+                "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-all",
+                costMode === key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground/70"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Content */}
       <div className="space-y-5 p-4 stagger">
@@ -153,7 +189,7 @@ export default function DashboardPage() {
             const d = new Date(m.date);
             return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
           });
-          const monthSpend = monthMovies.reduce((sum, m) => sum + m.total_cost, 0);
+          const monthSpend = monthMovies.reduce((sum, m) => sum + getMovieCost(m, costMode), 0);
           const pct = currentBudget.amount > 0 ? (monthSpend / currentBudget.amount) * 100 : 0;
           const barColor = pct > 100 ? "bg-red-500" : pct > 75 ? "bg-amber-500" : "bg-emerald-500";
 

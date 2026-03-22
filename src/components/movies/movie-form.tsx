@@ -34,6 +34,95 @@ import type {
 } from "@/types";
 import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
 
+/** Reusable gift card selector for ticket or F&B */
+function GiftCardSelector({
+  label,
+  purpose,
+  usage,
+  allGiftCards,
+  availableGiftCards,
+  onAdd,
+  onRemove,
+  onUpdateAmount,
+}: {
+  label: string;
+  purpose: "ticket" | "fnb";
+  usage: GiftCardUsageEntry[];
+  allGiftCards: GiftCardWithUsage[];
+  availableGiftCards: GiftCardWithUsage[];
+  onAdd: (gcId: string) => void;
+  onRemove: (gcId: string) => void;
+  onUpdateAmount: (gcId: string, amount: number) => void;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      {usage.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {usage.map((u) => {
+            const gc = allGiftCards.find(g => g.id === u.gift_card_id);
+            if (!gc) return null;
+            return (
+              <div key={u.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {gc.platform?.name || "Gift Card"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Balance: {formatCurrency(gc.balance)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">₹</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={u.amount_used}
+                    onChange={(e) => onUpdateAmount(u.gift_card_id, parseFloat(e.target.value) || 0)}
+                    className="h-8 w-20 text-right"
+                    max={gc.balance}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onClick={() => onRemove(u.gift_card_id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {availableGiftCards.length > 0 && (
+        <Select onValueChange={onAdd} value="">
+          <SelectTrigger className="mt-2">
+            <SelectValue placeholder="Add gift card..." />
+          </SelectTrigger>
+          <SelectContent>
+            {availableGiftCards.map((gc) => (
+              <SelectItem key={gc.id} value={gc.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span>{gc.platform?.name || "Gift Card"}</span>
+                  <span className="text-muted-foreground">
+                    {formatCurrency(gc.balance)}
+                  </span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {usage.length === 0 && availableGiftCards.length === 0 && (
+        <p className="mt-2 text-sm text-muted-foreground">No active gift cards</p>
+      )}
+    </div>
+  );
+}
+
 const movieFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   date: z.string().min(1, "Date is required"),
@@ -160,8 +249,13 @@ export function MovieForm({
 
   const rating = watch("rating") || 5;
 
-  // State for multiple gift card selection
-  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>(initialGiftCardUsage);
+  // State for gift card selection — split by purpose
+  const [ticketGiftCards, setTicketGiftCards] = useState<GiftCardUsageEntry[]>(
+    initialGiftCardUsage.filter(u => u.purpose !== "fnb")
+  );
+  const [fnbGiftCards, setFnbGiftCards] = useState<GiftCardUsageEntry[]>(
+    initialGiftCardUsage.filter(u => u.purpose === "fnb")
+  );
 
   // State for payment methods
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodEntry[]>(
@@ -188,26 +282,41 @@ export function MovieForm({
     );
   };
 
-  // Filter out already selected gift cards
+  // All selected GC IDs across both purposes
+  const allSelectedGcIds = [...ticketGiftCards, ...fnbGiftCards].map(u => u.gift_card_id);
+
+  // Filter out already selected gift cards (across both ticket and fnb)
   const availableGiftCards = giftCards.filter(
-    gc => gc.status === "active" && !giftCardUsage.some(u => u.gift_card_id === gc.id)
+    gc => gc.status === "active" && !allSelectedGcIds.includes(gc.id)
   );
 
-  const addGiftCard = (gcId: string) => {
+  const addGiftCard = (gcId: string, purpose: "ticket" | "fnb") => {
     const gc = giftCards.find(g => g.id === gcId);
-    if (gc) {
-      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
+    if (!gc) return;
+    const entry: GiftCardUsageEntry = { gift_card_id: gcId, amount_used: gc.balance, purpose };
+    if (purpose === "fnb") {
+      setFnbGiftCards(prev => [...prev, entry]);
+    } else {
+      setTicketGiftCards(prev => [...prev, entry]);
     }
   };
 
-  const removeGiftCard = (gcId: string) => {
-    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
+  const removeGiftCard = (gcId: string, purpose: "ticket" | "fnb") => {
+    if (purpose === "fnb") {
+      setFnbGiftCards(prev => prev.filter(u => u.gift_card_id !== gcId));
+    } else {
+      setTicketGiftCards(prev => prev.filter(u => u.gift_card_id !== gcId));
+    }
   };
 
-  const updateGiftCardAmount = (gcId: string, amount: number) => {
-    setGiftCardUsage(prev =>
-      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
-    );
+  const updateGiftCardAmount = (gcId: string, amount: number, purpose: "ticket" | "fnb") => {
+    const updater = (prev: GiftCardUsageEntry[]) =>
+      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u);
+    if (purpose === "fnb") {
+      setFnbGiftCards(updater);
+    } else {
+      setTicketGiftCards(updater);
+    }
   };
 
   // Sync form with initialData changes (e.g., when TMDB or OCR updates data)
@@ -254,7 +363,11 @@ export function MovieForm({
       is_rewatch: isRewatch,
       companion_ids: selectedCompanionIds.length > 0 ? selectedCompanionIds : undefined,
     };
-    await onSubmit(formData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
+    const allGiftCards = [
+      ...ticketGiftCards.map(gc => ({ ...gc, purpose: "ticket" as const })),
+      ...fnbGiftCards.map(gc => ({ ...gc, purpose: "fnb" as const })),
+    ];
+    await onSubmit(formData, allGiftCards.length > 0 ? allGiftCards : undefined);
   };
 
   return (
@@ -495,6 +608,18 @@ export function MovieForm({
               />
             </div>
           </div>
+
+          {/* Gift Cards for Ticket */}
+          <GiftCardSelector
+            label="GC for Movie"
+            purpose="ticket"
+            usage={ticketGiftCards}
+            allGiftCards={giftCards}
+            availableGiftCards={availableGiftCards}
+            onAdd={(gcId) => addGiftCard(gcId, "ticket")}
+            onRemove={(gcId) => removeGiftCard(gcId, "ticket")}
+            onUpdateAmount={(gcId, amount) => updateGiftCardAmount(gcId, amount, "ticket")}
+          />
         </div>
       </div>
 
@@ -636,72 +761,17 @@ export function MovieForm({
             />
           </div>
 
-          {/* Gift Cards - Multi Select */}
-          <div>
-            <Label>Gift Cards Used</Label>
-            {giftCardUsage.length > 0 && (
-              <div className="mt-2 space-y-2">
-                {giftCardUsage.map((usage) => {
-                  const gc = giftCards.find(g => g.id === usage.gift_card_id);
-                  if (!gc) return null;
-                  return (
-                    <div key={usage.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {gc.platform?.name || "Gift Card"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Balance: {formatCurrency(gc.balance)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">₹</span>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={usage.amount_used}
-                          onChange={(e) => updateGiftCardAmount(usage.gift_card_id, parseFloat(e.target.value) || 0)}
-                          className="h-8 w-20 text-right"
-                          max={gc.balance}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeGiftCard(usage.gift_card_id)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {availableGiftCards.length > 0 && (
-              <Select onValueChange={addGiftCard} value="">
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Add gift card..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableGiftCards.map((gc) => (
-                    <SelectItem key={gc.id} value={gc.id}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span>{gc.platform?.name || "Gift Card"}</span>
-                        <span className="text-muted-foreground">
-                          {formatCurrency(gc.balance)}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {giftCardUsage.length === 0 && availableGiftCards.length === 0 && (
-              <p className="mt-2 text-sm text-muted-foreground">No active gift cards available</p>
-            )}
-          </div>
+          {/* Gift Cards for F&B */}
+          <GiftCardSelector
+            label="GC for F&B"
+            purpose="fnb"
+            usage={fnbGiftCards}
+            allGiftCards={giftCards}
+            availableGiftCards={availableGiftCards}
+            onAdd={(gcId) => addGiftCard(gcId, "fnb")}
+            onRemove={(gcId) => removeGiftCard(gcId, "fnb")}
+            onUpdateAmount={(gcId, amount) => updateGiftCardAmount(gcId, amount, "fnb")}
+          />
 
           {/* Payment Methods */}
           <div>

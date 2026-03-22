@@ -440,7 +440,8 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                 {movie.movie_gift_cards.map((mgc) => (
                   <div key={mgc.id} className="flex justify-between text-positive">
                     <span>
-                      {mgc.gift_card?.platform_id ? "GC" : "Gift Card"} ({mgc.gift_card?.discount_percent?.toFixed(0)}% off)
+                      {(mgc as any).purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}{" "}
+                      {mgc.gift_card?.discount_percent ? `(${mgc.gift_card.discount_percent.toFixed(0)}% off)` : ""}
                     </span>
                     <span>{formatCurrency(mgc.amount_used)}</span>
                   </div>
