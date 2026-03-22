@@ -94,6 +94,48 @@ function convertTo24Hour(time12h: string | null | undefined): string | null {
   return `${hours.toString().padStart(2, '0')}:${minutes}`;
 }
 
+// Compress image using canvas to reduce size for faster Gemini processing
+function compressImage(
+  file: File,
+  maxDimension: number,
+  quality: number
+): Promise<{ base64: string; sizeKB: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+
+      // Scale down if larger than maxDimension
+      if (width > maxDimension || height > maxDimension) {
+        const ratio = Math.min(maxDimension / width, maxDimension / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas not supported"));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Convert to JPEG base64
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      const base64 = dataUrl.split(",")[1];
+      const sizeKB = (base64.length * 0.75) / 1024;
+
+      resolve({ base64, sizeKB });
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 export default function NewMoviePage() {
   const router = useRouter();
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
@@ -135,26 +177,39 @@ export default function NewMoviePage() {
         throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 4MB.`);
       }
 
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]);
-        };
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsDataURL(file);
-      });
+      // Compress images client-side to speed up Gemini processing
+      // (Vercel Hobby has 10s function timeout)
+      let base64: string;
+      let mimeType = file.type;
 
-      console.log(`[OCR] Uploading: ${file.name}, type=${file.type}, size=${(file.size / 1024).toFixed(0)}KB`);
+      if (file.type.startsWith("image/")) {
+        const compressed = await compressImage(file, 1200, 0.8);
+        base64 = compressed.base64;
+        mimeType = "image/jpeg";
+        console.log(`[OCR] Compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.sizeKB).toFixed(0)}KB`);
+      } else {
+        // PDFs: read as-is
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(",")[1]);
+          };
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.readAsDataURL(file);
+        });
+      }
 
-      // 30s timeout — Vercel hobby has 10s limit, pro has 60s
+      console.log(`[OCR] Uploading: ${file.name}, type=${mimeType}, size=${(base64.length * 0.75 / 1024).toFixed(0)}KB`);
+
+      // 15s timeout — Vercel hobby has 10s limit, should respond or fail within that
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+      const timeout = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch("/api/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64, mimeType: file.type }),
+        body: JSON.stringify({ image: base64, mimeType }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
