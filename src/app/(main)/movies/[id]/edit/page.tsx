@@ -10,6 +10,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
 import type { MovieFormData, GiftCardUsageEntry } from "@/types";
 
+interface TMDBMovieDetails {
+  tmdb_id: number;
+  title: string;
+  runtime_minutes?: number | null;
+  genres?: string[] | null;
+  language?: string | null;
+  director?: string | null;
+  poster_url?: string | null;
+  release_date?: string | null;
+  overview?: string | null;
+  cast_members?: string[] | null;
+  composer?: string | null;
+  cinematographer?: string | null;
+  budget?: number | null;
+  box_office?: number | null;
+  tmdb_rating?: number | null;
+  tmdb_vote_count?: number | null;
+  certification?: string | null;
+  trailer_url?: string | null;
+  keywords?: string[] | null;
+}
+
 interface EditMoviePageProps {
   params: Promise<{ id: string }>;
 }
@@ -30,25 +52,25 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
 
   const [tmdbOverrides, setTmdbOverrides] = useState<Partial<MovieFormData>>({});
 
-  const handleTMDBSelect = (tmdb: any) => {
+  const handleTMDBSelect = (tmdb: TMDBMovieDetails) => {
     setTmdbOverrides({
       title: tmdb.title,
       tmdb_id: tmdb.tmdb_id,
-      runtime_minutes: tmdb.runtime_minutes,
-      genres: tmdb.genres,
-      language: tmdb.language,
-      director: tmdb.director,
-      poster_url: tmdb.poster_url,
-      cast_members: tmdb.cast_members,
-      composer: tmdb.composer,
-      cinematographer: tmdb.cinematographer,
+      runtime_minutes: tmdb.runtime_minutes || undefined,
+      genres: tmdb.genres || undefined,
+      language: tmdb.language || undefined,
+      director: tmdb.director || undefined,
+      poster_url: tmdb.poster_url || undefined,
+      cast_members: tmdb.cast_members || undefined,
+      composer: tmdb.composer || undefined,
+      cinematographer: tmdb.cinematographer || undefined,
       budget: tmdb.budget || undefined,
       box_office: tmdb.box_office || undefined,
       tmdb_rating: tmdb.tmdb_rating || undefined,
       tmdb_vote_count: tmdb.tmdb_vote_count || undefined,
       certification: tmdb.certification || undefined,
       trailer_url: tmdb.trailer_url || undefined,
-      keywords: tmdb.keywords,
+      keywords: tmdb.keywords || undefined,
       overview: tmdb.overview || undefined,
       release_date: tmdb.release_date || undefined,
     });
@@ -131,7 +153,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
       toast.success("Movie updated successfully!");
       router.push(`/movies/${id}`);
     } catch (error) {
-      toast.error("Failed to update movie");
+      toast.error(error instanceof Error ? `Failed to update movie: ${error.message}` : "Failed to update movie");
       console.error(error);
     }
   };
@@ -187,7 +209,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
       franchise_id: movie.franchise_id || undefined,
       is_rewatch: movie.is_rewatch || false,
       original_movie_id: movie.original_movie_id || undefined,
-      passport_id: (movie as any).passport_id || undefined,
+      passport_id: movie.passport_id || undefined,
     }
     : {};
 
@@ -198,7 +220,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const initialGiftCardUsage = movie?.movie_gift_cards?.map(mgc => ({
     gift_card_id: mgc.gift_card?.id || "",
     amount_used: mgc.amount_used,
-    purpose: (mgc as any).purpose || "ticket" as "ticket" | "fnb",
+    purpose: mgc.purpose || "ticket",
   })).filter(u => u.gift_card_id) || [];
 
   // When editing, add back this movie's GC usage to each card's balance

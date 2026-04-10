@@ -7,8 +7,46 @@ import type { Movie, MovieWithRelations, MovieInsert, MovieUpdate, GiftCardUsage
 
 const supabase = createClient();
 
+type ScoreMovieFields = {
+  rating?: number | null;
+  ticket_cost?: number | null;
+  convenience_fee?: number | null;
+  fnb_cost?: number | null;
+  other_expenses?: number | null;
+  passport_savings?: number | null;
+  format_id?: string | null;
+};
+
+type FormulaConfigForScore = {
+  params: FormulaParams;
+};
+
+type GiftCardUsageForScore = {
+  amount_used: number;
+  gift_card: { discount_percent: number | null } | null;
+};
+
+type FormatForScore = {
+  weight: number | null;
+};
+
+function toError(err: unknown, fallback: string) {
+  if (err instanceof Error) return err;
+
+  if (
+    err &&
+    typeof err === "object" &&
+    "message" in err &&
+    typeof err.message === "string"
+  ) {
+    return new Error(err.message);
+  }
+
+  return new Error(fallback);
+}
+
 async function computeValueScore(
-  movie: Record<string, any>,
+  movie: ScoreMovieFields,
   movieId?: string,
 ): Promise<number | null> {
   const rating = movie.rating;
@@ -21,8 +59,9 @@ async function computeValueScore(
     .select("*")
     .eq("is_active", true)
     .maybeSingle();
-  if (formulaConfig) {
-    params = (formulaConfig as any).params as FormulaParams;
+  const formulaConfigRow = formulaConfig as FormulaConfigForScore | null;
+  if (formulaConfigRow) {
+    params = formulaConfigRow.params;
   }
 
   // Calculate cost based on use_true_cost setting, subtract passport savings
@@ -37,8 +76,9 @@ async function computeValueScore(
       .from("movie_gift_cards")
       .select("amount_used, gift_card:gift_cards(discount_percent)")
       .eq("movie_id", movieId);
-    if (gcUsage) {
-      const gcSavings = gcUsage.reduce((sum: number, mgc: any) => {
+    const giftCardUsageRows = gcUsage as GiftCardUsageForScore[] | null;
+    if (giftCardUsageRows) {
+      const gcSavings = giftCardUsageRows.reduce((sum, mgc) => {
         const discount = mgc.gift_card?.discount_percent || 0;
         return sum + mgc.amount_used * (discount / 100);
       }, 0);
@@ -56,7 +96,8 @@ async function computeValueScore(
       .select("*")
       .eq("id", movie.format_id)
       .single();
-    if (format) formatWeight = (format as any).weight || 1.0;
+    const formatRow = format as FormatForScore | null;
+    if (formatRow) formatWeight = formatRow.weight || 1.0;
   }
 
   return calculateValueScore(rating, cost, formatWeight, params);
@@ -200,9 +241,9 @@ export function useCreateMovie() {
         }
       }
 
-      return data;
+      return createdMovie;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to create movie");
+      const error = toError(err, "Failed to create movie");
       setError(error);
       throw error;
     } finally {
@@ -228,12 +269,13 @@ export function useUpdateMovie() {
         updates.other_expenses !== undefined || updates.format_id !== undefined ||
         updates.passport_savings !== undefined;
 
-      let updatesWithScore = { ...updates };
+      const updatesWithScore = { ...updates };
       if (hasScoreFields) {
         // Fetch existing movie to merge with updates for score calculation
         const { data: existing } = await supabase.from("movies").select("*").eq("id", id).single();
-        if (existing) {
-          const merged = { ...(existing as any), ...updates };
+        const existingMovie = existing as Movie | null;
+        if (existingMovie) {
+          const merged = { ...existingMovie, ...updates };
           updatesWithScore.value_score = await computeValueScore(merged, id);
         }
       }
@@ -280,7 +322,7 @@ export function useUpdateMovie() {
 
       return data;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to update movie");
+      const error = toError(err, "Failed to update movie");
       setError(error);
       throw error;
     } finally {
@@ -304,7 +346,7 @@ export function useDeleteMovie() {
 
       if (error) throw error;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to delete movie");
+      const error = toError(err, "Failed to delete movie");
       setError(error);
       throw error;
     } finally {

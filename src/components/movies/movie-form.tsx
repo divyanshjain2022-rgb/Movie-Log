@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type FieldErrors, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,7 +39,6 @@ import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
 /** Reusable gift card selector for ticket or F&B */
 function GiftCardSelector({
   label,
-  purpose,
   usage,
   allGiftCards,
   availableGiftCards,
@@ -47,7 +47,6 @@ function GiftCardSelector({
   onUpdateAmount,
 }: {
   label: string;
-  purpose: "ticket" | "fnb";
   usage: GiftCardUsageEntry[];
   allGiftCards: GiftCardWithUsage[];
   availableGiftCards: GiftCardWithUsage[];
@@ -124,6 +123,21 @@ function GiftCardSelector({
   );
 }
 
+const optionalNumber = z.preprocess(
+  (value) => (value === "" || value === null || Number.isNaN(value) ? undefined : value),
+  z.coerce.number().optional()
+);
+
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional()
+);
+
+const optionalStringArray = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.array(z.string()).optional()
+);
+
 const movieFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   date: z.string().min(1, "Date is required"),
@@ -137,37 +151,37 @@ const movieFormSchema = z.object({
   booking_id: z.string().optional(),
   rating: z.coerce.number().min(1).max(10).optional(),
   mood_id: z.string().optional(),
-  fnb_cost: z.coerce.number().min(0).optional(),
+  fnb_cost: optionalNumber.pipe(z.number().min(0).optional()),
   fnb_items: z.string().optional(),
   strongest_part_id: z.string().optional(),
   weakest_part_id: z.string().optional(),
   rewatch_id: z.string().optional(),
   review: z.string().optional(),
   remarks: z.string().optional(),
-  other_expenses: z.coerce.number().min(0).optional(),
-  passport_savings: z.coerce.number().min(0).optional(),
+  other_expenses: optionalNumber.pipe(z.number().min(0).optional()),
+  passport_savings: optionalNumber.pipe(z.number().min(0).optional()),
   // TMDB fields
-  tmdb_id: z.coerce.number().optional(),
-  runtime_minutes: z.coerce.number().optional(),
-  genres: z.array(z.string()).optional(),
-  language: z.string().optional(),
-  director: z.string().optional(),
-  poster_url: z.string().optional(),
+  tmdb_id: optionalNumber,
+  runtime_minutes: optionalNumber,
+  genres: optionalStringArray,
+  language: optionalString,
+  director: optionalString,
+  poster_url: optionalString,
   // New fields
   watched_with: z.string().optional(),
   // TMDB enrichment
-  cast_members: z.array(z.string()).optional(),
-  composer: z.string().optional(),
-  cinematographer: z.string().optional(),
-  budget: z.coerce.number().optional(),
-  box_office: z.coerce.number().optional(),
-  tmdb_rating: z.coerce.number().optional(),
-  tmdb_vote_count: z.coerce.number().optional(),
-  certification: z.string().optional(),
-  trailer_url: z.string().optional(),
-  keywords: z.array(z.string()).optional(),
-  overview: z.string().optional(),
-  release_date: z.string().optional(),
+  cast_members: optionalStringArray,
+  composer: optionalString,
+  cinematographer: optionalString,
+  budget: optionalNumber,
+  box_office: optionalNumber,
+  tmdb_rating: optionalNumber,
+  tmdb_vote_count: optionalNumber,
+  certification: optionalString,
+  trailer_url: optionalString,
+  keywords: optionalStringArray,
+  overview: optionalString,
+  release_date: optionalString,
   // Feature expansion
   franchise_id: z.string().optional(),
   is_rewatch: z.boolean().optional(),
@@ -176,6 +190,38 @@ const movieFormSchema = z.object({
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
+
+const fieldLabels: Partial<Record<keyof MovieFormValues, string>> = {
+  title: "Movie",
+  date: "Date",
+  showtime: "Showtime",
+  ticket_cost: "Ticket Cost",
+  convenience_fee: "Booking Fee",
+  rating: "Rating",
+  fnb_cost: "F&B Cost",
+  other_expenses: "Other Expenses",
+  passport_savings: "Passport Savings",
+};
+
+function getFirstError(errors: FieldErrors<MovieFormValues>) {
+  const [fieldName, fieldError] = Object.entries(errors)[0] as [
+    keyof MovieFormValues | undefined,
+    { message?: string } | undefined
+  ];
+
+  if (!fieldName || !fieldError) {
+    return "Check the highlighted fields and try again.";
+  }
+
+  const label = fieldLabels[fieldName] || String(fieldName);
+  return fieldError.message ? `${label}: ${fieldError.message}` : `${label} is invalid.`;
+}
+
+function FieldErrorMessage({ message }: { message?: string }) {
+  if (!message) return null;
+
+  return <p className="mt-1 text-xs text-destructive">{message}</p>;
+}
 
 interface MovieFormProps {
   initialData?: Partial<MovieFormData>;
@@ -378,8 +424,12 @@ export function MovieForm({
     await onSubmit(formData, allGiftCards.length > 0 ? allGiftCards : undefined);
   };
 
+  const onInvalidSubmit = (formErrors: FieldErrors<MovieFormValues>) => {
+    toast.error(getFirstError(formErrors));
+  };
+
   return (
-    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onFormSubmit, onInvalidSubmit)} className="space-y-6" noValidate>
       {/* Ticket Data Section */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -398,12 +448,9 @@ export function MovieForm({
               {...register("title")}
               placeholder="Movie title"
               className="mt-1"
+              aria-invalid={!!errors.title}
             />
-            {errors.title && (
-              <p className="mt-1 text-xs text-destructive">
-                {errors.title.message}
-              </p>
-            )}
+            <FieldErrorMessage message={errors.title?.message} />
           </div>
 
           {/* TMDB Data Preview - shows when movie is selected from TMDB */}
@@ -500,7 +547,9 @@ export function MovieForm({
                 type="date"
                 {...register("date")}
                 className="mt-1"
+                aria-invalid={!!errors.date}
               />
+              <FieldErrorMessage message={errors.date?.message} />
             </div>
             <div>
               <Label htmlFor="showtime">Showtime</Label>
@@ -509,7 +558,9 @@ export function MovieForm({
                 type="time"
                 {...register("showtime")}
                 className="mt-1"
+                aria-invalid={!!errors.showtime}
               />
+              <FieldErrorMessage message={errors.showtime?.message} />
             </div>
           </div>
 
@@ -590,7 +641,9 @@ export function MovieForm({
                 step="0.01"
                 {...register("passport_savings")}
                 className="mt-1"
+                aria-invalid={!!errors.passport_savings}
               />
+              <FieldErrorMessage message={errors.passport_savings?.message} />
             </div>
           </div>
 
@@ -626,7 +679,9 @@ export function MovieForm({
                 step="0.01"
                 {...register("ticket_cost")}
                 className="mt-1"
+                aria-invalid={!!errors.ticket_cost}
               />
+              <FieldErrorMessage message={errors.ticket_cost?.message} />
             </div>
             <div>
               <Label htmlFor="convenience_fee">Booking Fee</Label>
@@ -636,14 +691,15 @@ export function MovieForm({
                 step="0.01"
                 {...register("convenience_fee")}
                 className="mt-1"
+                aria-invalid={!!errors.convenience_fee}
               />
+              <FieldErrorMessage message={errors.convenience_fee?.message} />
             </div>
           </div>
 
           {/* Gift Cards for Ticket */}
           <GiftCardSelector
             label="GC for Movie"
-            purpose="ticket"
             usage={ticketGiftCards}
             allGiftCards={giftCards}
             availableGiftCards={availableTicketGiftCards}
@@ -768,7 +824,9 @@ export function MovieForm({
                 step="0.01"
                 {...register("fnb_cost")}
                 className="mt-1"
+                aria-invalid={!!errors.fnb_cost}
               />
+              <FieldErrorMessage message={errors.fnb_cost?.message} />
             </div>
             <div>
               <Label htmlFor="other_expenses">Other Expenses</Label>
@@ -778,7 +836,9 @@ export function MovieForm({
                 step="0.01"
                 {...register("other_expenses")}
                 className="mt-1"
+                aria-invalid={!!errors.other_expenses}
               />
+              <FieldErrorMessage message={errors.other_expenses?.message} />
             </div>
           </div>
 
@@ -795,7 +855,6 @@ export function MovieForm({
           {/* Gift Cards for F&B */}
           <GiftCardSelector
             label="GC for F&B"
-            purpose="fnb"
             usage={fnbGiftCards}
             allGiftCards={giftCards}
             availableGiftCards={availableFnbGiftCards}

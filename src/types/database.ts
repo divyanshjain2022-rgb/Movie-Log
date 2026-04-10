@@ -849,6 +849,7 @@ export interface MovieWithRelations extends Movie {
   movie_gift_cards?: Array<{
     id: string;
     amount_used: number;
+    purpose: "ticket" | "fnb";
     gift_card: GiftCard;
   }>;
 }

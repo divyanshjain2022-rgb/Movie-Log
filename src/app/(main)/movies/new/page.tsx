@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Calendar, Film } from "lucide-react";
@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
 import { cn } from "@/lib/utils";
-import type { MovieFormData, TicketOCRData, GiftCardUsageEntry } from "@/types";
+import type { MovieFormData, TicketOCRData, GiftCardUsageEntry, MovieInsert } from "@/types";
 
 interface TMDBMovieDetails {
   tmdb_id: number;
@@ -259,10 +259,10 @@ export default function NewMoviePage() {
         `OCR Debug: title="${data.movie_title}" | showtime="${data.showtime}" | date="${data.date}" | theater="${data.theater}" | audi="${data.audi}" | format="${data.format}" | cost=${data.ticket_cost} | fee=${data.convenience_fee} | booking="${data.booking_id}"`,
         { duration: 15000 }
       );
-    } catch (error: any) {
-      let msg = error?.message || "Unknown error";
+    } catch (error: unknown) {
+      let msg = error instanceof Error ? error.message : "Unknown error";
       // Handle common error types
-      if (error?.name === "AbortError") {
+      if (error instanceof DOMException && error.name === "AbortError") {
         msg = "Request timed out — try a smaller image or enter manually";
       } else if (error instanceof TypeError && msg.includes("fetch")) {
         msg = "Network error — check your connection";
@@ -307,9 +307,13 @@ export default function NewMoviePage() {
     toast.success("Movie details loaded from TMDB!");
   };
 
+  const handleTitleChange = (title: string) => {
+    setExtractedData((prev) => ({ ...prev, title }));
+  };
+
   const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     try {
-      const movie = await createMovie({
+      const moviePayload: MovieInsert = {
         user_id: "",
         title: data.title,
         date: data.date,
@@ -357,10 +361,12 @@ export default function NewMoviePage() {
         franchise_id: data.franchise_id || null,
         is_rewatch: data.is_rewatch || false,
         original_movie_id: data.original_movie_id || null,
-      } as any, giftCardUsage);
+      };
+
+      const movie = await createMovie(moviePayload, giftCardUsage);
 
       // Sync companion associations
-      const movieId = (movie as any)?.id;
+      const movieId = movie?.id;
       if (data.companion_ids?.length && movieId) {
         await syncCompanions(movieId, data.companion_ids);
       }
@@ -368,7 +374,7 @@ export default function NewMoviePage() {
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
       router.push("/movies");
     } catch (error) {
-      toast.error("Failed to save movie");
+      toast.error(error instanceof Error ? `Failed to save movie: ${error.message}` : "Failed to save movie");
       console.error(error);
     }
   };
@@ -446,6 +452,7 @@ export default function NewMoviePage() {
                 <TMDBSearch
                   initialTitle={extractedData.title || ""}
                   onSelect={handleTMDBSelect}
+                  onTitleChange={handleTitleChange}
                   selectedTmdbId={tmdbData?.tmdb_id}
                 />
                 <p className="text-xs text-muted-foreground">
