@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Star, Clock, Check } from "lucide-react";
+import { CalendarDays, Check, Clock, ExternalLink, Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared";
 import { TMDBSearch } from "@/components/movies";
+import { PVR_CITIES } from "@/lib/pvr/cities";
+import type { PvrMovie } from "@/lib/pvr/types";
 import {
   useWatchlist,
   useCreateWatchlistItem,
@@ -35,6 +37,17 @@ import {
 const PRIORITY_LABELS = ["Low", "Medium", "High"];
 const PRIORITY_COLORS = ["text-muted-foreground", "text-yellow-500", "text-red-500"];
 
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function titlesMatch(left: string, right: string): boolean {
+  const a = normalizeTitle(left);
+  const b = normalizeTitle(right);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 export default function WatchlistPage() {
   const { items, isLoading, refetch } = useWatchlist();
   const { createItem, isLoading: isCreating } = useCreateWatchlistItem();
@@ -44,6 +57,47 @@ export default function WatchlistPage() {
   const [manualTitle, setManualTitle] = useState("");
   const [priority, setPriority] = useState(0);
   const [notes, setNotes] = useState("");
+  const [pvrCity, setPvrCity] = useState("Lucknow");
+  const [pvrUpcoming, setPvrUpcoming] = useState<PvrMovie[]>([]);
+  const [isPvrLoading, setIsPvrLoading] = useState(true);
+  const [pvrError, setPvrError] = useState<string | null>(null);
+  const [addingPvrMovieId, setAddingPvrMovieId] = useState<string | null>(null);
+
+  const unwatched = items.filter((i) => !i.watched_movie_id);
+  const watched = items.filter((i) => i.watched_movie_id);
+  const visiblePvrUpcoming = useMemo(() => pvrUpcoming.slice(0, 12), [pvrUpcoming]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchPvrUpcoming() {
+      try {
+        setIsPvrLoading(true);
+        setPvrError(null);
+        const params = new URLSearchParams({ city: pvrCity });
+        const response = await fetch(`/api/pvr/comingsoon?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to load PVR upcoming movies");
+        }
+        setPvrUpcoming((payload.movies || []) as PvrMovie[]);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setPvrError(err instanceof Error ? err.message : "Failed to load PVR upcoming movies");
+        setPvrUpcoming([]);
+      } finally {
+        setIsPvrLoading(false);
+      }
+    }
+
+    fetchPvrUpcoming();
+    return () => controller.abort();
+  }, [pvrCity]);
+
+  const isOnWatchlist = (movie: PvrMovie) =>
+    unwatched.some((item) => titlesMatch(item.title, movie.title));
 
   const handleAddFromTMDB = async (movie: {
     tmdb_id: number;
@@ -93,6 +147,28 @@ export default function WatchlistPage() {
     }
   };
 
+  const handleAddFromPvr = async (movie: PvrMovie) => {
+    if (isOnWatchlist(movie)) return;
+
+    try {
+      setAddingPvrMovieId(movie.id);
+      await createItem({
+        title: movie.title,
+        poster_url: movie.posterUrl,
+        release_date: movie.releaseDate,
+        genres: movie.genres.length > 0 ? movie.genres : null,
+        priority: 1,
+        notes: `PVR ID: ${movie.id}`,
+      });
+      toast.success(`Added "${movie.title}" from PVR upcoming`);
+      refetch();
+    } catch {
+      toast.error("Failed to add PVR movie to watchlist");
+    } finally {
+      setAddingPvrMovieId(null);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await deleteItem(id);
@@ -111,9 +187,6 @@ export default function WatchlistPage() {
       toast.error("Failed to update priority");
     }
   };
-
-  const unwatched = items.filter((i) => !i.watched_movie_id);
-  const watched = items.filter((i) => i.watched_movie_id);
 
   return (
     <div className="min-h-screen">
@@ -187,7 +260,102 @@ export default function WatchlistPage() {
         }
       />
 
-      <div className="p-4">
+      <div className="space-y-5 p-4">
+        <section className="rounded-lg border bg-card/30 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Upcoming at PVR</h2>
+              <p className="text-xs text-muted-foreground">
+                Add PVR upcoming movies directly to your watchlist
+              </p>
+            </div>
+            <Select value={pvrCity} onValueChange={setPvrCity}>
+              <SelectTrigger className="w-[132px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PVR_CITIES.map((city) => (
+                  <SelectItem key={city.name} value={city.name}>
+                    {city.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {isPvrLoading ? (
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              <Skeleton className="h-48 min-w-36 rounded-lg" />
+              <Skeleton className="h-48 min-w-36 rounded-lg" />
+              <Skeleton className="h-48 min-w-36 rounded-lg" />
+            </div>
+          ) : pvrError ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              {pvrError}
+            </div>
+          ) : visiblePvrUpcoming.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              No PVR upcoming movies found for {pvrCity}.
+            </div>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {visiblePvrUpcoming.map((movie) => {
+                const onWatchlist = isOnWatchlist(movie);
+                return (
+                  <div
+                    key={`${movie.id}-${movie.title}`}
+                    className="min-w-40 rounded-lg border bg-background/45 p-2.5"
+                  >
+                    {movie.posterUrl ? (
+                      <img
+                        src={movie.posterUrl}
+                        alt={movie.title}
+                        className="h-40 w-full rounded-md object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-40 w-full items-center justify-center rounded-md bg-secondary text-2xl">
+                        🎬
+                      </div>
+                    )}
+                    <p className="mt-2 line-clamp-2 text-sm font-medium">{movie.title}</p>
+                    {movie.releaseDate && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <CalendarDays className="h-3 w-3" />
+                        {movie.releaseDate}
+                      </p>
+                    )}
+                    {movie.languages.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {movie.languages.slice(0, 2).map((language) => (
+                          <Badge key={language} variant="outline" className="rounded-md text-[10px]">
+                            {language}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2 flex gap-1.5">
+                      <Button
+                        size="sm"
+                        className="h-8 flex-1"
+                        variant={onWatchlist ? "secondary" : "default"}
+                        disabled={onWatchlist || addingPvrMovieId === movie.id}
+                        onClick={() => handleAddFromPvr(movie)}
+                      >
+                        {onWatchlist ? "On list" : addingPvrMovieId === movie.id ? "Adding" : "Add"}
+                      </Button>
+                      <Button asChild size="icon-sm" variant="outline">
+                        <a href={movie.redirectUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-20" />
@@ -248,6 +416,7 @@ export default function WatchlistPage() {
                     </div>
                     <div className="flex flex-col items-center gap-1">
                       <button
+                        aria-label={`Priority: ${PRIORITY_LABELS[item.priority]}`}
                         onClick={() =>
                           handlePriorityChange(item.id, (item.priority + 1) % 3)
                         }

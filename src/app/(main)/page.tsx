@@ -185,7 +185,16 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          <Link
+            href="/recommendations"
+            className="flex items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
+              <Sparkles className="h-4.5 w-4.5 text-emerald-400" strokeWidth={1.75} />
+            </div>
+            <span className="text-sm font-medium">PVR Picks</span>
+          </Link>
           <Link
             href="/calendar"
             className="flex items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
