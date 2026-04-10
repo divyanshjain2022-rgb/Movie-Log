@@ -232,7 +232,13 @@ function collectMovieCandidates(value: unknown, results: JsonRecord[], depth = 0
     "mId",
   ]);
 
-  if (title && id && hasMovieSignal(value)) results.push(value);
+  if (title && id && hasMovieSignal(value)) {
+    // Stop recursion: nested arrays like `films`, `experiences`, `secondaryFormats`
+    // represent variants of this movie (language/format/subtitle splits), not
+    // separate movies. Walking into them would produce one entry per variant.
+    results.push(value);
+    return;
+  }
 
   for (const nested of Object.values(value)) {
     if (Array.isArray(nested) || isRecord(nested)) {
@@ -711,8 +717,13 @@ export async function fetchPvrSearchMovies(
     },
     SEARCH_TTL_SECONDS
   );
+  // PVR returns now-showing movies in `output.ns` and upcoming in `output.cs`.
+  // Only ns has playable sessions; cs is covered by fetchPvrComingSoon.
+  const resultRecord = isRecord(result.data) ? result.data : {};
+  const outputRecord = isRecord(resultRecord.output) ? resultRecord.output : {};
+  const nsPayload = outputRecord.ns ?? [];
   const text = params.text?.trim().toLowerCase();
-  const movies = normalizePvrMovies(result.data, city.name);
+  const movies = normalizePvrMovies(nsPayload, city.name);
 
   return {
     data: text
