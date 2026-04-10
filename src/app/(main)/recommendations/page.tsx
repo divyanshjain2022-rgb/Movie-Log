@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
+  ChevronDown,
   Clock,
   ExternalLink,
   MapPin,
@@ -25,6 +26,7 @@ import { PVR_CITIES, todayInIndia } from "@/lib/pvr/cities";
 import { formatCurrency, formatDate, formatTime } from "@/lib/formula";
 import type {
   MovieRecommendation,
+  PvrMovie,
   PvrRecommendationsResponse,
   RecommendationOption,
 } from "@/lib/pvr/types";
@@ -120,6 +122,47 @@ function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
+  return (
+    <a
+      href={movie.redirectUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="group flex gap-3 rounded-lg bg-card/40 p-2.5 transition hover:bg-card/60"
+    >
+      {movie.posterUrl ? (
+        <img
+          src={movie.posterUrl}
+          alt={movie.title}
+          className="h-20 w-14 shrink-0 rounded-md object-cover"
+        />
+      ) : (
+        <div className="flex h-20 w-14 shrink-0 items-center justify-center rounded-md bg-secondary/40">
+          <Sparkles className="h-4 w-4 text-muted-foreground/40" />
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-tight group-hover:text-primary">
+          {movie.title}
+        </h3>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {movie.languages.slice(0, 2).map((lang) => (
+            <Badge key={lang} variant="outline" className="rounded-md text-[10px]">
+              {lang}
+            </Badge>
+          ))}
+          {movie.genres.slice(0, 2).map((genre) => (
+            <Badge key={genre} variant="secondary" className="rounded-md text-[10px]">
+              {genre}
+            </Badge>
+          ))}
+        </div>
+      </div>
+      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
+    </a>
   );
 }
 
@@ -375,6 +418,25 @@ export default function RecommendationsPage() {
               Try another city, date, language, or format.
             </p>
           </div>
+        )}
+
+        {data && data.otherPlaying && data.otherPlaying.length > 0 && (
+          <details className="group rounded-xl bg-card/35 p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold">Also playing</h2>
+                <p className="text-xs text-muted-foreground">
+                  {data.otherPlaying.length} more movies in {data.city} you haven&apos;t watched
+                </p>
+              </div>
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {data.otherPlaying.map((movie) => (
+                <OtherPlayingCard key={movie.id} movie={movie} />
+              ))}
+            </div>
+          </details>
         )}
       </div>
     </div>

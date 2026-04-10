@@ -423,12 +423,32 @@ export async function GET(request: NextRequest) {
       userData,
       seatQuotes
     );
+
+    const recommendedIds = new Set(recommendations.map((rec) => rec.movie.id));
+    const watchedTitleTokens = new Set(
+      userData.movies
+        .map((movie) => movie.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
+        .filter(Boolean)
+    );
+    const otherPlaying = searchMovies.data.filter((movie) => {
+      if (recommendedIds.has(movie.id)) return false;
+      const normalized = movie.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!normalized) return true;
+      for (const watched of watchedTitleTokens) {
+        if (watched === normalized || watched.includes(normalized) || normalized.includes(watched)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
     const response: PvrRecommendationsResponse = {
       city,
       date,
       generatedAt: new Date().toISOString(),
       recommendations,
       upcoming: comingSoon.data.slice(0, 20),
+      otherPlaying,
       diagnostics: {
         pvrMovieCount: pvrMovies.length,
         candidateMovieCount: candidates.length,

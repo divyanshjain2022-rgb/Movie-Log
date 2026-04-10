@@ -177,6 +177,7 @@ export interface PvrRecommendationsResponse {
   generatedAt: string;
   recommendations: MovieRecommendation[];
   upcoming: PvrMovie[];
+  otherPlaying: PvrMovie[];
   diagnostics: {
     pvrMovieCount: number;
     candidateMovieCount: number;
