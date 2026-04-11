@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, RotateCcw, Info } from "lucide-react";
+import { Save, RotateCcw, Info, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { PageHeader } from "@/components/shared";
 import { createClient } from "@/lib/supabase/client";
+import { calculateValueScore } from "@/lib/formula";
 import { toast } from "sonner";
 import type { FormulaConfig } from "@/types";
 import type { FormulaParams } from "@/types";
@@ -36,15 +37,17 @@ export default function FormulaPage() {
     const [config, setConfig] = useState<FormulaState | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [isRecalculating, setIsRecalculating] = useState(false);
     const supabase = createClient();
 
     useEffect(() => {
-        async function fetchConfig() {
+        async function fetchOrCreateConfig() {
+            // Try to find existing active config
             const { data } = await supabase
                 .from("formula_configs")
                 .select("*")
                 .eq("is_active", true)
-                .single();
+                .maybeSingle();
 
             if (data) {
                 const formulaConfig = data as FormulaConfig;
@@ -52,10 +55,33 @@ export default function FormulaPage() {
                     id: formulaConfig.id,
                     params: (formulaConfig.params as unknown as FormulaParams) || DEFAULT_PARAMS,
                 });
+            } else {
+                // No config exists — create one with defaults
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: created } = await supabase
+                        .from("formula_configs")
+                        .insert({
+                            user_id: user.id,
+                            name: "Default Formula",
+                            params: DEFAULT_PARAMS as unknown,
+                            is_active: true,
+                        } as never)
+                        .select()
+                        .single();
+
+                    if (created) {
+                        const fc = created as FormulaConfig;
+                        setConfig({
+                            id: fc.id,
+                            params: (fc.params as unknown as FormulaParams) || DEFAULT_PARAMS,
+                        });
+                    }
+                }
             }
             setIsLoading(false);
         }
-        fetchConfig();
+        fetchOrCreateConfig();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -82,6 +108,51 @@ export default function FormulaPage() {
         if (!config) return;
         setConfig({ ...config, params: DEFAULT_PARAMS });
         toast.success("Reset to defaults");
+    };
+
+    const handleRecalculateAll = async () => {
+        if (!config) return;
+        setIsRecalculating(true);
+        try {
+            // Fetch all movies with their format weights
+            const { data: moviesRaw, error: moviesError } = await supabase
+                .from("movies")
+                .select("id, rating, ticket_cost, convenience_fee, fnb_cost, other_expenses, format:formats(weight)");
+            if (moviesError) throw moviesError;
+
+            const movies = (moviesRaw || []) as Array<{
+                id: string; rating: number | null; ticket_cost: number;
+                convenience_fee: number; fnb_cost: number | null;
+                other_expenses: number | null; format: { weight: number } | null;
+            }>;
+
+            let updated = 0;
+            for (const movie of movies) {
+                const rating = movie.rating;
+                if (!rating || rating <= 0) continue;
+
+                let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0);
+                if (config.params.use_true_cost) {
+                    cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
+                }
+                if (cost <= 0) continue;
+
+                const formatWeight = movie.format?.weight || 1.0;
+                const score = calculateValueScore(rating, cost, formatWeight, config.params);
+
+                const { error } = await supabase
+                    .from("movies")
+                    .update({ value_score: score } as never)
+                    .eq("id", movie.id);
+                if (!error) updated++;
+            }
+
+            toast.success(`Recalculated value scores for ${updated} movies`);
+        } catch {
+            toast.error("Failed to recalculate");
+        } finally {
+            setIsRecalculating(false);
+        }
     };
 
     const updateParams = (updates: Partial<FormulaParams>) => {
@@ -276,6 +347,19 @@ export default function FormulaPage() {
                         <p className="mt-2 text-center text-xs text-muted-foreground">At ₹300 cost</p>
                     </CardContent>
                 </Card>
+
+                <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleRecalculateAll}
+                    disabled={isRecalculating}
+                >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isRecalculating ? "animate-spin" : ""}`} />
+                    {isRecalculating ? "Recalculating..." : "Recalculate All Movies"}
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                    Save your formula first, then recalculate to update all existing movies
+                </p>
             </div>
         </div>
     );

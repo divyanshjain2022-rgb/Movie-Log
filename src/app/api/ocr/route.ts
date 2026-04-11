@@ -1,8 +1,113 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
 
-// Google Cloud Vision API endpoint
-const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
+
+const EXTRACTION_PROMPT = `You are an expert OCR system for Indian movie theater tickets and booking confirmations.
+
+Read ALL text in the image carefully, then extract the fields below.
+
+THERE ARE TWO COMMON TICKET FORMATS:
+
+=== FORMAT 1: PVR INOX TAX INVOICE (Blue ticket PDF) ===
+This has a TWO-PANEL layout:
+- LEFT PANEL (blue background): Movie title, theater name (e.g. "LUCKNOW PHOENIX PALASSIO"), TicketId, pricing breakdown (Admin, Service Charge, 3D Charge, CGST, SGST, AMOUNT PAID), a DD-MM-YY date, and a HH:MM:SS TRANSACTION timestamp (this is NOT the showtime!)
+- RIGHT PANEL (white background): SCREEN number, CLASS, SEAT, a full date like "Wed, 25 Feb 2026", and the SHOWTIME in large colored text like "04:20 PM" or "10:35 AM"
+
+CRITICAL: The showtime is the large colored time in the RIGHT panel (e.g. "04:20 PM"). Do NOT use the left panel timestamp (e.g. "03:16:54") — that is the booking/transaction time.
+
+=== FORMAT 2: BOOKING CONFIRMATION SCREENSHOT (PVR INOX app / BookMyShow) ===
+- Shows "SHOW DATE & TIME" with date and time range like "Tue, 17 Mar, 6:25 PM - 8:34 PM"
+- The showtime is the START time (e.g. "6:25 PM")
+- Shows AUDI number, seat, Booking ID, pricing breakdown
+
+=== EXTRACTION RULES ===
+
+MOVIE TITLE:
+- Remove ALL parenthetical tags: format (IMAX, 3D, 4DX, MX4D, 2D), language (ENGLISH, HINDI, MANIPURI), certification (U, UA, A), "RE RELEASE", "WITH ENGLISH SUBTITLE", etc.
+- "SINNERS (ENGLISH IMAX WITH ENGLI..." → "Sinners"
+- "HOPPERS (3D ENGLISH IMAX WITH E..." → "Hoppers"
+- "CRIME 101 (ENGLISH MX4D WITH ENG..." → "Crime 101"
+- "DHURANDHAR THE REVENGE (HINDI)" → "Dhurandhar The Revenge"
+- "BOONG (RE RELEASE) (MANIPURI WITH ENGLISH SUBTITLE) (U)" → "Boong"
+- Return in title case
+
+THEATER:
+- From the ticket location line: "LUCKNOW PHOENIX PALASSIO" → "Phoenix Palassio Lucknow"
+- Or from header: "3rd Floor Phoenix Pallasio Mall... Lucknow" → "Phoenix Palassio Lucknow"
+- Or from booking: "PVR SUPERPLEX Lulu Lucknow" → "PVR Superplex Lulu Lucknow"
+
+DATE: Return strictly as YYYY-MM-DD
+- On PVR INOX tax invoices, use the FULL date from the RIGHT panel: "Wed, 25 Feb 2026" → "2026-02-25"
+- Do NOT use the DD-MM-YY from left panel (that's the invoice date, same day but use the full format)
+- On booking screenshots: "Tue, 17 Mar" with context year → "2026-03-17"
+
+SHOWTIME — THIS IS THE MOST IMPORTANT FIELD:
+- On PVR INOX tax invoices: Read the LARGE COLORED TIME in the RIGHT panel. Examples: "04:20 PM", "02:45 PM", "07:55 PM", "05:25 PM", "10:35 AM"
+- IGNORE the left panel timestamp like "03:16:54" or "14:58:04" — that is the transaction time
+- On booking screenshots: Use the start time from "6:25 PM - 8:34 PM" → "06:25 PM"
+- Return as "HH:MM AM/PM". NEVER return null — there is always a showtime on a valid ticket.
+
+SCREEN/AUDI: Just the number
+- "SCREEN 4" → "4", "SCREEN 7" → "7", "AUDI 09" → "9"
+
+SEAT: Full seat designation
+- "A-14" → "A-14", "B-11" → "B-11", "K9" → "K-9"
+
+FORMAT: Extract from the movie title line (before you clean it)
+- "ENGLISH IMAX WITH..." → ["IMAX", "2D"] (IMAX defaults to 2D unless 3D is specified)
+- "3D ENGLISH IMAX WITH..." → ["IMAX", "3D"]
+- "ENGLISH MX4D WITH..." → ["MX4D"]
+- "(HINDI)" with no format tag → ["2D"]
+- Also check if "3D Charge" in pricing is > 0 → format includes "3D"
+
+BOOKING ID:
+- On tax invoices: Look for "TicketId:" in the blue panel, e.g. "TicketId:T7A3E3S" → "T7A3E3S"
+- On booking screenshots: "BOOKING ID:" field, e.g. "TTAYJUH"
+
+PRICING (read every ₹ amount carefully):
+For PVR INOX tax invoices:
+  - "Admin" → admin_base (e.g. ₹191.73)
+  - "Service Charge" → service_charge (e.g. ₹9.32)
+  - "3D Charge" → format_charge (e.g. ₹59.32, or ₹0.00)
+  - "CGST @9%" or "CGST @2.5%" → cgst
+  - "SGST @9%" or "SGST @2.5%" → sgst
+  - "AMOUNT PAID" → amount_paid (e.g. ₹237.25)
+
+For booking screenshots:
+  - "Net Price" or "Total Ticket Price" → ticket_total
+  - "Convenience Fees" → convenience_fee_total
+  - "Total" → grand_total
+
+Return valid JSON. Use null for truly missing fields. Use 0 for pricing fields that show ₹0.00.`;
+
+const responseSchema = {
+  type: "OBJECT" as const,
+  properties: {
+    movie_title: { type: "STRING" as const, description: "Cleaned movie title without format/language/certification tags", nullable: true },
+    theater_name: { type: "STRING" as const, description: "Full cinema name with location in title case", nullable: true },
+    show_date: { type: "STRING" as const, description: "Date in YYYY-MM-DD format", nullable: true },
+    show_time: { type: "STRING" as const, description: "Time in HH:MM AM/PM format", nullable: true },
+    audi: { type: "STRING" as const, description: "Screen/Audi number only", nullable: true },
+    seat_number: { type: "STRING" as const, description: "Seat designation(s)", nullable: true },
+    formats: { type: "ARRAY" as const, items: { type: "STRING" as const }, description: "Screening format tags like IMAX, 3D, 2D, 4DX" },
+    booking_id: { type: "STRING" as const, description: "Booking/transaction reference ID", nullable: true },
+    pricing: {
+      type: "OBJECT" as const,
+      properties: {
+        admin_base: { type: "NUMBER" as const, description: "Base admission/ticket price before surcharges" },
+        format_charge: { type: "NUMBER" as const, description: "3D/IMAX/4DX format surcharge" },
+        service_charge: { type: "NUMBER" as const, description: "Internet handling / convenience fee before tax" },
+        cgst: { type: "NUMBER" as const, description: "CGST tax amount" },
+        sgst: { type: "NUMBER" as const, description: "SGST tax amount" },
+        amount_paid: { type: "NUMBER" as const, description: "Final total amount paid" },
+        ticket_total: { type: "NUMBER" as const, description: "Total ticket price (simple receipts)" },
+        convenience_fee_total: { type: "NUMBER" as const, description: "Total convenience fee including tax" },
+        grand_total: { type: "NUMBER" as const, description: "Grand total / amount paid" },
+      },
+    },
+  },
+};
 
 interface TicketData {
   movie_title: string | null;
@@ -15,565 +120,186 @@ interface TicketData {
   ticket_cost: number | null;
   convenience_fee: number | null;
   booking_id: string | null;
-  raw_text?: string; // For debugging
 }
 
-export async function POST(request: NextRequest) {
+function detectMimeType(imageData: string, providedMime?: string): string {
+  const dataUriMatch = imageData.match(/^data:([^;]+);base64,/);
+  if (dataUriMatch) return dataUriMatch[1];
+  if (providedMime) return providedMime;
+
   try {
+    const raw = atob(imageData.substring(0, 16));
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "application/pdf";
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return "image/webp";
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return "image/heic";
+  } catch {
+    // Fall through
+  }
+
+  return "image/jpeg";
+}
+
+function stripDataUri(data: string): string {
+  const commaIndex = data.indexOf(",");
+  if (commaIndex !== -1 && data.substring(0, commaIndex).includes("base64")) {
+    return data.substring(commaIndex + 1);
+  }
+  return data;
+}
+
+// Edge Runtime: 30s timeout on Hobby (vs 10s for Node.js serverless)
+export const runtime = "edge";
+
+const MODEL_PRIORITY = [
+  "gemini-3-flash-preview",
+];
+
+export async function POST(request: NextRequest) {
+  const timestamp = new Date().toISOString();
+  console.log(`[OCR] Request received at ${timestamp}`);
+
+  try {
+    const body = await request.json();
+
+    if (!body.image) {
+      return NextResponse.json({ error: "No image data provided" }, { status: 400 });
+    }
+
     if (!GOOGLE_API_KEY) {
-      return NextResponse.json(
-        { error: "GOOGLE_CLOUD_API_KEY not configured" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Server misconfiguration: Missing API Key" }, { status: 500 });
     }
 
-    const { image } = await request.json();
+    const mimeType = detectMimeType(body.image, body.mimeType);
+    const base64Data = stripDataUri(body.image);
 
-    if (!image) {
-      return NextResponse.json(
-        { error: "No image provided" },
-        { status: 400 }
-      );
-    }
+    const sizeInBytes = Math.ceil(base64Data.length / 4) * 3;
+    console.log(`[OCR] Image size: ${(sizeInBytes / 1024 / 1024).toFixed(2)} MB, MIME: ${mimeType}`);
 
-    // Call Google Cloud Vision API
-    const response = await fetch(`${VISION_API_URL}?key=${GOOGLE_API_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            image: {
-              content: image, // base64 encoded image
-            },
-            features: [
-              {
-                type: "DOCUMENT_TEXT_DETECTION",
-                maxResults: 1,
-              },
-            ],
+    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+
+    let response;
+    let usedModel = "";
+
+    for (const model of MODEL_PRIORITY) {
+      try {
+        console.log(`[OCR] Trying model: ${model}`);
+        response = await ai.models.generateContent({
+          model,
+          config: {
+            systemInstruction: EXTRACTION_PROMPT,
+            responseMimeType: "application/json",
+            responseSchema: responseSchema,
           },
-        ],
-      }),
-    });
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data,
+                  },
+                },
+                {
+                  text: "Read every piece of text in this ticket image carefully. Extract all fields according to the instructions. Pay special attention to pricing — read each line item and amount precisely.",
+                },
+              ],
+            },
+          ],
+        });
+        usedModel = model;
+        break; // Success — stop trying other models
+      } catch (apiError: any) {
+        const status = apiError?.status || apiError?.httpStatusCode;
+        const message = apiError?.message || "";
+        console.error(`[OCR] ${model} failed:`, status, message.substring(0, 200));
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("Google Vision API error:", error);
-      return NextResponse.json(
-        { error: "Failed to process image" },
-        { status: 500 }
-      );
+        // Only retry on quota/rate limit errors (429) or unavailable (503)
+        if (status === 429 || status === 503 || message.includes("quota") || message.includes("RESOURCE_EXHAUSTED")) {
+          console.log(`[OCR] ${model} quota/rate limited, trying next model...`);
+          continue;
+        }
+        // For other errors, don't retry
+        throw new Error(`Gemini API error: ${message || "Unknown"}`);
+      }
     }
 
-    const data = await response.json();
-    const textAnnotations = data.responses?.[0]?.textAnnotations;
-
-    if (!textAnnotations || textAnnotations.length === 0) {
-      return NextResponse.json(
-        { error: "No text found in image" },
-        { status: 400 }
-      );
+    if (!response) {
+      throw new Error("All Gemini models failed (quota exhausted). Try again later.");
     }
 
-    // Get the full text from the first annotation (contains all text)
-    const fullText = textAnnotations[0].description || "";
+    const textResponse = response.text;
+    if (!textResponse) {
+      throw new Error("Empty response from AI model");
+    }
 
-    // Parse the extracted text to find ticket information
-    const ticketData = parseTicketText(fullText);
+    console.log(`[OCR] Model used: ${usedModel}`);
+    console.log("[OCR] Raw response:", textResponse.substring(0, 800));
+
+    let geminiData: any;
+    try {
+      const jsonStr = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      geminiData = JSON.parse(jsonStr);
+    } catch (e) {
+      console.error("[OCR] JSON Parse Error:", e);
+      throw new Error("Failed to parse response as JSON");
+    }
+
+    console.log("[OCR] Parsed:", JSON.stringify(geminiData, null, 2));
+    console.log("[OCR] show_time field:", JSON.stringify(geminiData.show_time), "| Type:", typeof geminiData.show_time);
+
+    // Calculate ticket_cost and convenience_fee from the breakdown
+    let ticket_cost: number | null = null;
+    let convenience_fee: number | null = null;
+    const p = geminiData.pricing || {};
+
+    // Type A: Itemized tax invoice
+    if (p.admin_base && p.admin_base > 0) {
+      ticket_cost = (p.admin_base || 0) + (p.format_charge || 0);
+      convenience_fee = (p.service_charge || 0) + (p.cgst || 0) + (p.sgst || 0);
+    }
+    // Type B: Simple receipt with ticket_total
+    else if (p.ticket_total && p.ticket_total > 0) {
+      ticket_cost = p.ticket_total;
+      convenience_fee = p.convenience_fee_total || 0;
+    }
+    // Type C: Only total available — use amount_paid or grand_total
+    else if (p.amount_paid || p.grand_total) {
+      const total = p.amount_paid || p.grand_total || 0;
+      convenience_fee = (p.service_charge || 0) + (p.cgst || 0) + (p.sgst || 0) + (p.convenience_fee_total || 0);
+      ticket_cost = total - (convenience_fee || 0);
+      if (ticket_cost < 0) {
+        ticket_cost = total;
+        convenience_fee = 0;
+      }
+    }
+
+    const ticketData: TicketData = {
+      movie_title: geminiData.movie_title || null,
+      date: geminiData.show_date || null,
+      showtime: geminiData.show_time || null,
+      theater: geminiData.theater_name || null,
+      audi: geminiData.audi || null,
+      format: geminiData.formats?.join(", ") || null,
+      seat: geminiData.seat_number || null,
+      ticket_cost,
+      convenience_fee,
+      booking_id: geminiData.booking_id || null,
+    };
+
+    console.log("[OCR] Final output:", JSON.stringify(ticketData, null, 2));
 
     return NextResponse.json(ticketData);
-  } catch (error) {
-    console.error("OCR error:", error);
+  } catch (error: any) {
+    console.error("[OCR] Error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: `OCR Processing Failed: ${error.message || "Unknown error"}` },
       { status: 500 }
     );
   }
-}
-
-function parseTicketText(text: string): TicketData {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const fullTextLower = text.toLowerCase();
-
-  const result: TicketData = {
-    movie_title: null,
-    date: null,
-    showtime: null,
-    theater: null,
-    audi: null,
-    format: null,
-    seat: null,
-    ticket_cost: null,
-    convenience_fee: null,
-    booking_id: null,
-    raw_text: text, // Include raw text for debugging
-  };
-
-  // Detect ticket provider for specialized parsing
-  const isPVRINOX = /pvr|inox/i.test(text);
-  const isCinepolis = /cinepolis/i.test(text);
-
-  // === MOVIE TITLE ===
-  result.movie_title = extractMovieTitle(lines, text);
-
-  // === FORMAT (extract before cleaning title) ===
-  result.format = extractFormat(fullTextLower);
-
-  // === DATE ===
-  result.date = extractDate(text, lines);
-
-  // === SHOWTIME ===
-  result.showtime = extractShowtime(text, lines);
-
-  // === THEATER ===
-  result.theater = extractTheater(text, isPVRINOX, isCinepolis);
-
-  // === SCREEN/AUDI ===
-  result.audi = extractScreen(text);
-
-  // === SEAT ===
-  result.seat = extractSeat(text, lines);
-
-  // === COSTS (including GST) ===
-  const costs = extractCosts(text);
-  result.ticket_cost = costs.ticketCost;
-  result.convenience_fee = costs.convenienceFee;
-
-  // === BOOKING ID ===
-  result.booking_id = extractBookingId(text);
-
-  return result;
-}
-
-function extractMovieTitle(lines: string[], fullText: string): string | null {
-  // Pattern 1: Look for title followed by (LANGUAGE FORMAT) (RATING)
-  // e.g., "KANTARA A LEGEND CHAPTER 1 (HINDI IMAX) (UA 16+)"
-  // Use greedy matching to get the full title
-  const titleWithParens = fullText.match(/^([A-Z][A-Z0-9\s:'-]+)\s*\([A-Z]+[^)]*\)\s*\([UA]/m);
-  if (titleWithParens) {
-    const title = cleanMovieTitle(titleWithParens[1]);
-    if (isValidTitle(title)) return title;
-  }
-
-  // Pattern 2: Title before format keywords (IMAX, 3D, etc.)
-  const beforeFormat = fullText.match(/^([A-Z][A-Z0-9\s:'-]+?)(?:\s*\((?:HINDI|ENGLISH|TAMIL|TELUGU|3D|IMAX))/mi);
-  if (beforeFormat) {
-    const title = cleanMovieTitle(beforeFormat[1]);
-    if (isValidTitle(title)) return title;
-  }
-
-  // Pattern 3: Look for movie title on its own line (ALL CAPS)
-  for (let i = 0; i < Math.min(lines.length, 15); i++) {
-    const line = lines[i];
-    if (shouldSkipLine(line)) continue;
-
-    // Title with format info on same line
-    const withFormat = line.match(/^([A-Z][A-Z0-9\s:'-]+?)(?:\s*\(|\s+\d+D|\s+IMAX)/);
-    if (withFormat) {
-      const title = cleanMovieTitle(withFormat[1]);
-      if (isValidTitle(title)) return title;
-    }
-
-    // Pure title line (ALL CAPS, reasonable length)
-    if (/^[A-Z][A-Z0-9\s:'-]+\d*$/.test(line) && line.length >= 3 && line.length <= 50) {
-      const title = cleanMovieTitle(line);
-      if (isValidTitle(title)) return title;
-    }
-  }
-
-  // Pattern 4: Find title before rating (UA, U/A, etc.)
-  const beforeRating = fullText.match(/^([A-Z][A-Z0-9\s:'-]+?)(?=\s*\([^)]*\)\s*\(?UA|\s+UA\s)/m);
-  if (beforeRating) {
-    const title = cleanMovieTitle(beforeRating[1]);
-    if (isValidTitle(title)) return title;
-  }
-
-  return null;
-}
-
-function cleanMovieTitle(title: string): string {
-  let cleaned = title
-    .replace(/\s*\(.*$/, "") // Remove parenthetical info
-    .replace(/\s+(?:3D|2D|IMAX|4DX|DOLBY|ATMOS).*$/i, "") // Remove format suffixes
-    .replace(/\s+(?:UA|U\/A|U|A|S)(?:\s+\d+\+?)?$/i, "") // Remove rating suffixes
-    .replace(/\s+$/g, "") // Trim trailing spaces
-    .trim();
-
-  // Add space before trailing number if missing (e.g., "ZOOTOPIA2" -> "ZOOTOPIA 2")
-  cleaned = cleaned.replace(/([A-Za-z])(\d+)$/, "$1 $2");
-
-  // Title case: "ZOOTOPIA 2" -> "Zootopia 2"
-  cleaned = cleaned
-    .toLowerCase()
-    .split(" ")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-
-  return cleaned;
-}
-
-function isValidTitle(title: string): boolean {
-  if (!title || title.length < 2 || title.length > 60) return false;
-
-  // Reject if it's a common non-title phrase
-  const invalidTitles = [
-    "BOOKING", "SCREEN", "SEAT", "PVR", "INOX", "CINEPOLIS", "TOTAL",
-    "AMOUNT", "PAID", "PRICE", "TAX", "GST", "FEE", "ENJOY", "SHOW",
-    "DATE", "TIME", "THANK", "LIMITED", "MALL", "MULTIPLEX", "MEGAPLEX"
-  ];
-
-  const upperTitle = title.toUpperCase();
-  return !invalidTitles.some(invalid => upperTitle === invalid || upperTitle.startsWith(invalid + " "));
-}
-
-function shouldSkipLine(line: string): boolean {
-  const skipPatterns = [
-    /^(booking|thank|enjoy|pvr|inox|cinepolis|screen|seat|total|amount|₹|rs\.?)/i,
-    /^\d+[-\/]\d+/,  // Date patterns
-    /^[A-Z]-?\d+$/,  // Seat patterns like A14
-    /limited|mall|multiplex|cinema/i,
-  ];
-  return skipPatterns.some(p => p.test(line));
-}
-
-function extractFormat(text: string): string | null {
-  // Order matters - check more specific formats first
-  const formatPatterns = [
-    { regex: /3d\s*(?:english\s*)?imax|imax\s*3d|imax\s*with\s*3d/i, format: "IMAX 3D" },
-    { regex: /imax\s*(?:2d|with\s*laser)?/i, format: "IMAX" },
-    { regex: /4dx\s*3d/i, format: "4DX 3D" },
-    { regex: /4dx/i, format: "4DX" },
-    { regex: /ice\s*3d/i, format: "ICE 3D" },
-    { regex: /ice/i, format: "ICE" },
-    { regex: /mx4d/i, format: "MX4D" },
-    { regex: /screenx/i, format: "ScreenX" },
-    { regex: /dolby\s*(?:cinema|atmos)/i, format: "Dolby Cinema" },
-    { regex: /(?:^|\s)3d(?:\s|$|[^a-z])/i, format: "3D" },
-    { regex: /gold\s*class/i, format: "Gold Class" },
-    { regex: /director'?s?\s*cut/i, format: "Director's Cut" },
-  ];
-
-  for (const { regex, format } of formatPatterns) {
-    if (regex.test(text)) {
-      return format;
-    }
-  }
-
-  return "Standard";
-}
-
-function extractDate(text: string, lines: string[]): string | null {
-  // Pattern 1: "Fri, 28 Nov 2025" or "Fri, 28 Nov, 4:00 PM"
-  const dayMonthYear = text.match(/(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*[,.]?\s*(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[,.]?\s*(?:(\d{4})|(?=\d{1,2}:\d{2}))/i);
-  if (dayMonthYear) {
-    return normalizeDate(dayMonthYear[1], dayMonthYear[2], dayMonthYear[3]);
-  }
-
-  // Pattern 2: "28 Nov 2025"
-  const monthYear = text.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[,.]?\s*(\d{4})/i);
-  if (monthYear) {
-    return normalizeDate(monthYear[1], monthYear[2], monthYear[3]);
-  }
-
-  // Pattern 3: DD-MM-YY or DD-MM-YYYY (common in Indian tickets)
-  const numericDate = text.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
-  if (numericDate) {
-    let year = numericDate[3];
-    if (year.length === 2) {
-      year = parseInt(year) > 50 ? `19${year}` : `20${year}`;
-    }
-    return `${year}-${numericDate[2].padStart(2, "0")}-${numericDate[1].padStart(2, "0")}`;
-  }
-
-  // Pattern 4: Look for "SHOW DATE" or similar labels
-  for (const line of lines) {
-    if (/show\s*date|date\s*&\s*time/i.test(line)) {
-      const nextLineIdx = lines.indexOf(line) + 1;
-      if (nextLineIdx < lines.length) {
-        const dateMatch = lines[nextLineIdx].match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i);
-        if (dateMatch) {
-          return normalizeDate(dateMatch[1], dateMatch[2], null);
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeDate(day: string, month: string, year: string | null): string {
-  const months: Record<string, string> = {
-    jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-    jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
-  };
-
-  const y = year || new Date().getFullYear().toString();
-  const m = months[month.toLowerCase().substring(0, 3)];
-  const d = day.padStart(2, "0");
-
-  return `${y}-${m}-${d}`;
-}
-
-function extractShowtime(text: string, lines: string[]): string | null {
-  // Pattern 1: Time with AM/PM - "4:00 PM" or "04:00 PM"
-  const timeWithPeriod = text.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
-  if (timeWithPeriod) {
-    return normalizeTime(timeWithPeriod[1], timeWithPeriod[2], timeWithPeriod[3]);
-  }
-
-  // Pattern 2: 24-hour format after specific labels
-  for (const line of lines) {
-    if (/show\s*time|time/i.test(line)) {
-      const timeMatch = line.match(/(\d{1,2}):(\d{2})/);
-      if (timeMatch) {
-        return `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
-      }
-    }
-  }
-
-  // Pattern 3: Time range "4:00 PM - 6:28 PM" - take start time
-  const timeRange = text.match(/(\d{1,2}):(\d{2})\s*(am|pm)\s*[-–]\s*\d{1,2}:\d{2}\s*(am|pm)/i);
-  if (timeRange) {
-    return normalizeTime(timeRange[1], timeRange[2], timeRange[3]);
-  }
-
-  return null;
-}
-
-function normalizeTime(hours: string, minutes: string, period: string): string {
-  let h = parseInt(hours);
-  const p = period.toUpperCase();
-
-  if (p === "PM" && h < 12) h += 12;
-  if (p === "AM" && h === 12) h = 0;
-
-  return `${h.toString().padStart(2, "0")}:${minutes}`;
-}
-
-function extractTheater(text: string, isPVRINOX: boolean, isCinepolis: boolean): string | null {
-  // Common mall names in India - these are what users will have saved
-  const mallNames = [
-    "phoenix palassio", "phoenix palladium", "phoenix marketcity", "phoenix mall",
-    "forum mall", "nexus mall", "orion mall", "ambience mall", "select citywalk",
-    "dlf mall", "dlf promenade", "elante mall", "vr mall", "lulu mall",
-    "inorbit mall", "oberoi mall", "infinity mall", "high street phoenix",
-    "seawoods grand central", "growels 101", "viviana mall", "r city mall",
-    "pacific mall", "gaur city mall", "wave mall", "sahara mall", "fun republic",
-    "pvr icon", "pvr gold", "pvr ecx", "pvr plaza",
-  ];
-
-  const textLower = text.toLowerCase();
-
-  // First, try to find known mall names
-  for (const mall of mallNames) {
-    if (textLower.includes(mall)) {
-      // Title case the mall name
-      return mall.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-    }
-  }
-
-  // PVR INOX specific patterns - extract mall name
-  if (isPVRINOX) {
-    // Pattern: "PHOENIX PALASSIO" or similar mall names in all caps
-    const mallPattern = text.match(/(PHOENIX|FORUM|NEXUS|ORION|AMBIENCE|SELECT|DLF|ELANTE|VR|LULU|INORBIT|OBEROI|INFINITY|PACIFIC|WAVE|SAHARA)\s+([A-Z]+(?:\s+[A-Z]+)?)/i);
-    if (mallPattern) {
-      const mallName = `${mallPattern[1]} ${mallPattern[2]}`.toLowerCase();
-      return mallName.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-    }
-
-    // Pattern: Extract from "INOX Megaplex Phoenix Palassio Mall"
-    const inoxMallPattern = text.match(/(?:pvr|inox)\s+(?:megaplex\s+)?([A-Za-z\s]+?)(?:\s+mall|\s+cinema|\n|,)/i);
-    if (inoxMallPattern) {
-      const extracted = inoxMallPattern[1].trim();
-      // Only use if it looks like a mall name (not a city)
-      if (extracted.length > 3 && !/^(lucknow|delhi|mumbai|bangalore|hyderabad|chennai|kolkata|pune|noida|gurgaon|gurugram)$/i.test(extracted)) {
-        return extracted;
-      }
-    }
-  }
-
-  if (isCinepolis) {
-    // Pattern: "Cinepolis VR Mall" or similar
-    const cinepolisMallPattern = text.match(/cinepolis\s+([A-Za-z\s]+?)(?:\s+mall|\n|,)/i);
-    if (cinepolisMallPattern) {
-      return cinepolisMallPattern[1].trim();
-    }
-  }
-
-  // Last resort: look for "XXX Mall" pattern
-  const genericMallPattern = text.match(/([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+mall/i);
-  if (genericMallPattern) {
-    return genericMallPattern[1].trim();
-  }
-
-  return null;
-}
-
-function extractScreen(text: string): string | null {
-  // "SCREEN 4" or "Screen 4" or "Audi 3"
-  const screenMatch = text.match(/(?:screen|audi|hall|auditorium)\s*[:#]?\s*(\d+)/i);
-  if (screenMatch) {
-    return `Screen ${screenMatch[1]}`;
-  }
-  return null;
-}
-
-function extractSeat(text: string, lines: string[]): string | null {
-  // Pattern 1: Explicit seat label - "SEAT: A14" or "Seats: A-14"
-  const explicitSeat = text.match(/seats?\s*(?:info)?[:\s]+([A-Z]-?\d{1,2}(?:\s*,\s*[A-Z]-?\d{1,2})*)/i);
-  if (explicitSeat) {
-    return explicitSeat[1].toUpperCase().replace(/-/g, "").replace(/\s+/g, ", ");
-  }
-
-  // Pattern 2: Look for seat in context of "SEAT" label
-  for (let i = 0; i < lines.length; i++) {
-    if (/^seats?\s*(?:info)?$/i.test(lines[i]) && i + 1 < lines.length) {
-      const seatMatch = lines[i + 1].match(/^([A-Z]-?\d{1,2})$/i);
-      if (seatMatch) {
-        return seatMatch[1].toUpperCase().replace(/-/g, "");
-      }
-    }
-  }
-
-  // Pattern 3: "CLASS: ROYAL SEAT: A-14" pattern from e-ticket
-  const classSeat = text.match(/(?:class|category)[:\s]+[A-Z]+\s+seat[:\s]+([A-Z]-?\d{1,2})/i);
-  if (classSeat) {
-    return classSeat[1].toUpperCase().replace(/-/g, "");
-  }
-
-  // Pattern 4: Standalone seat pattern - be careful to exclude dates and other false positives
-  // Look specifically for seat patterns in context
-  const seatContext = text.match(/(?:royal|recliner|premium|gold|silver|classic)\s+([A-Z])-?(\d{1,2})/i);
-  if (seatContext) {
-    return `${seatContext[1].toUpperCase()}${seatContext[2]}`;
-  }
-
-  // Last resort: Find isolated seat pattern but verify it's not a date
-  const isolatedSeat = text.match(/\b([A-Z])-?(\d{1,2})\b/);
-  if (isolatedSeat) {
-    const potential = `${isolatedSeat[1]}${isolatedSeat[2]}`;
-    // Verify it's not part of a date or other pattern
-    const context = text.substring(Math.max(0, text.indexOf(isolatedSeat[0]) - 20), text.indexOf(isolatedSeat[0]) + 20);
-    if (!/nov|dec|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|screen|audi/i.test(context)) {
-      return potential.toUpperCase();
-    }
-  }
-
-  return null;
-}
-
-function extractCosts(text: string): { ticketCost: number | null; convenienceFee: number | null } {
-  let ticketCost: number | null = null;
-  let convenienceFee: number | null = null;
-
-  // Parse line by line for more accurate extraction
-  const lines = text.split('\n').map(l => l.trim());
-
-  // Detect if this is a "blue ticket" (app ticket) - look for specific patterns
-  const isBlueTicket = /amount\s*paid|pay\s*now|payment\s*mode/i.test(text) &&
-                       !/total\s*ticket\s*price/i.test(text);
-
-  // === TICKET COST ===
-  // For blue tickets (app tickets), "Amount Paid" is the total cost
-  if (isBlueTicket) {
-    for (const line of lines) {
-      const amountPaidMatch = line.match(/amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-      if (amountPaidMatch) {
-        const cost = parseFloat(amountPaidMatch[1].replace(/,/g, ""));
-        if (cost >= 50 && cost <= 10000) {
-          ticketCost = cost;
-          break;
-        }
-      }
-    }
-    // For blue tickets, convenience fee is already included in amount paid
-    // so we return 0 for convenience fee
-    return { ticketCost, convenienceFee: 0 };
-  }
-
-  // For standard tickets (e.g., e-ticket with breakdown)
-  for (const line of lines) {
-    // Pattern: "Total Ticket Price ₹400.00" or "Ticket Price: ₹400"
-    const ticketMatch = line.match(/(?:total\s+)?ticket\s*price[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-    if (ticketMatch) {
-      const cost = parseFloat(ticketMatch[1].replace(/,/g, ""));
-      if (cost >= 50 && cost <= 5000) {
-        ticketCost = cost;
-        break;
-      }
-    }
-
-    // Pattern: "Base Amount" or "Sub Total" for ticket
-    const baseMatch = line.match(/(?:base\s*amount|sub\s*total)[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-    if (baseMatch && !ticketCost) {
-      const cost = parseFloat(baseMatch[1].replace(/,/g, ""));
-      if (cost >= 50 && cost <= 5000) {
-        ticketCost = cost;
-      }
-    }
-  }
-
-  // Fallback: Look for "Amount Paid" if no ticket price found
-  if (!ticketCost) {
-    const amountPaidMatch = text.match(/amount\s*paid[:\s]*[₹rs\.?\s]*([\d,]+(?:\.\d{2})?)/i);
-    if (amountPaidMatch) {
-      ticketCost = parseFloat(amountPaidMatch[1].replace(/,/g, ""));
-    }
-  }
-
-  // === CONVENIENCE FEE ===
-  // Look specifically for convenience fee line
-  let convFee = 0;
-  let convGst = 0;
-
-  for (const line of lines) {
-    // Pattern: "Convenience Fees    51.00" - convenience fee without currency symbol
-    const convMatch = line.match(/convenience\s*fees?\s+(\d+(?:\.\d{2})?)/i);
-    if (convMatch) {
-      convFee = parseFloat(convMatch[1]);
-      continue;
-    }
-
-    // Pattern: "GST-09AAACP4526D1ZO    9.18" - GSTIN followed by GST amount
-    const gstinMatch = line.match(/gst-[A-Z0-9]+\s+(\d+(?:\.\d{2})?)/i);
-    if (gstinMatch) {
-      const gstAmount = parseFloat(gstinMatch[1]);
-      if (gstAmount < 50) {
-        convGst = gstAmount;
-      }
-      continue;
-    }
-  }
-
-  // Total convenience fee = base fee + GST on convenience fee
-  if (convFee > 0 && convFee < 200) {
-    convenienceFee = convFee + convGst;
-  }
-
-  return { ticketCost, convenienceFee };
-}
-
-function extractBookingId(text: string): string | null {
-  // Pattern 1: "Booking ID: TMAZJS3" or "BOOKING ID: TMAZJS3"
-  const bookingIdMatch = text.match(/booking\s*(?:id|no\.?)?[:\s]+([A-Z0-9]{5,15})/i);
-  if (bookingIdMatch) {
-    return bookingIdMatch[1].toUpperCase();
-  }
-
-  // Pattern 2: "(TicketId:TMAZJS3)" - common in PVR INOX e-tickets
-  const ticketIdMatch = text.match(/\(?ticket\s*id[:\s]*([A-Z0-9]{5,15})\)?/i);
-  if (ticketIdMatch) {
-    return ticketIdMatch[1].toUpperCase();
-  }
-
-  // Pattern 3: "Confirmation" or "Reference" number
-  const confirmMatch = text.match(/(?:confirmation|reference|order)\s*(?:no\.?|id|#)?[:\s]+([A-Z0-9]{5,20})/i);
-  if (confirmMatch) {
-    return confirmMatch[1].toUpperCase();
-  }
-
-  return null;
 }

@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
 import { useFormats } from "@/hooks";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Format } from "@/types";
 
@@ -41,8 +42,12 @@ export default function FormatsPage() {
         setIsSubmitting(true);
 
         try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             await addFormat({
-                user_id: "", // Set by RLS
+                user_id: user.id,
                 name: formData.get("name") as string,
                 weight: parseFloat(formData.get("weight") as string) || 1.0,
                 sort_order: formats.length,
@@ -117,7 +122,7 @@ export default function FormatsPage() {
                     className="mt-1"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
-                    Higher weight = higher expected value. Default is 1.0
+                    Multiplier for value score. Premium formats like IMAX (1.6) or MX4D (1.8) get a higher multiplier. Default 2D = 1.0
                 </p>
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -182,7 +187,7 @@ export default function FormatsPage() {
 
             <div className="p-4">
                 {isLoading ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         <Skeleton className="h-16" />
                         <Skeleton className="h-16" />
                         <Skeleton className="h-16" />
@@ -195,7 +200,7 @@ export default function FormatsPage() {
                         </p>
                     </div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {formats.map((format) => (
                             <Card key={format.id}>
                                 <CardContent className="flex items-center justify-between p-4">

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Coffee, MoreHorizontal, Pencil, Trash2, Link2, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Plus, Coffee, MoreHorizontal, Pencil, Trash2, Link2, X, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,12 +50,27 @@ import {
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { FnbPurchaseWithRelations, GiftCardUsageEntry, GiftCardWithUsage } from "@/types";
+import type { FnbPurchaseWithRelations, GiftCardUsageEntry } from "@/types";
+
+// Unified F&B entry — either from fnb_purchases table or from a movie's fnb fields
+interface FnbEntry {
+  id: string;
+  date: string;
+  items: string;
+  cost: number;
+  theaterName?: string;
+  movieTitle?: string;
+  movieId?: string;
+  remarks?: string | null;
+  source: "standalone" | "movie";
+  // Only for standalone entries
+  purchase?: FnbPurchaseWithRelations;
+}
 
 export default function FnbPage() {
-  const { fnbPurchases, isLoading, refetch } = useFnbPurchases();
+  const { fnbPurchases, isLoading: fnbLoading, refetch } = useFnbPurchases();
   const { theaters } = useLookupData();
-  const { movies } = useMovies();
+  const { movies, isLoading: moviesLoading } = useMovies();
   const { giftCards } = useGiftCards();
   const { createFnbPurchase, isLoading: isCreating } = useCreateFnbPurchase();
   const { updateFnbPurchase, isLoading: isUpdating } = useUpdateFnbPurchase();
@@ -70,6 +86,56 @@ export default function FnbPage() {
   const availableGiftCards = activeGiftCards.filter(
     gc => !giftCardUsage.some(u => u.gift_card_id === gc.id)
   );
+
+  // Merge F&B from both sources
+  const allFnbEntries = useMemo(() => {
+    const entries: FnbEntry[] = [];
+
+    // From fnb_purchases table
+    fnbPurchases.forEach(p => {
+      entries.push({
+        id: p.id,
+        date: p.date,
+        items: p.items,
+        cost: p.cost,
+        theaterName: p.theater?.name,
+        movieTitle: p.movie?.title,
+        movieId: p.movie_id || undefined,
+        remarks: p.remarks,
+        source: "standalone",
+        purchase: p,
+      });
+    });
+
+    // From movies with fnb_cost > 0
+    movies.forEach(m => {
+      if (m.fnb_cost && m.fnb_cost > 0) {
+        entries.push({
+          id: `movie-${m.id}`,
+          date: m.date,
+          items: m.fnb_items || "F&B",
+          cost: m.fnb_cost,
+          theaterName: m.theater?.name,
+          movieTitle: m.title,
+          movieId: m.id,
+          remarks: null,
+          source: "movie",
+        });
+      }
+    });
+
+    // Sort by date descending
+    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [fnbPurchases, movies]);
+
+  // Stats
+  const stats = useMemo(() => {
+    const year = new Date().getFullYear();
+    const yearEntries = allFnbEntries.filter(e => new Date(e.date).getFullYear() === year);
+    const totalSpend = yearEntries.reduce((sum, e) => sum + e.cost, 0);
+    const avgPerVisit = yearEntries.length > 0 ? totalSpend / yearEntries.length : 0;
+    return { totalSpend, count: yearEntries.length, avgPerVisit };
+  }, [allFnbEntries]);
 
   const addGiftCard = (gcId: string) => {
     const gc = giftCards.find(g => g.id === gcId);
@@ -178,8 +244,7 @@ export default function FnbPage() {
     }
   };
 
-  const linkedPurchases = fnbPurchases.filter(p => p.movie_id);
-  const unlinkedPurchases = fnbPurchases.filter(p => !p.movie_id);
+  const isLoading = fnbLoading || moviesLoading;
 
   const FnbForm = ({
     purchase,
@@ -323,7 +388,7 @@ export default function FnbPage() {
   return (
     <div className="min-h-screen pb-20">
       <PageHeader
-        title="F&B Purchases"
+        title="F&B"
         action={
           <Button size="icon" className="h-9 w-9" onClick={() => setIsAddDialogOpen(true)}>
             <Plus className="h-5 w-5" />
@@ -411,129 +476,107 @@ export default function FnbPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="space-y-6 p-4">
+      <div className="p-4 space-y-5">
+        {/* Year Stats */}
+        {!isLoading && allFnbEntries.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-card/50 p-3.5">
+              <p className="text-xs text-muted-foreground/60">Total</p>
+              <p className="text-lg font-bold">{formatCurrency(stats.totalSpend)}</p>
+            </div>
+            <div className="rounded-2xl bg-card/50 p-3.5">
+              <p className="text-xs text-muted-foreground/60">Orders</p>
+              <p className="text-lg font-bold">{stats.count}</p>
+            </div>
+            <div className="rounded-2xl bg-card/50 p-3.5">
+              <p className="text-xs text-muted-foreground/60">Avg/Visit</p>
+              <p className="text-lg font-bold">{formatCurrency(stats.avgPerVisit)}</p>
+            </div>
+          </div>
+        )}
+
+        {/* F&B List */}
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
           </div>
-        ) : fnbPurchases.length === 0 ? (
+        ) : allFnbEntries.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <Coffee className="mx-auto h-12 w-12 text-muted-foreground" />
             <p className="mt-3 text-muted-foreground">No F&B purchases yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Track your popcorn and snacks separately
+              Log F&B when adding a movie, or add standalone purchases here
             </p>
           </div>
         ) : (
-          <>
-            {unlinkedPurchases.length > 0 && (
-              <section>
-                <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-                  Unlinked ({unlinkedPurchases.length})
-                </h2>
-                <div className="space-y-3">
-                  {unlinkedPurchases.map((purchase) => (
-                    <FnbCard
-                      key={purchase.id}
-                      purchase={purchase}
-                      onEdit={() => setEditingPurchase(purchase)}
-                      onDelete={() => setDeletingPurchase(purchase)}
-                      onLink={() => setLinkingPurchase(purchase)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {linkedPurchases.length > 0 && (
-              <section>
-                <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-                  Linked to Movies ({linkedPurchases.length})
-                </h2>
-                <div className="space-y-3">
-                  {linkedPurchases.map((purchase) => (
-                    <FnbCard
-                      key={purchase.id}
-                      purchase={purchase}
-                      onEdit={() => setEditingPurchase(purchase)}
-                      onDelete={() => setDeletingPurchase(purchase)}
-                      onLink={() => setLinkingPurchase(purchase)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-          </>
+          <div className="space-y-3">
+            {allFnbEntries.map((entry) => (
+              <Card key={entry.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        {entry.source === "movie" ? (
+                          <Film className="h-4 w-4 text-primary flex-shrink-0" />
+                        ) : (
+                          <Coffee className="h-4 w-4 text-primary flex-shrink-0" />
+                        )}
+                        <span className="font-medium truncate">{entry.items}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formatDate(entry.date)}
+                        {entry.theaterName && ` · ${entry.theaterName}`}
+                      </p>
+                      {entry.movieTitle && (
+                        <Link
+                          href={`/movies/${entry.movieId}`}
+                          className="mt-1 inline-block text-xs text-primary hover:underline"
+                        >
+                          {entry.movieTitle}
+                        </Link>
+                      )}
+                      {entry.remarks && (
+                        <p className="mt-1 text-xs text-muted-foreground italic">
+                          {entry.remarks}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <p className="text-lg font-bold text-primary">
+                        {formatCurrency(entry.cost)}
+                      </p>
+                      {entry.source === "standalone" && entry.purchase && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setLinkingPurchase(entry.purchase!)}>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              {entry.purchase.movie_id ? "Change Link" : "Link to Movie"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setEditingPurchase(entry.purchase!)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setDeletingPurchase(entry.purchase!)} className="text-destructive">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
       </div>
     </div>
-  );
-}
-
-function FnbCard({
-  purchase,
-  onEdit,
-  onDelete,
-  onLink,
-}: {
-  purchase: FnbPurchaseWithRelations;
-  onEdit: () => void;
-  onDelete: () => void;
-  onLink: () => void;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <Coffee className="h-4 w-4 text-primary" />
-              <span className="font-medium truncate">{purchase.items}</span>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {formatDate(purchase.date)}
-              {purchase.theater && ` at ${purchase.theater.name}`}
-            </p>
-            {purchase.movie && (
-              <p className="mt-1 text-xs text-primary">
-                Linked: {purchase.movie.title}
-              </p>
-            )}
-            {purchase.remarks && (
-              <p className="mt-1 text-xs text-muted-foreground italic">
-                {purchase.remarks}
-              </p>
-            )}
-          </div>
-          <div className="flex items-start gap-2">
-            <p className="text-lg font-bold text-primary">
-              {formatCurrency(purchase.cost)}
-            </p>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={onLink}>
-                  <Link2 className="mr-2 h-4 w-4" />
-                  {purchase.movie_id ? "Change Link" : "Link to Movie"}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onEdit}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onDelete} className="text-destructive">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }

@@ -40,6 +40,7 @@ const CATEGORIES = [
     { value: "narrative", label: "Narrative" },
     { value: "technical", label: "Technical" },
     { value: "performance", label: "Performance" },
+    { value: "other", label: "Other" },
 ];
 
 export default function AspectsPage() {
@@ -66,8 +67,11 @@ export default function AspectsPage() {
         setIsSubmitting(true);
 
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             const { data, error } = await supabase.from("aspects").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 category: formData.get("category") as string,
             } as never).select().single();
@@ -174,7 +178,7 @@ export default function AspectsPage() {
                 ) : groupedAspects.map(group => (
                     <section key={group.value}>
                         <h2 className="mb-2 text-sm font-medium text-muted-foreground">{group.label}</h2>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                             {group.aspects.map(aspect => (
                                 <Card key={aspect.id}>
                                     <CardContent className="flex items-center justify-between p-3">

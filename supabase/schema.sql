@@ -222,53 +222,65 @@ CREATE POLICY "Users can manage own formula_configs" ON formula_configs
 CREATE OR REPLACE FUNCTION seed_user_defaults(p_user_id UUID)
 RETURNS void AS $$
 BEGIN
-  -- Default formats
+  -- Default formats (weights matching user's spreadsheet)
   INSERT INTO formats (user_id, name, weight, sort_order) VALUES
     (p_user_id, '2D', 1.0, 1),
-    (p_user_id, 'IMAX 2D', 1.4, 2),
-    (p_user_id, '3D', 1.2, 3),
+    (p_user_id, '3D', 1.0, 2),
+    (p_user_id, 'IMAX 2D', 1.6, 3),
     (p_user_id, 'IMAX 3D', 1.6, 4),
-    (p_user_id, '4DX', 1.5, 5),
-    (p_user_id, 'PXL', 1.3, 6),
-    (p_user_id, 'Dolby Atmos', 1.3, 7);
+    (p_user_id, 'MX4D 2D', 1.3, 5),
+    (p_user_id, 'MX4D 3D', 1.3, 6),
+    (p_user_id, '4DX', 1.2, 7),
+    (p_user_id, 'PXL', 1.4, 8),
+    (p_user_id, 'Kotak Insignia', 1.25, 9),
+    (p_user_id, 'Dolby Atmos', 1.3, 10),
+    (p_user_id, 'ScreenX', 1.2, 11),
+    (p_user_id, 'IMAX Laser', 1.7, 12);
 
-  -- Default moods
+  -- Default moods (matching user's spreadsheet)
   INSERT INTO moods (user_id, name, emoji, sentiment, sort_order) VALUES
-    (p_user_id, 'Delighted', NULL, 'positive', 1),
-    (p_user_id, 'Satisfied', NULL, 'positive', 2),
-    (p_user_id, 'Content', NULL, 'positive', 3),
-    (p_user_id, 'Neutral', NULL, 'neutral', 4),
-    (p_user_id, 'Conflicted', NULL, 'neutral', 5),
-    (p_user_id, 'Disappointed', NULL, 'negative', 6),
-    (p_user_id, 'Frustrated', NULL, 'negative', 7),
-    (p_user_id, 'Bored', NULL, 'negative', 8);
+    (p_user_id, 'Blown Away', NULL, 'positive', 1),
+    (p_user_id, 'Energized', NULL, 'positive', 2),
+    (p_user_id, 'Uplifted', NULL, 'positive', 3),
+    (p_user_id, 'Satisfied', NULL, 'positive', 4),
+    (p_user_id, 'Goosebumps', NULL, 'positive', 5),
+    (p_user_id, 'Mixed', NULL, 'neutral', 6),
+    (p_user_id, 'Pensive', NULL, 'neutral', 7),
+    (p_user_id, 'Conflicted', NULL, 'neutral', 8),
+    (p_user_id, 'Bored', NULL, 'negative', 9),
+    (p_user_id, 'Disappointed', NULL, 'negative', 10),
+    (p_user_id, 'Frustrated', NULL, 'negative', 11);
 
-  -- Default aspects
+  -- Default aspects (matching user's spreadsheet)
   INSERT INTO aspects (user_id, name, category) VALUES
     (p_user_id, 'Story', 'narrative'),
     (p_user_id, 'Dialogues', 'narrative'),
     (p_user_id, 'Pacing', 'narrative'),
+    (p_user_id, 'Worldbuilding', 'narrative'),
+    (p_user_id, 'Theme Message', 'narrative'),
+    (p_user_id, 'Logic', 'narrative'),
     (p_user_id, 'Acting', 'performance'),
-    (p_user_id, 'Lead Performance', 'performance'),
-    (p_user_id, 'Supporting Cast', 'performance'),
+    (p_user_id, 'Direction', 'technical'),
     (p_user_id, 'Cinematography', 'technical'),
     (p_user_id, 'VFX', 'technical'),
-    (p_user_id, 'Music/Score', 'technical'),
-    (p_user_id, 'Sound Design', 'technical'),
-    (p_user_id, 'Direction', 'technical'),
-    (p_user_id, 'Editing', 'technical');
+    (p_user_id, 'Animation', 'technical'),
+    (p_user_id, 'Music', 'technical'),
+    (p_user_id, 'Action Sequence', 'technical'),
+    (p_user_id, 'Nothing', NULL);
 
-  -- Default rewatch options
+  -- Default rewatch options (matching user's spreadsheet)
   INSERT INTO rewatch_options (user_id, name, value, sort_order) VALUES
-    (p_user_id, 'Definitely', 4, 1),
-    (p_user_id, 'Probably', 3, 2),
-    (p_user_id, 'Clip Rewatch', 2, 3),
-    (p_user_id, 'Never Again', 1, 4);
+    (p_user_id, 'Definitely', 5, 1),
+    (p_user_id, 'Maybe', 4, 2),
+    (p_user_id, 'Clip Rewatch', 3, 3),
+    (p_user_id, 'Unlikely', 2, 4),
+    (p_user_id, 'Never Again', 1, 5);
 
-  -- Default platforms
+  -- Default platforms (including Zingoy and Woohoo)
   INSERT INTO platforms (user_id, name) VALUES
     (p_user_id, 'Zingoy'),
-    (p_user_id, 'PVR Direct'),
+    (p_user_id, 'Woohoo'),
+    (p_user_id, 'PVR INOX'),
     (p_user_id, 'Amazon Pay'),
     (p_user_id, 'BookMyShow'),
     (p_user_id, 'Other');

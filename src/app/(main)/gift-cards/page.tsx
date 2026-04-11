@@ -333,8 +333,7 @@ export default function GiftCardsPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
-        capture="environment"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={handleFileSelect}
       />

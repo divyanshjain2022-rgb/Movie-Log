@@ -52,8 +52,11 @@ export default function RewatchPage() {
         setIsSubmitting(true);
 
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             const { data, error } = await supabase.from("rewatch_options").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 value: parseInt(formData.get("value") as string) || 0,
                 sort_order: options.length,
@@ -150,7 +153,7 @@ export default function RewatchPage() {
                 {isLoading ? <Skeleton className="h-40" /> : options.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">No options yet</div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {options.map(option => (
                             <Card key={option.id}>
                                 <CardContent className="flex items-center justify-between p-4">

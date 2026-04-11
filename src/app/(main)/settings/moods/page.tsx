@@ -62,8 +62,11 @@ export default function MoodsPage() {
         setIsSubmitting(true);
 
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             const { data, error } = await supabase.from("moods").insert({
-                user_id: "",
+                user_id: user.id,
                 name: formData.get("name") as string,
                 emoji: (formData.get("emoji") as string) || null,
                 sentiment: formData.get("sentiment") as string,
@@ -194,11 +197,11 @@ export default function MoodsPage() {
 
             <div className="p-4">
                 {isLoading ? (
-                    <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
+                    <div className="space-y-3"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
                 ) : moods.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">No moods yet</div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {moods.map((mood) => (
                             <Card key={mood.id}>
                                 <CardContent className="flex items-center justify-between p-4">

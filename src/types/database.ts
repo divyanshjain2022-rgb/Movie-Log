@@ -6,6 +6,22 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+// Payment method entry for tracking how a movie was paid for
+export interface PaymentMethodEntry {
+  method: string;
+  amount: number;
+}
+
+export const PAYMENT_METHODS = [
+  "UPI",
+  "Credit Card",
+  "Debit Card",
+  "Cash",
+  "PVR Wallet",
+  "Net Banking",
+  "Other",
+] as const;
+
 export interface Database {
   public: {
     Tables: {
@@ -46,6 +62,28 @@ export interface Database {
           total_cost: number;
           value_score: number | null;
           status: "upcoming" | "watched";
+          // New fields (migration 002)
+          watched_with: string | null;
+          payment_methods: PaymentMethodEntry[] | null;
+          // TMDB enrichment (migration 003)
+          cast_members: string[] | null;
+          composer: string | null;
+          cinematographer: string | null;
+          budget: number | null;
+          box_office: number | null;
+          tmdb_rating: number | null;
+          tmdb_vote_count: number | null;
+          certification: string | null;
+          trailer_url: string | null;
+          keywords: string[] | null;
+          overview: string | null;
+          release_date: string | null;
+          // Feature expansion (migration 004)
+          franchise_id: string | null;
+          original_movie_id: string | null;
+          is_rewatch: boolean;
+          // Passport (migration 006)
+          passport_id: string | null;
         };
         Insert: {
           id?: string;
@@ -82,6 +120,24 @@ export interface Database {
           passport_savings?: number;
           value_score?: number | null;
           status?: "upcoming" | "watched";
+          watched_with?: string | null;
+          payment_methods?: PaymentMethodEntry[] | null;
+          cast_members?: string[] | null;
+          composer?: string | null;
+          cinematographer?: string | null;
+          budget?: number | null;
+          box_office?: number | null;
+          tmdb_rating?: number | null;
+          tmdb_vote_count?: number | null;
+          certification?: string | null;
+          trailer_url?: string | null;
+          keywords?: string[] | null;
+          overview?: string | null;
+          release_date?: string | null;
+          franchise_id?: string | null;
+          original_movie_id?: string | null;
+          is_rewatch?: boolean;
+          passport_id?: string | null;
         };
         Update: {
           id?: string;
@@ -118,6 +174,24 @@ export interface Database {
           passport_savings?: number;
           value_score?: number | null;
           status?: "upcoming" | "watched";
+          watched_with?: string | null;
+          payment_methods?: PaymentMethodEntry[] | null;
+          cast_members?: string[] | null;
+          composer?: string | null;
+          cinematographer?: string | null;
+          budget?: number | null;
+          box_office?: number | null;
+          tmdb_rating?: number | null;
+          tmdb_vote_count?: number | null;
+          certification?: string | null;
+          trailer_url?: string | null;
+          keywords?: string[] | null;
+          overview?: string | null;
+          release_date?: string | null;
+          franchise_id?: string | null;
+          original_movie_id?: string | null;
+          is_rewatch?: boolean;
+          passport_id?: string | null;
         };
       };
       fnb_purchases: {
@@ -164,6 +238,7 @@ export interface Database {
           movie_id: string;
           gift_card_id: string;
           amount_used: number;
+          purpose: "ticket" | "fnb";
           created_at: string;
         };
         Insert: {
@@ -171,6 +246,7 @@ export interface Database {
           movie_id: string;
           gift_card_id: string;
           amount_used: number;
+          purpose?: "ticket" | "fnb";
           created_at?: string;
         };
         Update: {
@@ -178,6 +254,7 @@ export interface Database {
           movie_id?: string;
           gift_card_id?: string;
           amount_used?: number;
+          purpose?: "ticket" | "fnb";
           created_at?: string;
         };
       };
@@ -275,6 +352,7 @@ export interface Database {
           has_imax: boolean;
           has_4dx: boolean;
           notes: string | null;
+          capabilities: string[] | null;
         };
         Insert: {
           id?: string;
@@ -284,6 +362,7 @@ export interface Database {
           has_imax?: boolean;
           has_4dx?: boolean;
           notes?: string | null;
+          capabilities?: string[] | null;
         };
         Update: {
           id?: string;
@@ -293,6 +372,7 @@ export interface Database {
           has_imax?: boolean;
           has_4dx?: boolean;
           notes?: string | null;
+          capabilities?: string[] | null;
         };
       };
       moods: {
@@ -404,6 +484,288 @@ export interface Database {
           is_active?: boolean;
         };
       };
+      watchlist: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          tmdb_id: number | null;
+          poster_url: string | null;
+          release_date: string | null;
+          genres: string[] | null;
+          runtime_minutes: number | null;
+          notes: string | null;
+          priority: number;
+          added_at: string;
+          watched_movie_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          tmdb_id?: number | null;
+          poster_url?: string | null;
+          release_date?: string | null;
+          genres?: string[] | null;
+          runtime_minutes?: number | null;
+          notes?: string | null;
+          priority?: number;
+          added_at?: string;
+          watched_movie_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          tmdb_id?: number | null;
+          poster_url?: string | null;
+          release_date?: string | null;
+          genres?: string[] | null;
+          runtime_minutes?: number | null;
+          notes?: string | null;
+          priority?: number;
+          added_at?: string;
+          watched_movie_id?: string | null;
+        };
+      };
+      budgets: {
+        Row: {
+          id: string;
+          user_id: string;
+          month: number;
+          year: number;
+          amount: number;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          month: number;
+          year: number;
+          amount: number;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          month?: number;
+          year?: number;
+          amount?: number;
+        };
+      };
+      franchises: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          tmdb_collection_id: number | null;
+          poster_url: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          tmdb_collection_id?: number | null;
+          poster_url?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          tmdb_collection_id?: number | null;
+          poster_url?: string | null;
+          created_at?: string;
+        };
+      };
+      companions: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          avatar_emoji: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          avatar_emoji?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          avatar_emoji?: string;
+        };
+      };
+      movie_companions: {
+        Row: {
+          id: string;
+          movie_id: string;
+          companion_id: string;
+        };
+        Insert: {
+          id?: string;
+          movie_id: string;
+          companion_id: string;
+        };
+        Update: {
+          id?: string;
+          movie_id?: string;
+          companion_id?: string;
+        };
+      };
+      movie_photos: {
+        Row: {
+          id: string;
+          user_id: string;
+          movie_id: string;
+          storage_path: string;
+          caption: string | null;
+          photo_type: "ticket" | "selfie" | "fnb" | "general";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          movie_id: string;
+          storage_path: string;
+          caption?: string | null;
+          photo_type?: "ticket" | "selfie" | "fnb" | "general";
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          movie_id?: string;
+          storage_path?: string;
+          caption?: string | null;
+          photo_type?: "ticket" | "selfie" | "fnb" | "general";
+          created_at?: string;
+        };
+      };
+      theater_ratings: {
+        Row: {
+          id: string;
+          user_id: string;
+          theater_id: string;
+          audi: string | null;
+          sound: number | null;
+          seat: number | null;
+          screen: number | null;
+          cleanliness: number | null;
+          notes: string | null;
+          movie_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          theater_id: string;
+          audi?: string | null;
+          sound?: number | null;
+          seat?: number | null;
+          screen?: number | null;
+          cleanliness?: number | null;
+          notes?: string | null;
+          movie_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          theater_id?: string;
+          audi?: string | null;
+          sound?: number | null;
+          seat?: number | null;
+          screen?: number | null;
+          cleanliness?: number | null;
+          notes?: string | null;
+          movie_id?: string | null;
+          created_at?: string;
+        };
+      };
+      fnb_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          category: "snack" | "beverage" | "combo" | "other";
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          category?: "snack" | "beverage" | "combo" | "other";
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          category?: "snack" | "beverage" | "combo" | "other";
+        };
+      };
+      fnb_purchase_items: {
+        Row: {
+          id: string;
+          fnb_purchase_id: string;
+          fnb_item_id: string | null;
+          item_name: string;
+          quantity: number;
+          price: number;
+        };
+        Insert: {
+          id?: string;
+          fnb_purchase_id: string;
+          fnb_item_id?: string | null;
+          item_name: string;
+          quantity?: number;
+          price?: number;
+        };
+        Update: {
+          id?: string;
+          fnb_purchase_id?: string;
+          fnb_item_id?: string | null;
+          item_name?: string;
+          quantity?: number;
+          price?: number;
+        };
+      };
+      passports: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          purchase_date: string;
+          expiry_date: string | null;
+          amount_paid: number;
+          total_uses: number;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name?: string;
+          purchase_date: string;
+          expiry_date?: string | null;
+          amount_paid: number;
+          total_uses?: number;
+          notes?: string | null;
+          is_active?: boolean;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          purchase_date?: string;
+          expiry_date?: string | null;
+          amount_paid?: number;
+          total_uses?: number;
+          notes?: string | null;
+          is_active?: boolean;
+        };
+      };
     };
     Views: object;
     Functions: object;
@@ -428,6 +790,49 @@ export type RewatchOption = Database["public"]["Tables"]["rewatch_options"]["Row
 export type Platform = Database["public"]["Tables"]["platforms"]["Row"];
 export type FormulaConfig = Database["public"]["Tables"]["formula_configs"]["Row"];
 
+// New table types
+export type WatchlistItem = Database["public"]["Tables"]["watchlist"]["Row"];
+export type WatchlistItemInsert = Database["public"]["Tables"]["watchlist"]["Insert"];
+export type WatchlistItemUpdate = Database["public"]["Tables"]["watchlist"]["Update"];
+
+export type Budget = Database["public"]["Tables"]["budgets"]["Row"];
+export type BudgetInsert = Database["public"]["Tables"]["budgets"]["Insert"];
+export type BudgetUpdate = Database["public"]["Tables"]["budgets"]["Update"];
+
+export type Franchise = Database["public"]["Tables"]["franchises"]["Row"];
+export type FranchiseInsert = Database["public"]["Tables"]["franchises"]["Insert"];
+export type FranchiseUpdate = Database["public"]["Tables"]["franchises"]["Update"];
+
+export type Companion = Database["public"]["Tables"]["companions"]["Row"];
+export type CompanionInsert = Database["public"]["Tables"]["companions"]["Insert"];
+export type CompanionUpdate = Database["public"]["Tables"]["companions"]["Update"];
+
+export type MovieCompanion = Database["public"]["Tables"]["movie_companions"]["Row"];
+export type MovieCompanionInsert = Database["public"]["Tables"]["movie_companions"]["Insert"];
+
+export type MoviePhoto = Database["public"]["Tables"]["movie_photos"]["Row"];
+export type MoviePhotoInsert = Database["public"]["Tables"]["movie_photos"]["Insert"];
+
+export type TheaterRating = Database["public"]["Tables"]["theater_ratings"]["Row"];
+export type TheaterRatingInsert = Database["public"]["Tables"]["theater_ratings"]["Insert"];
+
+export type FnbItem = Database["public"]["Tables"]["fnb_items"]["Row"];
+export type FnbItemInsert = Database["public"]["Tables"]["fnb_items"]["Insert"];
+
+export type FnbPurchaseItem = Database["public"]["Tables"]["fnb_purchase_items"]["Row"];
+export type FnbPurchaseItemInsert = Database["public"]["Tables"]["fnb_purchase_items"]["Insert"];
+
+export type Passport = Database["public"]["Tables"]["passports"]["Row"];
+export type PassportInsert = Database["public"]["Tables"]["passports"]["Insert"];
+export type PassportUpdate = Database["public"]["Tables"]["passports"]["Update"];
+
+// Passport with computed usage stats
+export interface PassportWithUsage extends Passport {
+  uses_count: number;
+  total_savings: number;
+  net_savings: number; // total_savings - amount_paid
+}
+
 // Extended types with relations
 export interface MovieWithRelations extends Movie {
   theater?: Theater | null;
@@ -437,6 +842,16 @@ export interface MovieWithRelations extends Movie {
   weakest_part?: Aspect | null;
   rewatch?: RewatchOption | null;
   gift_card?: GiftCard | null;
+  franchise?: Franchise | null;
+  original_movie?: Movie | null;
+  movie_companions?: Array<{ id: string; companion: Companion }>;
+  // Multi-GC support via junction table
+  movie_gift_cards?: Array<{
+    id: string;
+    amount_used: number;
+    purpose: "ticket" | "fnb";
+    gift_card: GiftCard;
+  }>;
 }
 
 export interface GiftCardWithUsage extends GiftCard {
@@ -470,4 +885,5 @@ export interface FnbPurchaseWithRelations extends FnbPurchase {
 export interface GiftCardUsageEntry {
   gift_card_id: string;
   amount_used: number;
+  purpose?: "ticket" | "fnb";
 }

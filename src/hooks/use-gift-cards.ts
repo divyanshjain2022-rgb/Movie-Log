@@ -25,31 +25,43 @@ export function useGiftCards() {
 
       if (cardsError) throw cardsError;
 
-      // Fetch movie usage for each card
-      const { data: movies, error: moviesError } = await supabase
-        .from("movies")
-        .select("gc_id, total_cost")
-        .not("gc_id", "is", null);
+      // Fetch usage from movie_gift_cards junction table
+      const { data: movieUsage, error: movieUsageError } = await supabase
+        .from("movie_gift_cards")
+        .select("gift_card_id, amount_used");
 
-      if (moviesError) throw moviesError;
+      if (movieUsageError) throw movieUsageError;
 
-      // Calculate balance and status for each card
+      // Fetch usage from fnb_gift_cards junction table
+      const { data: fnbUsage, error: fnbUsageError } = await supabase
+        .from("fnb_gift_cards")
+        .select("gift_card_id, amount_used");
+
+      if (fnbUsageError) throw fnbUsageError;
+
+      // Calculate balance and status for each card using both junction tables
       type CardWithPlatform = GiftCard & { platform: Platform | null };
       const cardsList = (cards || []) as CardWithPlatform[];
-      const movieUsage = (movies || []) as Array<{ gc_id: string | null; total_cost: number }>;
+      const movieUsageList = (movieUsage || []) as Array<{ gift_card_id: string; amount_used: number }>;
+      const fnbUsageList = (fnbUsage || []) as Array<{ gift_card_id: string; amount_used: number }>;
 
       const cardsWithUsage: GiftCardWithUsage[] = cardsList.map((card) => {
-        const usedAmount = movieUsage
-          .filter((m) => m.gc_id === card.id)
-          .reduce((sum, m) => sum + (m.total_cost || 0), 0);
+        const movieUsedAmount = movieUsageList
+          .filter((u) => u.gift_card_id === card.id)
+          .reduce((sum, u) => sum + (u.amount_used || 0), 0);
 
-        const balance = card.face_value - usedAmount;
+        const fnbUsedAmount = fnbUsageList
+          .filter((u) => u.gift_card_id === card.id)
+          .reduce((sum, u) => sum + (u.amount_used || 0), 0);
+
+        const totalUsed = movieUsedAmount + fnbUsedAmount;
+        const balance = card.face_value - totalUsed;
         const isExpired = new Date(card.expiry_date) < new Date();
         const isExhausted = balance <= 0;
 
         return {
           ...card,
-          balance,
+          balance: Math.max(balance, 0),
           status: isExpired ? "expired" : isExhausted ? "exhausted" : "active",
         } as GiftCardWithUsage;
       });
@@ -79,9 +91,15 @@ export function useCreateGiftCard() {
       setError(null);
       const supabase = createClient();
 
+      // Get authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be logged in to add a gift card");
+      }
+
       const { data, error } = await supabase
         .from("gift_cards")
-        .insert(giftCard as never)
+        .insert({ ...giftCard, user_id: user.id } as never)
         .select()
         .single();
 

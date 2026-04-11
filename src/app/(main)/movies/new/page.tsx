@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Calendar, Film } from "lucide-react";
@@ -8,9 +8,9 @@ import { PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLookupData, useGiftCards, useCreateMovie } from "@/hooks";
+import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
 import { cn } from "@/lib/utils";
-import type { MovieFormData, TicketOCRData, GiftCardUsageEntry } from "@/types";
+import type { MovieFormData, TicketOCRData, GiftCardUsageEntry, MovieInsert } from "@/types";
 
 interface TMDBMovieDetails {
   tmdb_id: number;
@@ -22,6 +22,17 @@ interface TMDBMovieDetails {
   poster_url?: string;
   release_date?: string;
   overview?: string;
+  // Enriched fields
+  cast_members?: string[];
+  composer?: string;
+  cinematographer?: string;
+  budget?: number;
+  box_office?: number;
+  tmdb_rating?: number;
+  tmdb_vote_count?: number;
+  certification?: string;
+  trailer_url?: string;
+  keywords?: string[];
 }
 
 type BookingMode = "watched" | "advance";
@@ -56,11 +67,85 @@ function fuzzyMatch<T extends { id: string; name: string }>(
   return partial?.id;
 }
 
+// Convert 12-hour time (e.g., "06:45 PM") to 24-hour format (e.g., "18:45")
+function convertTo24Hour(time12h: string | null | undefined): string | null {
+  if (!time12h) return null;
+
+  // If already in 24-hour format (no AM/PM), return as-is
+  if (!/[ap]m/i.test(time12h)) {
+    // Validate it's a proper time format
+    const match = time12h.match(/^(\d{1,2}):(\d{2})/);
+    return match ? `${match[1].padStart(2, '0')}:${match[2]}` : time12h;
+  }
+
+  const match = time12h.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  if (!match) return time12h;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const period = match[3].toLowerCase();
+
+  if (period === 'pm' && hours !== 12) {
+    hours += 12;
+  } else if (period === 'am' && hours === 12) {
+    hours = 0;
+  }
+
+  return `${hours.toString().padStart(2, '0')}:${minutes}`;
+}
+
+// Compress image using canvas to reduce size for faster Gemini processing
+function compressImage(
+  file: File,
+  maxDimension: number,
+  quality: number
+): Promise<{ base64: string; sizeKB: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+
+      // Scale down if larger than maxDimension
+      if (width > maxDimension || height > maxDimension) {
+        const ratio = Math.min(maxDimension / width, maxDimension / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas not supported"));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Convert to JPEG base64
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      const base64 = dataUrl.split(",")[1];
+      const sizeKB = (base64.length * 0.75) / 1024;
+
+      resolve({ base64, sizeKB });
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 export default function NewMoviePage() {
   const router = useRouter();
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { createMovie, isLoading: isSubmitting } = useCreateMovie();
+  const { movies: allMovies } = useMovies();
+  const { franchises } = useFranchises();
+  const { companions } = useCompanions();
+  const { passports } = usePassports();
+  const { syncCompanions } = useSyncMovieCompanions();
 
   const [mode, setMode] = useState<BookingMode>("watched");
   const [isUploading, setIsUploading] = useState(false);
@@ -88,33 +173,72 @@ export default function NewMoviePage() {
   const handleTicketUpload = async (file: File) => {
     setIsUploading(true);
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Check file size — Vercel has a ~4.5MB request body limit
+      if (file.size > 4 * 1024 * 1024) {
+        throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 4MB.`);
+      }
+
+      // Compress images client-side to speed up Gemini processing
+      // (Vercel Hobby has 10s function timeout)
+      let base64: string;
+      let mimeType = file.type;
+
+      if (file.type.startsWith("image/")) {
+        const compressed = await compressImage(file, 1200, 0.8);
+        base64 = compressed.base64;
+        mimeType = "image/jpeg";
+        console.log(`[OCR] Compressed: ${(file.size / 1024).toFixed(0)}KB → ${(compressed.sizeKB).toFixed(0)}KB`);
+      } else {
+        // PDFs: read as-is
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(",")[1]);
+          };
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      console.log(`[OCR] Uploading: ${file.name}, type=${mimeType}, size=${(base64.length * 0.75 / 1024).toFixed(0)}KB`);
+
+      // 28s timeout — Edge Runtime gives us 30s on Vercel Hobby
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 28000);
 
       const response = await fetch("/api/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64, mimeType: file.type }),
+        body: JSON.stringify({ image: base64, mimeType }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!response.ok) {
-        throw new Error("OCR request failed");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `OCR request failed (${response.status})`);
       }
 
       const data: TicketOCRData = await response.json();
+      console.log("[OCR] Full API response:", JSON.stringify(data, null, 2));
       setOcrRawData(data); // Store raw data for theater/format matching
+
+      // Show debug info for missing fields
+      const missing: string[] = [];
+      if (!data.movie_title) missing.push("title");
+      if (!data.date) missing.push("date");
+      if (!data.showtime) missing.push("showtime");
+      if (!data.theater) missing.push("theater");
+      if (!data.audi) missing.push("audi");
+      if (!data.format) missing.push("format");
+      if (!data.ticket_cost) missing.push("ticket_cost");
+      if (!data.booking_id) missing.push("booking_id");
 
       setExtractedData({
         title: data.movie_title || "",
         date: data.date || new Date().toISOString().split("T")[0],
-        showtime: data.showtime || "",
+        showtime: convertTo24Hour(data.showtime) || data.showtime || "",
         audi: data.audi || "",
         seat: data.seat || "",
         ticket_cost: data.ticket_cost || 0,
@@ -123,10 +247,32 @@ export default function NewMoviePage() {
       });
 
       setShowForm(true);
-      toast.success("Ticket data extracted!");
-    } catch (error) {
-      toast.error("Failed to extract ticket data. Try entering manually.");
-      console.error(error);
+
+      if (missing.length > 0) {
+        toast.warning(`Extracted but missing: ${missing.join(", ")}`, { duration: 8000 });
+      } else {
+        toast.success("All ticket data extracted!");
+      }
+
+      // Debug toast with raw values
+      toast.info(
+        `OCR Debug: title="${data.movie_title}" | showtime="${data.showtime}" | date="${data.date}" | theater="${data.theater}" | audi="${data.audi}" | format="${data.format}" | cost=${data.ticket_cost} | fee=${data.convenience_fee} | booking="${data.booking_id}"`,
+        { duration: 15000 }
+      );
+    } catch (error: unknown) {
+      let msg = error instanceof Error ? error.message : "Unknown error";
+      // Handle common error types
+      if (error instanceof DOMException && error.name === "AbortError") {
+        msg = "Request timed out — try a smaller image or enter manually";
+      } else if (error instanceof TypeError && msg.includes("fetch")) {
+        msg = "Network error — check your connection";
+      } else if (msg === "Unknown error" || msg.includes("ProgressEvent")) {
+        msg = "Request failed — file may be too large or network timed out";
+      } else if (msg.includes("Missing API Key")) {
+        msg = "Google API key not configured. Enter data manually.";
+      }
+      toast.error(`OCR failed: ${msg}`);
+      console.error("[OCR]", error);
       setShowForm(true);
     } finally {
       setIsUploading(false);
@@ -135,27 +281,43 @@ export default function NewMoviePage() {
 
   const handleTMDBSelect = (movie: TMDBMovieDetails) => {
     setTmdbData(movie);
-    // Only update TMDB-specific fields, don't duplicate title
     setExtractedData((prev) => ({
       ...prev,
-      title: movie.title, // Replace title with TMDB title (properly formatted)
+      title: movie.title,
       tmdb_id: movie.tmdb_id,
       runtime_minutes: movie.runtime_minutes,
       genres: movie.genres,
       language: movie.language,
       director: movie.director,
       poster_url: movie.poster_url,
+      // Enriched TMDB fields
+      cast_members: movie.cast_members,
+      composer: movie.composer,
+      cinematographer: movie.cinematographer,
+      budget: movie.budget || undefined,
+      box_office: movie.box_office || undefined,
+      tmdb_rating: movie.tmdb_rating || undefined,
+      tmdb_vote_count: movie.tmdb_vote_count || undefined,
+      certification: movie.certification || undefined,
+      trailer_url: movie.trailer_url || undefined,
+      keywords: movie.keywords,
+      overview: movie.overview || undefined,
+      release_date: movie.release_date || undefined,
     }));
     toast.success("Movie details loaded from TMDB!");
   };
 
+  const handleTitleChange = (title: string) => {
+    setExtractedData((prev) => ({ ...prev, title }));
+  };
+
   const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
     try {
-      await createMovie({
+      const moviePayload: MovieInsert = {
         user_id: "",
         title: data.title,
         date: data.date,
-        showtime: data.showtime || null,
+        showtime: convertTo24Hour(data.showtime),
         theater_id: data.theater_id || null,
         audi: data.audi || null,
         format_id: data.format_id || null,
@@ -163,12 +325,12 @@ export default function NewMoviePage() {
         ticket_cost: data.ticket_cost,
         convenience_fee: data.convenience_fee,
         booking_id: data.booking_id || null,
-        tmdb_id: tmdbData?.tmdb_id || data.tmdb_id || null,
-        runtime_minutes: tmdbData?.runtime_minutes || data.runtime_minutes || null,
-        genres: tmdbData?.genres || data.genres || null,
-        language: tmdbData?.language || data.language || null,
-        director: tmdbData?.director || data.director || null,
-        poster_url: tmdbData?.poster_url || data.poster_url || null,
+        tmdb_id: data.tmdb_id || null,
+        runtime_minutes: data.runtime_minutes || null,
+        genres: data.genres || null,
+        language: data.language || null,
+        director: data.director || null,
+        poster_url: data.poster_url || null,
         rating: mode === "advance" ? null : data.rating || null,
         mood_id: mode === "advance" ? null : data.mood_id || null,
         fnb_cost: data.fnb_cost || null,
@@ -180,13 +342,39 @@ export default function NewMoviePage() {
         remarks: data.remarks || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
+        passport_id: data.passport_id || null,
         status: mode === "advance" ? "upcoming" : "watched",
-      }, giftCardUsage);
+        watched_with: data.watched_with || null,
+        payment_methods: data.payment_methods || [],
+        cast_members: data.cast_members || null,
+        composer: data.composer || null,
+        cinematographer: data.cinematographer || null,
+        budget: data.budget || null,
+        box_office: data.box_office || null,
+        tmdb_rating: data.tmdb_rating || null,
+        tmdb_vote_count: data.tmdb_vote_count || null,
+        certification: data.certification || null,
+        trailer_url: data.trailer_url || null,
+        keywords: data.keywords || null,
+        overview: data.overview || null,
+        release_date: data.release_date || null,
+        franchise_id: data.franchise_id || null,
+        is_rewatch: data.is_rewatch || false,
+        original_movie_id: data.original_movie_id || null,
+      };
+
+      const movie = await createMovie(moviePayload, giftCardUsage);
+
+      // Sync companion associations
+      const movieId = movie?.id;
+      if (data.companion_ids?.length && movieId) {
+        await syncCompanions(movieId, data.companion_ids);
+      }
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
       router.push("/movies");
     } catch (error) {
-      toast.error("Failed to save movie");
+      toast.error(error instanceof Error ? `Failed to save movie: ${error.message}` : "Failed to save movie");
       console.error(error);
     }
   };
@@ -264,6 +452,7 @@ export default function NewMoviePage() {
                 <TMDBSearch
                   initialTitle={extractedData.title || ""}
                   onSelect={handleTMDBSelect}
+                  onTitleChange={handleTitleChange}
                   selectedTmdbId={tmdbData?.tmdb_id}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -280,6 +469,10 @@ export default function NewMoviePage() {
                 aspects={aspects}
                 rewatchOptions={rewatchOptions}
                 giftCards={giftCards.filter((gc) => gc.status === "active")}
+                franchises={franchises}
+                companions={companions}
+                passports={passports}
+                allMovies={allMovies}
                 onSubmit={handleSubmit}
                 isLoading={isSubmitting}
                 isAdvanceBooking={mode === "advance"}

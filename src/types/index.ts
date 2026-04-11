@@ -32,6 +32,28 @@ export interface MovieFormData {
   passport_savings?: number;
   status?: "upcoming" | "watched";
   gift_cards_used?: Array<{ gift_card_id: string; amount_used: number }>;
+  // New fields
+  watched_with?: string;
+  payment_methods?: Array<{ method: string; amount: number }>;
+  // TMDB enrichment
+  cast_members?: string[];
+  composer?: string;
+  cinematographer?: string;
+  budget?: number;
+  box_office?: number;
+  tmdb_rating?: number;
+  tmdb_vote_count?: number;
+  certification?: string;
+  trailer_url?: string;
+  keywords?: string[];
+  overview?: string;
+  release_date?: string;
+  // Feature expansion
+  franchise_id?: string;
+  original_movie_id?: string;
+  is_rewatch?: boolean;
+  companion_ids?: string[];
+  passport_id?: string;
 }
 
 export interface FnbFormData {
@@ -66,6 +88,13 @@ export interface TicketOCRData {
   ticket_cost: number | null;
   convenience_fee: number | null;
   booking_id: string | null;
+  // TMDB Data
+  tmdb_id?: number | null;
+  overview?: string | null;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  original_title?: string | null;
+  release_date?: string | null;
 }
 
 export interface GiftCardOCRData {
@@ -79,11 +108,25 @@ export interface GiftCardOCRData {
 // TMDB Response type
 export interface TMDBMovieData {
   tmdb_id: number;
+  title: string;
   runtime_minutes: number;
   genres: string[];
   language: string;
   director: string | null;
   poster_url: string | null;
+  release_date: string | null;
+  overview: string | null;
+  // Enriched fields
+  cast_members: string[];
+  composer: string | null;
+  cinematographer: string | null;
+  budget: number | null;
+  box_office: number | null;
+  tmdb_rating: number | null;
+  tmdb_vote_count: number | null;
+  certification: string | null;
+  trailer_url: string | null;
+  keywords: string[];
 }
 
 // Dashboard stats

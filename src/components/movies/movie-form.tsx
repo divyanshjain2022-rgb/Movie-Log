@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type FieldErrors, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { RatingSlider } from "./rating-slider";
 import { Plus, X } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
+import { Switch } from "@/components/ui/switch";
 import type {
   Format,
   Theater,
@@ -27,7 +29,114 @@ import type {
   GiftCardWithUsage,
   MovieFormData,
   GiftCardUsageEntry,
+  Franchise,
+  Companion,
+  MovieWithRelations,
+  PassportWithUsage,
 } from "@/types";
+import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
+
+/** Reusable gift card selector for ticket or F&B */
+function GiftCardSelector({
+  label,
+  usage,
+  allGiftCards,
+  availableGiftCards,
+  onAdd,
+  onRemove,
+  onUpdateAmount,
+}: {
+  label: string;
+  usage: GiftCardUsageEntry[];
+  allGiftCards: GiftCardWithUsage[];
+  availableGiftCards: GiftCardWithUsage[];
+  onAdd: (gcId: string) => void;
+  onRemove: (gcId: string) => void;
+  onUpdateAmount: (gcId: string, amount: number) => void;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      {usage.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {usage.map((u) => {
+            const gc = allGiftCards.find(g => g.id === u.gift_card_id);
+            if (!gc) return null;
+            return (
+              <div key={u.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {gc.platform?.name || "Gift Card"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Balance: {formatCurrency(gc.balance)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">₹</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={u.amount_used}
+                    onChange={(e) => onUpdateAmount(u.gift_card_id, parseFloat(e.target.value) || 0)}
+                    className="h-8 w-20 text-right"
+                    max={gc.balance}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onClick={() => onRemove(u.gift_card_id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {availableGiftCards.length > 0 && (
+        <Select onValueChange={onAdd} value="">
+          <SelectTrigger className="mt-2">
+            <SelectValue placeholder="Add gift card..." />
+          </SelectTrigger>
+          <SelectContent>
+            {availableGiftCards.map((gc) => (
+              <SelectItem key={gc.id} value={gc.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <span>{gc.platform?.name || "Gift Card"}</span>
+                  <span className="text-muted-foreground">
+                    {formatCurrency(gc.balance)}
+                  </span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {usage.length === 0 && availableGiftCards.length === 0 && (
+        <p className="mt-2 text-sm text-muted-foreground">No active gift cards</p>
+      )}
+    </div>
+  );
+}
+
+const optionalNumber = z.preprocess(
+  (value) => (value === "" || value === null || Number.isNaN(value) ? undefined : value),
+  z.coerce.number().optional()
+);
+
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional()
+);
+
+const optionalStringArray = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.array(z.string()).optional()
+);
 
 const movieFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -42,18 +151,77 @@ const movieFormSchema = z.object({
   booking_id: z.string().optional(),
   rating: z.coerce.number().min(1).max(10).optional(),
   mood_id: z.string().optional(),
-  fnb_cost: z.coerce.number().min(0).optional(),
+  fnb_cost: optionalNumber.pipe(z.number().min(0).optional()),
   fnb_items: z.string().optional(),
   strongest_part_id: z.string().optional(),
   weakest_part_id: z.string().optional(),
   rewatch_id: z.string().optional(),
   review: z.string().optional(),
   remarks: z.string().optional(),
-  other_expenses: z.coerce.number().min(0).optional(),
-  passport_savings: z.coerce.number().min(0).optional(),
+  other_expenses: optionalNumber.pipe(z.number().min(0).optional()),
+  passport_savings: optionalNumber.pipe(z.number().min(0).optional()),
+  // TMDB fields
+  tmdb_id: optionalNumber,
+  runtime_minutes: optionalNumber,
+  genres: optionalStringArray,
+  language: optionalString,
+  director: optionalString,
+  poster_url: optionalString,
+  // New fields
+  watched_with: z.string().optional(),
+  // TMDB enrichment
+  cast_members: optionalStringArray,
+  composer: optionalString,
+  cinematographer: optionalString,
+  budget: optionalNumber,
+  box_office: optionalNumber,
+  tmdb_rating: optionalNumber,
+  tmdb_vote_count: optionalNumber,
+  certification: optionalString,
+  trailer_url: optionalString,
+  keywords: optionalStringArray,
+  overview: optionalString,
+  release_date: optionalString,
+  // Feature expansion
+  franchise_id: z.string().optional(),
+  is_rewatch: z.boolean().optional(),
+  original_movie_id: z.string().optional(),
+  passport_id: z.string().optional(),
 });
 
 type MovieFormValues = z.infer<typeof movieFormSchema>;
+
+const fieldLabels: Partial<Record<keyof MovieFormValues, string>> = {
+  title: "Movie",
+  date: "Date",
+  showtime: "Showtime",
+  ticket_cost: "Ticket Cost",
+  convenience_fee: "Booking Fee",
+  rating: "Rating",
+  fnb_cost: "F&B Cost",
+  other_expenses: "Other Expenses",
+  passport_savings: "Passport Savings",
+};
+
+function getFirstError(errors: FieldErrors<MovieFormValues>) {
+  const [fieldName, fieldError] = Object.entries(errors)[0] as [
+    keyof MovieFormValues | undefined,
+    { message?: string } | undefined
+  ];
+
+  if (!fieldName || !fieldError) {
+    return "Check the highlighted fields and try again.";
+  }
+
+  const label = fieldLabels[fieldName] || String(fieldName);
+  return fieldError.message ? `${label}: ${fieldError.message}` : `${label} is invalid.`;
+}
+
+function FieldErrorMessage({ message }: { message?: string }) {
+  if (!message) return null;
+
+  return <p className="mt-1 text-xs text-destructive">{message}</p>;
+}
 
 interface MovieFormProps {
   initialData?: Partial<MovieFormData>;
@@ -63,11 +231,16 @@ interface MovieFormProps {
   aspects: Aspect[];
   rewatchOptions: RewatchOption[];
   giftCards: GiftCardWithUsage[];
+  franchises?: Franchise[];
+  companions?: Companion[];
+  passports?: PassportWithUsage[];
+  allMovies?: MovieWithRelations[];
   onSubmit: (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => Promise<void>;
   isLoading?: boolean;
   isEditing?: boolean;
   isAdvanceBooking?: boolean;
   initialGiftCardUsage?: GiftCardUsageEntry[];
+  initialCompanionIds?: string[];
 }
 
 export function MovieForm({
@@ -78,11 +251,16 @@ export function MovieForm({
   aspects,
   rewatchOptions,
   giftCards,
+  franchises = [],
+  companions = [],
+  passports = [],
+  allMovies = [],
   onSubmit,
   isLoading = false,
   isEditing = false,
   isAdvanceBooking = false,
   initialGiftCardUsage = [],
+  initialCompanionIds = [],
 }: MovieFormProps) {
   const {
     register,
@@ -114,34 +292,85 @@ export function MovieForm({
       remarks: initialData?.remarks || "",
       other_expenses: initialData?.other_expenses || 0,
       passport_savings: initialData?.passport_savings || 0,
+      passport_id: initialData?.passport_id || "",
+      watched_with: initialData?.watched_with || "",
+      language: initialData?.language || "",
     },
   });
 
   const rating = watch("rating") || 5;
 
-  // State for multiple gift card selection
-  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>(initialGiftCardUsage);
-
-  // Filter out already selected gift cards
-  const availableGiftCards = giftCards.filter(
-    gc => gc.status === "active" && !giftCardUsage.some(u => u.gift_card_id === gc.id)
+  // State for gift card selection — split by purpose
+  const [ticketGiftCards, setTicketGiftCards] = useState<GiftCardUsageEntry[]>(
+    initialGiftCardUsage.filter(u => u.purpose !== "fnb")
+  );
+  const [fnbGiftCards, setFnbGiftCards] = useState<GiftCardUsageEntry[]>(
+    initialGiftCardUsage.filter(u => u.purpose === "fnb")
   );
 
-  const addGiftCard = (gcId: string) => {
+  // State for payment methods
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodEntry[]>(
+    (initialData?.payment_methods as PaymentMethodEntry[]) || []
+  );
+
+  // State for companions
+  const [selectedCompanionIds, setSelectedCompanionIds] = useState<string[]>(initialCompanionIds);
+
+  // State for rewatch
+  const [isRewatch, setIsRewatch] = useState(initialData?.is_rewatch || false);
+
+  const addPaymentMethod = () => {
+    setPaymentMethods(prev => [...prev, { method: "UPI", amount: 0 }]);
+  };
+
+  const removePaymentMethod = (index: number) => {
+    setPaymentMethods(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updatePaymentMethod = (index: number, field: "method" | "amount", value: string | number) => {
+    setPaymentMethods(prev =>
+      prev.map((pm, i) => i === index ? { ...pm, [field]: value } : pm)
+    );
+  };
+
+  // Filter available gift cards per purpose (same GC can be used for both ticket and fnb)
+  const ticketSelectedGcIds = ticketGiftCards.map(u => u.gift_card_id);
+  const fnbSelectedGcIds = fnbGiftCards.map(u => u.gift_card_id);
+
+  const availableTicketGiftCards = giftCards.filter(
+    gc => gc.status === "active" && !ticketSelectedGcIds.includes(gc.id)
+  );
+  const availableFnbGiftCards = giftCards.filter(
+    gc => gc.status === "active" && !fnbSelectedGcIds.includes(gc.id)
+  );
+
+  const addGiftCard = (gcId: string, purpose: "ticket" | "fnb") => {
     const gc = giftCards.find(g => g.id === gcId);
-    if (gc) {
-      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
+    if (!gc) return;
+    const entry: GiftCardUsageEntry = { gift_card_id: gcId, amount_used: gc.balance, purpose };
+    if (purpose === "fnb") {
+      setFnbGiftCards(prev => [...prev, entry]);
+    } else {
+      setTicketGiftCards(prev => [...prev, entry]);
     }
   };
 
-  const removeGiftCard = (gcId: string) => {
-    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
+  const removeGiftCard = (gcId: string, purpose: "ticket" | "fnb") => {
+    if (purpose === "fnb") {
+      setFnbGiftCards(prev => prev.filter(u => u.gift_card_id !== gcId));
+    } else {
+      setTicketGiftCards(prev => prev.filter(u => u.gift_card_id !== gcId));
+    }
   };
 
-  const updateGiftCardAmount = (gcId: string, amount: number) => {
-    setGiftCardUsage(prev =>
-      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
-    );
+  const updateGiftCardAmount = (gcId: string, amount: number, purpose: "ticket" | "fnb") => {
+    const updater = (prev: GiftCardUsageEntry[]) =>
+      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u);
+    if (purpose === "fnb") {
+      setFnbGiftCards(updater);
+    } else {
+      setTicketGiftCards(updater);
+    }
   };
 
   // Sync form with initialData changes (e.g., when TMDB or OCR updates data)
@@ -158,15 +387,49 @@ export function MovieForm({
       if (initialData.ticket_cost !== undefined) setValue("ticket_cost", initialData.ticket_cost);
       if (initialData.convenience_fee !== undefined) setValue("convenience_fee", initialData.convenience_fee);
       if (initialData.booking_id !== undefined) setValue("booking_id", initialData.booking_id);
+      // TMDB fields
+      if (initialData.tmdb_id !== undefined) setValue("tmdb_id", initialData.tmdb_id);
+      if (initialData.runtime_minutes !== undefined) setValue("runtime_minutes", initialData.runtime_minutes);
+      if (initialData.genres !== undefined) setValue("genres", initialData.genres);
+      if (initialData.language !== undefined) setValue("language", initialData.language);
+      if (initialData.director !== undefined) setValue("director", initialData.director);
+      if (initialData.poster_url !== undefined) setValue("poster_url", initialData.poster_url);
+      // TMDB enrichment
+      if (initialData.cast_members !== undefined) setValue("cast_members", initialData.cast_members);
+      if (initialData.composer !== undefined) setValue("composer", initialData.composer);
+      if (initialData.cinematographer !== undefined) setValue("cinematographer", initialData.cinematographer);
+      if (initialData.budget !== undefined) setValue("budget", initialData.budget);
+      if (initialData.box_office !== undefined) setValue("box_office", initialData.box_office);
+      if (initialData.tmdb_rating !== undefined) setValue("tmdb_rating", initialData.tmdb_rating);
+      if (initialData.tmdb_vote_count !== undefined) setValue("tmdb_vote_count", initialData.tmdb_vote_count);
+      if (initialData.certification !== undefined) setValue("certification", initialData.certification);
+      if (initialData.trailer_url !== undefined) setValue("trailer_url", initialData.trailer_url);
+      if (initialData.keywords !== undefined) setValue("keywords", initialData.keywords);
+      if (initialData.overview !== undefined) setValue("overview", initialData.overview);
+      if (initialData.release_date !== undefined) setValue("release_date", initialData.release_date);
     }
   }, [initialData, setValue]);
 
   const onFormSubmit = async (data: MovieFormValues) => {
-    await onSubmit(data as MovieFormData, giftCardUsage.length > 0 ? giftCardUsage : undefined);
+    const formData: MovieFormData = {
+      ...data,
+      payment_methods: paymentMethods.length > 0 ? paymentMethods : undefined,
+      is_rewatch: isRewatch,
+      companion_ids: selectedCompanionIds.length > 0 ? selectedCompanionIds : undefined,
+    };
+    const allGiftCards = [
+      ...ticketGiftCards.map(gc => ({ ...gc, purpose: "ticket" as const })),
+      ...fnbGiftCards.map(gc => ({ ...gc, purpose: "fnb" as const })),
+    ];
+    await onSubmit(formData, allGiftCards.length > 0 ? allGiftCards : undefined);
+  };
+
+  const onInvalidSubmit = (formErrors: FieldErrors<MovieFormValues>) => {
+    toast.error(getFirstError(formErrors));
   };
 
   return (
-    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onFormSubmit, onInvalidSubmit)} className="space-y-6" noValidate>
       {/* Ticket Data Section */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -185,12 +448,95 @@ export function MovieForm({
               {...register("title")}
               placeholder="Movie title"
               className="mt-1"
+              aria-invalid={!!errors.title}
             />
-            {errors.title && (
-              <p className="mt-1 text-xs text-destructive">
-                {errors.title.message}
-              </p>
-            )}
+            <FieldErrorMessage message={errors.title?.message} />
+          </div>
+
+          {/* TMDB Data Preview - shows when movie is selected from TMDB */}
+          {(watch("poster_url") || watch("genres") || watch("runtime_minutes") || watch("director")) && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex gap-3">
+                {watch("poster_url") && (
+                  <img
+                    src={watch("poster_url")}
+                    alt={watch("title")}
+                    className="h-24 w-16 rounded object-cover shadow"
+                  />
+                )}
+                <div className="flex-1 space-y-1">
+                  {watch("genres") && watch("genres")!.length > 0 && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Genre:</span>{" "}
+                      {watch("genres")!.join(", ")}
+                    </p>
+                  )}
+                  {watch("runtime_minutes") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Runtime:</span>{" "}
+                      {watch("runtime_minutes")} min
+                    </p>
+                  )}
+                  {watch("director") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Director:</span>{" "}
+                      {watch("director")}
+                    </p>
+                  )}
+                  {watch("cast_members") && watch("cast_members")!.length > 0 && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Cast:</span>{" "}
+                      {watch("cast_members")!.join(", ")}
+                    </p>
+                  )}
+                  {watch("composer") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Composer:</span>{" "}
+                      {watch("composer")}
+                    </p>
+                  )}
+                  {watch("cinematographer") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">DOP:</span>{" "}
+                      {watch("cinematographer")}
+                    </p>
+                  )}
+                  {watch("tmdb_rating") && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">TMDB:</span>{" "}
+                      {watch("tmdb_rating")}/10
+                      {watch("certification") && (
+                        <span className="ml-2 rounded border px-1 py-0.5 text-xs font-medium">
+                          {watch("certification")}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {(watch("budget") || watch("box_office")) && (
+                    <p className="text-sm">
+                      {watch("budget") ? (
+                        <><span className="text-muted-foreground">Budget:</span> ${(watch("budget")! / 1_000_000).toFixed(0)}M</>
+                      ) : null}
+                      {watch("budget") && watch("box_office") ? " / " : ""}
+                      {watch("box_office") ? (
+                        <><span className="text-muted-foreground">Box Office:</span> ${(watch("box_office")! / 1_000_000).toFixed(0)}M</>
+                      ) : null}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Language - editable, pre-filled from TMDB */}
+          <div>
+            <Label htmlFor="language">Language</Label>
+            <Input
+              id="language"
+              {...register("language")}
+              placeholder="e.g., English, Hindi, Japanese Dubbed in Hindi"
+              className="mt-1"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -201,7 +547,9 @@ export function MovieForm({
                 type="date"
                 {...register("date")}
                 className="mt-1"
+                aria-invalid={!!errors.date}
               />
+              <FieldErrorMessage message={errors.date?.message} />
             </div>
             <div>
               <Label htmlFor="showtime">Showtime</Label>
@@ -210,7 +558,9 @@ export function MovieForm({
                 type="time"
                 {...register("showtime")}
                 className="mt-1"
+                aria-invalid={!!errors.showtime}
               />
+              <FieldErrorMessage message={errors.showtime?.message} />
             </div>
           </div>
 
@@ -275,6 +625,53 @@ export function MovieForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <Label htmlFor="booking_id">Booking ID</Label>
+              <Input
+                id="booking_id"
+                {...register("booking_id")}
+                placeholder="PVR-ABC123"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="passport_savings">Passport Savings</Label>
+              <Input
+                id="passport_savings"
+                type="number"
+                step="0.01"
+                {...register("passport_savings")}
+                className="mt-1"
+                aria-invalid={!!errors.passport_savings}
+              />
+              <FieldErrorMessage message={errors.passport_savings?.message} />
+            </div>
+          </div>
+
+          {/* Passport selector */}
+          {passports.length > 0 && (
+            <div>
+              <Label>Passport Used</Label>
+              <Select
+                value={watch("passport_id") || ""}
+                onValueChange={(v) => setValue("passport_id", v === "none" ? undefined : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select passport..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {passports.filter(p => p.is_active).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.total_uses - p.uses_count} uses left)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <Label htmlFor="ticket_cost">Ticket Cost</Label>
               <Input
                 id="ticket_cost"
@@ -282,19 +679,34 @@ export function MovieForm({
                 step="0.01"
                 {...register("ticket_cost")}
                 className="mt-1"
+                aria-invalid={!!errors.ticket_cost}
               />
+              <FieldErrorMessage message={errors.ticket_cost?.message} />
             </div>
             <div>
-              <Label htmlFor="convenience_fee">Conv. Fee</Label>
+              <Label htmlFor="convenience_fee">Booking Fee</Label>
               <Input
                 id="convenience_fee"
                 type="number"
                 step="0.01"
                 {...register("convenience_fee")}
                 className="mt-1"
+                aria-invalid={!!errors.convenience_fee}
               />
+              <FieldErrorMessage message={errors.convenience_fee?.message} />
             </div>
           </div>
+
+          {/* Gift Cards for Ticket */}
+          <GiftCardSelector
+            label="GC for Movie"
+            usage={ticketGiftCards}
+            allGiftCards={giftCards}
+            availableGiftCards={availableTicketGiftCards}
+            onAdd={(gcId) => addGiftCard(gcId, "ticket")}
+            onRemove={(gcId) => removeGiftCard(gcId, "ticket")}
+            onUpdateAmount={(gcId, amount) => updateGiftCardAmount(gcId, amount, "ticket")}
+          />
         </div>
       </div>
 
@@ -314,7 +726,7 @@ export function MovieForm({
             />
 
             <div>
-              <Label htmlFor="mood_id">Mood *</Label>
+              <Label htmlFor="mood_id">Mood</Label>
               <Select
                 value={watch("mood_id")}
                 onValueChange={(value) => setValue("mood_id", value)}
@@ -412,7 +824,9 @@ export function MovieForm({
                 step="0.01"
                 {...register("fnb_cost")}
                 className="mt-1"
+                aria-invalid={!!errors.fnb_cost}
               />
+              <FieldErrorMessage message={errors.fnb_cost?.message} />
             </div>
             <div>
               <Label htmlFor="other_expenses">Other Expenses</Label>
@@ -422,7 +836,9 @@ export function MovieForm({
                 step="0.01"
                 {...register("other_expenses")}
                 className="mt-1"
+                aria-invalid={!!errors.other_expenses}
               />
+              <FieldErrorMessage message={errors.other_expenses?.message} />
             </div>
           </div>
 
@@ -436,71 +852,174 @@ export function MovieForm({
             />
           </div>
 
-          {/* Gift Cards - Multi Select */}
+          {/* Gift Cards for F&B */}
+          <GiftCardSelector
+            label="GC for F&B"
+            usage={fnbGiftCards}
+            allGiftCards={giftCards}
+            availableGiftCards={availableFnbGiftCards}
+            onAdd={(gcId) => addGiftCard(gcId, "fnb")}
+            onRemove={(gcId) => removeGiftCard(gcId, "fnb")}
+            onUpdateAmount={(gcId, amount) => updateGiftCardAmount(gcId, amount, "fnb")}
+          />
+
+          {/* Payment Methods */}
           <div>
-            <Label>Gift Cards Used</Label>
-            {giftCardUsage.length > 0 && (
+            <Label>Payment Methods</Label>
+            {paymentMethods.length > 0 && (
               <div className="mt-2 space-y-2">
-                {giftCardUsage.map((usage) => {
-                  const gc = giftCards.find(g => g.id === usage.gift_card_id);
-                  if (!gc) return null;
-                  return (
-                    <div key={usage.gift_card_id} className="flex items-center gap-2 rounded-md border p-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {gc.platform?.name || "Gift Card"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Balance: {formatCurrency(gc.balance)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">₹</span>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={usage.amount_used}
-                          onChange={(e) => updateGiftCardAmount(usage.gift_card_id, parseFloat(e.target.value) || 0)}
-                          className="h-8 w-20 text-right"
-                          max={gc.balance}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeGiftCard(usage.gift_card_id)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                {paymentMethods.map((pm, index) => (
+                  <div key={index} className="flex items-center gap-2 rounded-md border p-2">
+                    <Select
+                      value={pm.method}
+                      onValueChange={(value) => updatePaymentMethod(index, "method", value)}
+                    >
+                      <SelectTrigger className="h-8 w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_METHODS.map((method) => (
+                          <SelectItem key={method} value={method}>
+                            {method}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-1 flex-1">
+                      <span className="text-xs text-muted-foreground">₹</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={pm.amount}
+                        onChange={(e) => updatePaymentMethod(index, "amount", parseFloat(e.target.value) || 0)}
+                        className="h-8"
+                      />
                     </div>
-                  );
-                })}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => removePaymentMethod(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
               </div>
             )}
-            {availableGiftCards.length > 0 && (
-              <Select onValueChange={addGiftCard} value="">
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Add gift card..." />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={addPaymentMethod}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              Add Payment
+            </Button>
+          </div>
+
+          {/* Franchise */}
+          {franchises.length > 0 && (
+            <div>
+              <Label>Franchise</Label>
+              <Select
+                value={watch("franchise_id") || ""}
+                onValueChange={(v) => setValue("franchise_id", v === "none" ? undefined : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableGiftCards.map((gc) => (
-                    <SelectItem key={gc.id} value={gc.id}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span>{gc.platform?.name || "Gift Card"}</span>
-                        <span className="text-muted-foreground">
-                          {formatCurrency(gc.balance)}
-                        </span>
-                      </div>
+                  <SelectItem value="none">None</SelectItem>
+                  {franchises.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
-            {giftCardUsage.length === 0 && availableGiftCards.length === 0 && (
-              <p className="mt-2 text-sm text-muted-foreground">No active gift cards available</p>
-            )}
+            </div>
+          )}
+
+          {/* Rewatch Toggle */}
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label className="text-sm font-medium">This is a rewatch</Label>
+              <p className="text-xs text-muted-foreground">Link to original viewing</p>
+            </div>
+            <Switch checked={isRewatch} onCheckedChange={setIsRewatch} />
+          </div>
+
+          {/* Original Movie Selector (when rewatch) */}
+          {isRewatch && allMovies.length > 0 && (
+            <div>
+              <Label>Original Viewing</Label>
+              <Select
+                value={watch("original_movie_id") || ""}
+                onValueChange={(v) => setValue("original_movie_id", v === "none" ? undefined : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select original movie..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {allMovies
+                    .filter((m) => !m.is_rewatch)
+                    .sort((a, b) => b.title.localeCompare(a.title))
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.title} ({new Date(m.date).toLocaleDateString("en-IN", { month: "short", year: "numeric" })})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Companions */}
+          {companions.length > 0 && (
+            <div>
+              <Label className="mb-2 block">Companions</Label>
+              <div className="flex flex-wrap gap-2">
+                {companions.map((c) => {
+                  const selected = selectedCompanionIds.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedCompanionIds((prev) =>
+                          selected
+                            ? prev.filter((id) => id !== c.id)
+                            : [...prev, c.id]
+                        )
+                      }
+                      className={`flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors ${
+                        selected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      <span>{c.avatar_emoji}</span>
+                      <span>{c.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Watched With (free text fallback) */}
+          <div>
+            <Label htmlFor="watched_with">Watched With</Label>
+            <Input
+              id="watched_with"
+              {...register("watched_with")}
+              placeholder="Solo, Friends, Family..."
+              className="mt-1"
+            />
           </div>
 
           {!isAdvanceBooking && (

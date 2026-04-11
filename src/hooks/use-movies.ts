@@ -2,9 +2,106 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Movie, MovieWithRelations, MovieInsert, MovieUpdate, GiftCardUsageEntry } from "@/types";
+import { calculateValueScore, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
+import type { Movie, MovieWithRelations, MovieInsert, MovieUpdate, GiftCardUsageEntry, FormulaParams } from "@/types";
 
 const supabase = createClient();
+
+type ScoreMovieFields = {
+  rating?: number | null;
+  ticket_cost?: number | null;
+  convenience_fee?: number | null;
+  fnb_cost?: number | null;
+  other_expenses?: number | null;
+  passport_savings?: number | null;
+  format_id?: string | null;
+};
+
+type FormulaConfigForScore = {
+  params: FormulaParams;
+};
+
+type GiftCardUsageForScore = {
+  amount_used: number;
+  gift_card: { discount_percent: number | null } | null;
+};
+
+type FormatForScore = {
+  weight: number | null;
+};
+
+function toError(err: unknown, fallback: string) {
+  if (err instanceof Error) return err;
+
+  if (
+    err &&
+    typeof err === "object" &&
+    "message" in err &&
+    typeof err.message === "string"
+  ) {
+    return new Error(err.message);
+  }
+
+  return new Error(fallback);
+}
+
+async function computeValueScore(
+  movie: ScoreMovieFields,
+  movieId?: string,
+): Promise<number | null> {
+  const rating = movie.rating;
+  if (!rating || rating <= 0) return null;
+
+  // Get active formula config
+  let params: FormulaParams = DEFAULT_FORMULA_PARAMS;
+  const { data: formulaConfig } = await supabase
+    .from("formula_configs")
+    .select("*")
+    .eq("is_active", true)
+    .maybeSingle();
+  const formulaConfigRow = formulaConfig as FormulaConfigForScore | null;
+  if (formulaConfigRow) {
+    params = formulaConfigRow.params;
+  }
+
+  // Calculate cost based on use_true_cost setting, subtract passport savings
+  let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0) - (movie.passport_savings || 0);
+  if (params.use_true_cost) {
+    cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
+  }
+
+  // Subtract GC discount savings if movie already exists
+  if (movieId) {
+    const { data: gcUsage } = await supabase
+      .from("movie_gift_cards")
+      .select("amount_used, gift_card:gift_cards(discount_percent)")
+      .eq("movie_id", movieId);
+    const giftCardUsageRows = gcUsage as GiftCardUsageForScore[] | null;
+    if (giftCardUsageRows) {
+      const gcSavings = giftCardUsageRows.reduce((sum, mgc) => {
+        const discount = mgc.gift_card?.discount_percent || 0;
+        return sum + mgc.amount_used * (discount / 100);
+      }, 0);
+      cost -= gcSavings;
+    }
+  }
+
+  if (cost <= 0) return null;
+
+  // Get format weight
+  let formatWeight = 1.0;
+  if (movie.format_id) {
+    const { data: format } = await supabase
+      .from("formats")
+      .select("*")
+      .eq("id", movie.format_id)
+      .single();
+    const formatRow = format as FormatForScore | null;
+    if (formatRow) formatWeight = formatRow.weight || 1.0;
+  }
+
+  return calculateValueScore(rating, cost, formatWeight, params);
+}
 
 export function useMovies() {
   const [movies, setMovies] = useState<MovieWithRelations[]>([]);
@@ -24,7 +121,10 @@ export function useMovies() {
           strongest_part:aspects!movies_strongest_part_id_fkey(*),
           weakest_part:aspects!movies_weakest_part_id_fkey(*),
           rewatch:rewatch_options(*),
-          gift_card:gift_cards(*)
+          gift_card:gift_cards(*),
+          movie_gift_cards(*, gift_card:gift_cards(*)),
+          franchise:franchises(*),
+          movie_companions(id, companion:companions(*))
         `)
         .order("date", { ascending: false });
 
@@ -63,7 +163,10 @@ export function useMovie(id: string) {
             strongest_part:aspects!movies_strongest_part_id_fkey(*),
             weakest_part:aspects!movies_weakest_part_id_fkey(*),
             rewatch:rewatch_options(*),
-            gift_card:gift_cards(*)
+            gift_card:gift_cards(*),
+            movie_gift_cards(*, gift_card:gift_cards(*)),
+            franchise:franchises(*),
+            movie_companions(id, companion:companions(*))
           `)
           .eq("id", id)
           .single();
@@ -94,20 +197,33 @@ export function useCreateMovie() {
       setIsLoading(true);
       setError(null);
 
+      // Get authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be logged in to create a movie");
+      }
+
+      // Set user_id from auth and compute initial value score (without GC discount)
+      const valueScore = await computeValueScore(movie);
+      const movieWithUser = { ...movie, user_id: user.id, value_score: valueScore };
+
       const { data, error: insertError } = await supabase
         .from("movies")
-        .insert(movie as never)
+        .insert(movieWithUser as never)
         .select()
         .single();
 
       if (insertError) throw insertError;
 
+      const createdMovie = data as Movie;
+
       // If gift cards were used, save to junction table
       if (giftCardUsage && giftCardUsage.length > 0 && data) {
         const movieGiftCards = giftCardUsage.map(gc => ({
-          movie_id: (data as Movie).id,
+          movie_id: createdMovie.id,
           gift_card_id: gc.gift_card_id,
           amount_used: gc.amount_used,
+          purpose: gc.purpose || "ticket",
         }));
 
         const { error: gcError } = await supabase
@@ -116,13 +232,18 @@ export function useCreateMovie() {
 
         if (gcError) {
           console.error("Failed to save gift card usage:", gcError);
-          // Don't throw - movie was created successfully
+        } else {
+          // Recompute value score now that GC usage is saved
+          const updatedScore = await computeValueScore(movie, createdMovie.id);
+          if (updatedScore !== valueScore) {
+            await supabase.from("movies").update({ value_score: updatedScore } as never).eq("id", createdMovie.id);
+          }
         }
       }
 
-      return data;
+      return createdMovie;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to create movie");
+      const error = toError(err, "Failed to create movie");
       setError(error);
       throw error;
     } finally {
@@ -142,9 +263,26 @@ export function useUpdateMovie() {
       setIsLoading(true);
       setError(null);
 
+      // Recompute value score if rating or cost fields changed
+      const hasScoreFields = updates.rating !== undefined || updates.ticket_cost !== undefined ||
+        updates.convenience_fee !== undefined || updates.fnb_cost !== undefined ||
+        updates.other_expenses !== undefined || updates.format_id !== undefined ||
+        updates.passport_savings !== undefined;
+
+      const updatesWithScore = { ...updates };
+      if (hasScoreFields) {
+        // Fetch existing movie to merge with updates for score calculation
+        const { data: existing } = await supabase.from("movies").select("*").eq("id", id).single();
+        const existingMovie = existing as Movie | null;
+        if (existingMovie) {
+          const merged = { ...existingMovie, ...updates };
+          updatesWithScore.value_score = await computeValueScore(merged, id);
+        }
+      }
+
       const { data, error: updateError } = await supabase
         .from("movies")
-        .update(updates as never)
+        .update(updatesWithScore as never)
         .eq("id", id)
         .select()
         .single();
@@ -169,6 +307,7 @@ export function useUpdateMovie() {
             movie_id: id,
             gift_card_id: gc.gift_card_id,
             amount_used: gc.amount_used,
+            purpose: gc.purpose || "ticket",
           }));
 
           const { error: gcError } = await supabase
@@ -183,7 +322,7 @@ export function useUpdateMovie() {
 
       return data;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to update movie");
+      const error = toError(err, "Failed to update movie");
       setError(error);
       throw error;
     } finally {
@@ -207,7 +346,7 @@ export function useDeleteMovie() {
 
       if (error) throw error;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error("Failed to delete movie");
+      const error = toError(err, "Failed to delete movie");
       setError(error);
       throw error;
     } finally {

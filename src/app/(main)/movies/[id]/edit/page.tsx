@@ -1,14 +1,36 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared";
-import { MovieForm } from "@/components/movies";
+import { MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMovie, useLookupData, useGiftCards, useUpdateMovie } from "@/hooks";
-import type { MovieFormData } from "@/types";
+import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
+import type { MovieFormData, GiftCardUsageEntry } from "@/types";
+
+interface TMDBMovieDetails {
+  tmdb_id: number;
+  title: string;
+  runtime_minutes?: number | null;
+  genres?: string[] | null;
+  language?: string | null;
+  director?: string | null;
+  poster_url?: string | null;
+  release_date?: string | null;
+  overview?: string | null;
+  cast_members?: string[] | null;
+  composer?: string | null;
+  cinematographer?: string | null;
+  budget?: number | null;
+  box_office?: number | null;
+  tmdb_rating?: number | null;
+  tmdb_vote_count?: number | null;
+  certification?: string | null;
+  trailer_url?: string | null;
+  keywords?: string[] | null;
+}
 
 interface EditMoviePageProps {
   params: Promise<{ id: string }>;
@@ -21,13 +43,62 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { updateMovie, isLoading: isSubmitting } = useUpdateMovie();
+  const { movies: allMovies } = useMovies();
+  const { franchises } = useFranchises();
+  const { companions } = useCompanions();
+  const { passports } = usePassports();
+  const { companionIds: initialCompanionIds } = useMovieCompanions(id);
+  const { syncCompanions } = useSyncMovieCompanions();
 
-  const handleSubmit = async (data: MovieFormData) => {
+  const [tmdbOverrides, setTmdbOverrides] = useState<Partial<MovieFormData>>({});
+
+  const handleTMDBSelect = (tmdb: TMDBMovieDetails) => {
+    setTmdbOverrides({
+      title: tmdb.title,
+      tmdb_id: tmdb.tmdb_id,
+      runtime_minutes: tmdb.runtime_minutes || undefined,
+      genres: tmdb.genres || undefined,
+      language: tmdb.language || undefined,
+      director: tmdb.director || undefined,
+      poster_url: tmdb.poster_url || undefined,
+      cast_members: tmdb.cast_members || undefined,
+      composer: tmdb.composer || undefined,
+      cinematographer: tmdb.cinematographer || undefined,
+      budget: tmdb.budget || undefined,
+      box_office: tmdb.box_office || undefined,
+      tmdb_rating: tmdb.tmdb_rating || undefined,
+      tmdb_vote_count: tmdb.tmdb_vote_count || undefined,
+      certification: tmdb.certification || undefined,
+      trailer_url: tmdb.trailer_url || undefined,
+      keywords: tmdb.keywords || undefined,
+      overview: tmdb.overview || undefined,
+      release_date: tmdb.release_date || undefined,
+    });
+  };
+
+  const handleSubmit = async (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => {
+    // Convert 12-hour time to 24-hour format
+    const convertTo24Hour = (time12h: string | null | undefined): string | null => {
+      if (!time12h) return null;
+      if (!/[ap]m/i.test(time12h)) {
+        const match = time12h.match(/^(\d{1,2}):(\d{2})/);
+        return match ? `${match[1].padStart(2, '0')}:${match[2]}` : time12h;
+      }
+      const match = time12h.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+      if (!match) return time12h;
+      let hours = parseInt(match[1], 10);
+      const minutes = match[2];
+      const period = match[3].toLowerCase();
+      if (period === 'pm' && hours !== 12) hours += 12;
+      else if (period === 'am' && hours === 12) hours = 0;
+      return `${hours.toString().padStart(2, '0')}:${minutes}`;
+    };
+
     try {
       await updateMovie(id, {
         title: data.title,
         date: data.date,
-        showtime: data.showtime || null,
+        showtime: convertTo24Hour(data.showtime),
         theater_id: data.theater_id || null,
         audi: data.audi || null,
         format_id: data.format_id || null,
@@ -50,15 +121,39 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
         rewatch_id: data.rewatch_id || null,
         review: data.review || null,
         remarks: data.remarks || null,
-        gc_id: data.gc_id || null,
         other_expenses: data.other_expenses || null,
         passport_savings: data.passport_savings || 0,
-      });
+        // New fields
+        watched_with: data.watched_with || null,
+        payment_methods: data.payment_methods || [],
+        // TMDB enrichment
+        cast_members: data.cast_members || null,
+        composer: data.composer || null,
+        cinematographer: data.cinematographer || null,
+        budget: data.budget || null,
+        box_office: data.box_office || null,
+        tmdb_rating: data.tmdb_rating || null,
+        tmdb_vote_count: data.tmdb_vote_count || null,
+        certification: data.certification || null,
+        trailer_url: data.trailer_url || null,
+        keywords: data.keywords || null,
+        overview: data.overview || null,
+        release_date: data.release_date || null,
+        franchise_id: data.franchise_id || null,
+        is_rewatch: data.is_rewatch || false,
+        original_movie_id: data.original_movie_id || null,
+        passport_id: data.passport_id || null,
+      }, giftCardUsage || []);
+
+      // Sync companion associations
+      if (data.companion_ids) {
+        await syncCompanions(id, data.companion_ids);
+      }
 
       toast.success("Movie updated successfully!");
       router.push(`/movies/${id}`);
     } catch (error) {
-      toast.error("Failed to update movie");
+      toast.error(error instanceof Error ? `Failed to update movie: ${error.message}` : "Failed to update movie");
       console.error(error);
     }
   };
@@ -68,36 +163,77 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   // Convert movie data to form data format
   const initialData: Partial<MovieFormData> = movie
     ? {
-        title: movie.title,
-        date: movie.date,
-        showtime: movie.showtime || undefined,
-        theater_id: movie.theater_id || undefined,
-        audi: movie.audi || undefined,
-        format_id: movie.format_id || undefined,
-        seat: movie.seat || undefined,
-        ticket_cost: movie.ticket_cost,
-        convenience_fee: movie.convenience_fee,
-        booking_id: movie.booking_id || undefined,
-        tmdb_id: movie.tmdb_id || undefined,
-        runtime_minutes: movie.runtime_minutes || undefined,
-        genres: movie.genres || undefined,
-        language: movie.language || undefined,
-        director: movie.director || undefined,
-        poster_url: movie.poster_url || undefined,
-        rating: movie.rating || undefined,
-        mood_id: movie.mood_id || undefined,
-        fnb_cost: movie.fnb_cost || undefined,
-        fnb_items: movie.fnb_items || undefined,
-        strongest_part_id: movie.strongest_part_id || undefined,
-        weakest_part_id: movie.weakest_part_id || undefined,
-        rewatch_id: movie.rewatch_id || undefined,
-        review: movie.review || undefined,
-        remarks: movie.remarks || undefined,
-        gc_id: movie.gc_id || undefined,
-        other_expenses: movie.other_expenses || undefined,
-        passport_savings: movie.passport_savings || undefined,
-      }
+      title: movie.title,
+      date: movie.date,
+      showtime: movie.showtime || undefined,
+      theater_id: movie.theater_id || undefined,
+      audi: movie.audi || undefined,
+      format_id: movie.format_id || undefined,
+      seat: movie.seat || undefined,
+      ticket_cost: movie.ticket_cost,
+      convenience_fee: movie.convenience_fee,
+      booking_id: movie.booking_id || undefined,
+      tmdb_id: movie.tmdb_id || undefined,
+      runtime_minutes: movie.runtime_minutes || undefined,
+      genres: movie.genres || undefined,
+      language: movie.language || undefined,
+      director: movie.director || undefined,
+      poster_url: movie.poster_url || undefined,
+      rating: movie.rating || undefined,
+      mood_id: movie.mood_id || undefined,
+      fnb_cost: movie.fnb_cost || undefined,
+      fnb_items: movie.fnb_items || undefined,
+      strongest_part_id: movie.strongest_part_id || undefined,
+      weakest_part_id: movie.weakest_part_id || undefined,
+      rewatch_id: movie.rewatch_id || undefined,
+      review: movie.review || undefined,
+      remarks: movie.remarks || undefined,
+      other_expenses: movie.other_expenses || undefined,
+      passport_savings: movie.passport_savings || undefined,
+      // New fields
+      watched_with: movie.watched_with || undefined,
+      payment_methods: (movie.payment_methods as Array<{method: string; amount: number}>) || undefined,
+      // TMDB enrichment
+      cast_members: movie.cast_members || undefined,
+      composer: movie.composer || undefined,
+      cinematographer: movie.cinematographer || undefined,
+      budget: movie.budget || undefined,
+      box_office: movie.box_office || undefined,
+      tmdb_rating: movie.tmdb_rating || undefined,
+      tmdb_vote_count: movie.tmdb_vote_count || undefined,
+      certification: movie.certification || undefined,
+      trailer_url: movie.trailer_url || undefined,
+      keywords: movie.keywords || undefined,
+      overview: movie.overview || undefined,
+      release_date: movie.release_date || undefined,
+      franchise_id: movie.franchise_id || undefined,
+      is_rewatch: movie.is_rewatch || false,
+      original_movie_id: movie.original_movie_id || undefined,
+      passport_id: movie.passport_id || undefined,
+    }
     : {};
+
+  // Merge TMDB overrides into initial data
+  const mergedData = { ...initialData, ...tmdbOverrides };
+
+  // Pre-populate gift card usage from junction table
+  const initialGiftCardUsage = movie?.movie_gift_cards?.map(mgc => ({
+    gift_card_id: mgc.gift_card?.id || "",
+    amount_used: mgc.amount_used,
+    purpose: mgc.purpose || "ticket",
+  })).filter(u => u.gift_card_id) || [];
+
+  // When editing, add back this movie's GC usage to each card's balance
+  // so the user can adjust amounts without being capped at 0
+  const adjustedGiftCards = giftCards.map(gc => {
+    const movieUsage = initialGiftCardUsage
+      .filter(u => u.gift_card_id === gc.id)
+      .reduce((sum, u) => sum + u.amount_used, 0);
+    if (movieUsage > 0) {
+      return { ...gc, balance: gc.balance + movieUsage, status: "active" as const };
+    }
+    return gc;
+  });
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -117,18 +253,40 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               <p className="text-muted-foreground">Movie not found</p>
             </div>
           ) : (
-            <MovieForm
-              initialData={initialData}
+            <>
+              {/* TMDB Search for enrichment */}
+              {!movie.tmdb_id && !tmdbOverrides.tmdb_id && (
+                <div className="mb-4 space-y-2">
+                  <label className="text-sm font-medium">Search TMDB</label>
+                  <TMDBSearch
+                    initialTitle={movie.title || ""}
+                    onSelect={handleTMDBSelect}
+                    selectedTmdbId={tmdbOverrides.tmdb_id}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Search to auto-fill poster, director, cast and more
+                  </p>
+                </div>
+              )}
+              <MovieForm
+                initialData={mergedData}
               formats={formats}
               theaters={theaters}
               moods={moods}
               aspects={aspects}
               rewatchOptions={rewatchOptions}
-              giftCards={giftCards.filter((gc) => gc.status === "active")}
+              giftCards={adjustedGiftCards.filter((gc) => gc.status === "active" || initialGiftCardUsage.some(u => u.gift_card_id === gc.id))}
+              franchises={franchises}
+              companions={companions}
+              passports={passports}
+              allMovies={allMovies}
+              initialCompanionIds={initialCompanionIds}
               onSubmit={handleSubmit}
               isLoading={isSubmitting}
               isEditing
+              initialGiftCardUsage={initialGiftCardUsage}
             />
+            </>
           )}
         </div>
       </ScrollArea>
