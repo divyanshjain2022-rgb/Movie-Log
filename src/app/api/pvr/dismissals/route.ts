@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No valid reasons provided" }, { status: 400 });
   }
 
-  // Insert each dismissal individually, skipping duplicates
-  const results = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const results: any[] = [];
   for (const row of rows) {
     const { data: single, error: singleError } = await supabase
       .from("movie_dismissals")
