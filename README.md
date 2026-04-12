@@ -40,8 +40,6 @@ The app is designed around one main question:
 - Upload and view movie-related photos such as tickets, selfies, F&B receipts, and general memories.
 
 ### Dashboard
-
-- All-time and yearly filters for the dashboard summary.
 - Yearly spending and movie-count summary.
 - Cost mode toggles for ticket-only, ticket plus F&B, and all-cost views.
 - Recent movies.
@@ -74,15 +72,12 @@ The app is designed around one main question:
 
 - Log food and beverage purchases independently or attach them to movies.
 - Track item names, quantities, prices, theater, remarks, and gift card usage.
-- Filter F&B history by all time or by year.
 
 ### Settings
 
 - Configure theaters and theater capabilities.
 - Rate theaters or individual audis by sound, seats, screen, and cleanliness.
 - Configure formats and format weights.
-- Save default screen or audi numbers at the format level.
-- Save theater-specific screen or audi defaults per format.
 - Configure moods, aspects, and rewatch options.
 - Configure the value score formula.
 - Track monthly budgets.
@@ -241,8 +236,6 @@ supabase/migrations/003_tmdb_enrichment.sql
 supabase/migrations/004_feature_expansion.sql
 supabase/migrations/005_gc_purpose.sql
 supabase/migrations/006_passport_and_total_cost_fix.sql
-supabase/migrations/007_format_default_audi.sql
-supabase/migrations/008_theater_default_audi_by_format.sql
 ```
 
 The schema and migrations create the following major tables:
@@ -477,6 +470,8 @@ Movie fit is predicted from:
 - Director-specific patterns when TMDB enrichment is available.
 - Theater and audi preferences.
 - Format preference and showtime patterns.
+- Genre-specific rating history.
+- Language-specific rating history.
 - Watchlist priority.
 - Release recency.
 - Already-watched title checks.
