@@ -536,32 +536,43 @@ export function predictMoviePersonalFit(
   }
 
   // --- Keyword/theme signal ---
+  // Sort by deviation from average (strongest signal first), not just frequency
   const keywordPredictions = (movie.keywords || [])
     .map((kw) => ({ kw, stat: model.keywordMeans.get(normalizeKey(kw)) }))
     .filter((entry) => entry.stat && entry.stat.count >= 2)
     .map((entry) => ({
       kw: entry.kw,
-      mean: shrinkTowardMean(entry.stat, model.globalAverage, 3) || model.globalAverage,
+      mean: shrinkTowardMean(entry.stat, model.globalAverage, 2) || model.globalAverage,
+      rawMean: (entry.stat!.sum / entry.stat!.count),
       count: entry.stat?.count || 0,
+      deviation: Math.abs((shrinkTowardMean(entry.stat, model.globalAverage, 2) || model.globalAverage) - model.globalAverage),
     }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
+    .sort((a, b) => b.deviation - a.deviation)
+    .slice(0, 4);
 
   if (keywordPredictions.length > 0) {
+    // Weight each keyword by both count AND how strongly it deviates from average
     const kwValue = weightedAverage(
       keywordPredictions.map((entry) => ({
         value: entry.mean,
-        weight: Math.min(1.0, 0.4 + entry.count * 0.12),
+        weight: Math.min(2.0, (0.4 + entry.count * 0.15) * (1 + entry.deviation * 0.6)),
       })),
       model.globalAverage
     );
-    const kwWeight = Math.min(1.0, keywordPredictions.reduce((sum, entry) => sum + entry.count, 0) * 0.1);
+    // Keywords with strong deviation get much higher composite weight
+    const maxDeviation = keywordPredictions[0].deviation;
+    const kwWeight = Math.min(
+      2.5,
+      (keywordPredictions.reduce((sum, entry) => sum + entry.count, 0) * 0.1) * (1 + maxDeviation * 0.8)
+    );
     signals.push({ value: kwValue, weight: kwWeight });
     supportWeight += kwWeight;
 
     const bestKw = keywordPredictions[0];
-    if (bestKw.mean >= model.globalAverage + 0.4) {
-      pushReason(reasons, `Your '${bestKw.kw}' movies average ${round1(bestKw.mean)}`);
+    if (bestKw.mean >= model.globalAverage + 0.3) {
+      pushReason(reasons, `Your '${bestKw.kw}' movies average ${round1(bestKw.rawMean)}`);
+    } else if (bestKw.mean <= model.globalAverage - 0.3) {
+      pushReason(reasons, `Your '${bestKw.kw}' movies only average ${round1(bestKw.rawMean)}`);
     }
   }
 
