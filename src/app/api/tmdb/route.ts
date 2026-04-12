@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
     // If movie ID is provided, get movie details with full enrichment
     if (movieId) {
       const detailResponse = await fetch(
-        `${TMDB_BASE_URL}/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords,videos,release_dates`
+        `${TMDB_BASE_URL}/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords,videos,release_dates`,
+        { cache: "no-store" }
       );
 
       if (!detailResponse.ok) {

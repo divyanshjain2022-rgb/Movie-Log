@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
 import { useFormats } from "@/hooks";
+import { formatAudiDisplay, normalizeAudiValue } from "@/lib/audi";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Format } from "@/types";
@@ -45,11 +46,13 @@ export default function FormatsPage() {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Not authenticated");
+            const defaultAudi = normalizeAudiValue(formData.get("default_audi") as string);
 
             await addFormat({
                 user_id: user.id,
                 name: formData.get("name") as string,
                 weight: parseFloat(formData.get("weight") as string) || 1.0,
+                default_audi: defaultAudi,
                 sort_order: formats.length,
             });
             toast.success("Format added!");
@@ -68,10 +71,25 @@ export default function FormatsPage() {
         setIsSubmitting(true);
 
         try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+            const defaultAudi = normalizeAudiValue(formData.get("default_audi") as string);
+
             await updateFormat(editingFormat.id, {
                 name: formData.get("name") as string,
                 weight: parseFloat(formData.get("weight") as string) || 1.0,
+                default_audi: defaultAudi,
             });
+
+            const { error: movieError } = await supabase
+                .from("movies")
+                .update({ audi: defaultAudi } as never)
+                .eq("user_id", user.id)
+                .eq("format_id", editingFormat.id);
+
+            if (movieError) throw movieError;
+
             toast.success("Format updated!");
             setEditingFormat(null);
         } catch {
@@ -123,6 +141,19 @@ export default function FormatsPage() {
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
                     Multiplier for value score. Premium formats like IMAX (1.6) or MX4D (1.8) get a higher multiplier. Default 2D = 1.0
+                </p>
+            </div>
+            <div>
+                <Label htmlFor="default_audi">Default Screen/Audi</Label>
+                <Input
+                    id="default_audi"
+                    name="default_audi"
+                    defaultValue={format?.default_audi || ""}
+                    placeholder="6"
+                    className="mt-1"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                    Stored as the normalized screen number for this format. Saving a change also updates existing movies using this format.
                 </p>
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -211,6 +242,11 @@ export default function FormatsPage() {
                                             <p className="text-sm text-muted-foreground">
                                                 Weight: {format.weight?.toFixed(1) || "1.0"}
                                             </p>
+                                            {format.default_audi && (
+                                                <p className="text-sm text-muted-foreground">
+                                                    Default: {formatAudiDisplay(format.default_audi) || format.default_audi}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1">

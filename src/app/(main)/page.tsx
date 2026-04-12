@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Film, Sparkles, Calendar, ListTodo } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,8 +10,9 @@ import {
   RecentMovies,
   GCStatus,
 } from "@/components/dashboard";
+import { YearFilter, type YearFilterValue } from "@/components/shared";
 import { useMovies, useGiftCards, useWatchlist, useBudgets, usePassports } from "@/hooks";
-import { formatCurrency, getEffectiveCost } from "@/lib/formula";
+import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
 type CostMode = "ticket" | "ticket_fnb" | "all";
@@ -23,7 +24,7 @@ export default function DashboardPage() {
   const { budgets } = useBudgets();
   const { passports } = usePassports();
   const [costMode, setCostMode] = useState<CostMode>("all");
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState<YearFilterValue>(new Date().getFullYear());
 
   const getMovieCost = (m: (typeof movies)[number], mode: CostMode) => {
     // GC discount savings
@@ -41,9 +42,9 @@ export default function DashboardPage() {
   };
 
   const stats = useMemo(() => {
-    const yearMovies = movies.filter(
-      (m) => new Date(m.date).getFullYear() === year
-    );
+    const yearMovies = year === "all"
+      ? movies
+      : movies.filter((m) => new Date(m.date).getFullYear() === year);
 
     const totalSpend = yearMovies.reduce((sum, m) => sum + getMovieCost(m, costMode), 0);
     const movieCount = yearMovies.length;
@@ -90,7 +91,15 @@ export default function DashboardPage() {
     return years.length > 0 ? years : [new Date().getFullYear()];
   }, [movies]);
 
+  useEffect(() => {
+    if (year !== "all" && !availableYears.includes(year)) {
+      setYear(availableYears[0]);
+    }
+  }, [availableYears, year]);
+
   const isLoading = moviesLoading || giftCardsLoading;
+  const yearLabel = year === "all" ? "All Time" : String(year);
+  const pendingWatchlistCount = watchlistItems.filter((w) => !w.watched_movie_id).length;
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -113,24 +122,7 @@ export default function DashboardPage() {
 
       {/* Year + Cost Mode */}
       <div className="px-4 pt-3 space-y-2">
-        {availableYears.length > 1 && (
-          <div className="flex gap-1.5">
-            {availableYears.map((y) => (
-              <button
-                key={y}
-                onClick={() => setYear(y)}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-                  year === y
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary/50 text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {y}
-              </button>
-            ))}
-          </div>
-        )}
+        <YearFilter years={availableYears} value={year} onChange={setYear} />
         <div className="flex rounded-xl bg-secondary/50 p-1">
           {([
             { key: "ticket" as CostMode, label: "Ticket" },
@@ -160,7 +152,7 @@ export default function DashboardPage() {
           <Skeleton className="h-[180px] w-full rounded-3xl" />
         ) : (
           <SummaryCard
-            year={year}
+            yearLabel={yearLabel}
             totalSpend={stats.totalSpend}
             movieCount={stats.movieCount}
             averageRating={stats.averageRating}
@@ -185,40 +177,40 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Links */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Link
             href="/recommendations"
-            className="flex items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
+            className="flex min-h-[76px] items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
               <Sparkles className="h-4.5 w-4.5 text-emerald-400" strokeWidth={1.75} />
             </div>
-            <span className="text-sm font-medium">PVR Picks</span>
+            <span className="text-sm font-medium leading-tight">PVR Picks</span>
           </Link>
           <Link
             href="/calendar"
-            className="flex items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
+            className="flex min-h-[76px] items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10">
               <Calendar className="h-4.5 w-4.5 text-blue-400" strokeWidth={1.75} />
             </div>
-            <span className="text-sm font-medium">Calendar</span>
+            <span className="text-sm font-medium leading-tight">Calendar</span>
           </Link>
           <Link
             href="/watchlist"
-            className="flex items-center gap-3 rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60"
+            className="col-span-2 flex min-h-[76px] items-center justify-between rounded-2xl bg-card/40 p-3.5 transition-all active:scale-[0.97] hover:bg-card/60 sm:col-span-1 sm:gap-3 sm:justify-start"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500/10">
-              <ListTodo className="h-4.5 w-4.5 text-orange-400" strokeWidth={1.75} />
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500/10">
+                <ListTodo className="h-4.5 w-4.5 text-orange-400" strokeWidth={1.75} />
+              </div>
+              <span className="text-sm font-medium leading-tight">Watchlist</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium">Watchlist</span>
-              {watchlistItems.filter((w) => !w.watched_movie_id).length > 0 && (
-                <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-orange-500/15 px-1 text-[10px] font-bold text-orange-400">
-                  {watchlistItems.filter((w) => !w.watched_movie_id).length}
-                </span>
-              )}
-            </div>
+            {pendingWatchlistCount > 0 && (
+              <span className="ml-3 flex h-6 min-w-6 items-center justify-center rounded-full bg-orange-500/15 px-1.5 text-[11px] font-bold text-orange-400 sm:ml-1.5 sm:h-4.5 sm:min-w-4.5 sm:px-1 sm:text-[10px]">
+                {pendingWatchlistCount}
+              </span>
+            )}
           </Link>
         </div>
 
@@ -297,7 +289,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Year Wrapped CTA */}
-        {!isLoading && stats.movieCount > 0 && (
+        {!isLoading && year !== "all" && stats.movieCount > 0 && (
           <Link href="/year-wrapped">
             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600/12 via-fuchsia-500/8 to-primary/8 p-5 transition-all active:scale-[0.98]">
               <div className="absolute -right-6 -top-6 h-28 w-28 rounded-full bg-violet-500/10 blur-2xl" />
@@ -308,7 +300,7 @@ export default function DashboardPage() {
                     <Sparkles className="h-5 w-5 text-violet-400" strokeWidth={1.75} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-[15px]">{year} Wrapped</h3>
+                    <h3 className="font-semibold text-[15px]">{yearLabel} Wrapped</h3>
                     <p className="text-xs text-muted-foreground/60">
                       Your year in cinema
                     </p>

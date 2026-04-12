@@ -11,6 +11,7 @@ CREATE TABLE formats (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   weight DECIMAL(3,2) DEFAULT 1.0,
+  default_audi TEXT,
   sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -23,6 +24,7 @@ CREATE TABLE theaters (
   has_imax BOOLEAN DEFAULT FALSE,
   has_4dx BOOLEAN DEFAULT FALSE,
   notes TEXT,
+  default_audi_by_format JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

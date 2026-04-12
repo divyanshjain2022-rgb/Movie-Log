@@ -326,6 +326,7 @@ export interface Database {
           user_id: string;
           name: string;
           weight: number;
+          default_audi: string | null;
           sort_order: number;
         };
         Insert: {
@@ -333,6 +334,7 @@ export interface Database {
           user_id: string;
           name: string;
           weight?: number;
+          default_audi?: string | null;
           sort_order?: number;
         };
         Update: {
@@ -340,6 +342,7 @@ export interface Database {
           user_id?: string;
           name?: string;
           weight?: number;
+          default_audi?: string | null;
           sort_order?: number;
         };
       };
@@ -353,6 +356,7 @@ export interface Database {
           has_4dx: boolean;
           notes: string | null;
           capabilities: string[] | null;
+          default_audi_by_format: Json | null;
         };
         Insert: {
           id?: string;
@@ -363,6 +367,7 @@ export interface Database {
           has_4dx?: boolean;
           notes?: string | null;
           capabilities?: string[] | null;
+          default_audi_by_format?: Json | null;
         };
         Update: {
           id?: string;
@@ -373,6 +378,7 @@ export interface Database {
           has_4dx?: boolean;
           notes?: string | null;
           capabilities?: string[] | null;
+          default_audi_by_format?: Json | null;
         };
       };
       moods: {

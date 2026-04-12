@@ -40,7 +40,6 @@ The app is designed around one main question:
 - Upload and view movie-related photos such as tickets, selfies, F&B receipts, and general memories.
 
 ### Dashboard
-
 - Yearly spending and movie-count summary.
 - Cost mode toggles for ticket-only, ticket plus F&B, and all-cost views.
 - Recent movies.
@@ -49,6 +48,7 @@ The app is designed around one main question:
 
 ### Statistics
 
+- All-time and yearly filters across the statistics views.
 - Format breakdown.
 - Theater breakdown.
 - Genre breakdown.
@@ -310,8 +310,10 @@ The page includes:
 - Format filter.
 - Time-window filter.
 - Ranked movie recommendations.
+- All-time or year-aware training data from your own logs.
 - 3 to 4 best show options per recommended movie.
 - Price range or exact class recommendation.
+- Predicted personal rating and confidence.
 - Value score.
 - Availability label.
 - Format advice.
@@ -444,7 +446,7 @@ type PvrSeatQuote = {
 
 ### Recommendation Scoring
 
-Each option is scored using a transparent weighted model:
+Each option is scored using a transparent weighted model centered on your own likely rating, not just crowd sentiment:
 
 | Factor | Weight |
 | --- | ---: |
@@ -462,6 +464,12 @@ The engine excludes movies that already exist in your watched Movie Log. Matchin
 Movie fit is predicted from:
 
 - Your average rating.
+- Your personal divergence from TMDB.
+- Genre-specific rating history.
+- Language-specific rating history.
+- Director-specific patterns when TMDB enrichment is available.
+- Theater and audi preferences.
+- Format preference and showtime patterns.
 - Genre-specific rating history.
 - Language-specific rating history.
 - Watchlist priority.
@@ -475,6 +483,8 @@ Examples of generated reasons:
 - `High priority on your watchlist`
 - `Releasing soon at PVR`
 - `Ranked from your overall Movie Log ratings`
+
+If today has no viable shows, the recommendations route can automatically retry the next day and mark the response as a fallback.
 
 ### Price Recommendation Logic
 
@@ -518,6 +528,8 @@ The page supports:
 - Adding PVR upcoming movies directly into the watchlist.
 - Opening a PVR movie page from an upcoming card.
 - Fuzzy "On list" detection so duplicate titles are avoided.
+- Automatic watchlist cleanup when a matching watched movie is logged.
+- A `Watched` action that opens `/movies/new` with watchlist details prefilled.
 
 PVR-added watchlist items store the PVR movie id in `notes`:
 
@@ -619,6 +631,8 @@ TMDB enrichment can populate:
 - Keywords.
 - Collection/franchise metadata.
 
+The movie detail page also refreshes TMDB-owned fields such as box office, TMDB rating, vote count, trailer, and overview when you open a logged movie, so stale entry-day metadata gets replaced with fresher values.
+
 ## Value Score Formula
 
 The value score is used throughout the app to measure how much enjoyment you got per rupee.
@@ -668,7 +682,7 @@ The formula is configurable from:
 | --- | --- |
 | `/` | Dashboard. |
 | `/movies` | Movie list and filters. |
-| `/movies/new` | Add movie, OCR ticket upload, TMDB search. |
+| `/movies/new` | Add movie, OCR ticket upload, TMDB search, and watchlist-prefilled logging flow. |
 | `/movies/[id]` | Movie detail page. |
 | `/movies/[id]/edit` | Edit a movie. |
 | `/recommendations` | Live PVR recommendations. |
@@ -785,6 +799,8 @@ Response includes:
 - `otherPlaying`
 - `diagnostics`
 - `cache`
+- `requestedDate`
+- `fallback`
 
 ### TMDB
 
@@ -845,8 +861,14 @@ For PVR changes, also manually check:
 ```text
 /recommendations?city=Lucknow
 /watchlist
+/movies/new?watchlist=<watchlist-id>
 /api/pvr/comingsoon?city=Lucknow
 /api/pvr/recommendations?city=Lucknow
+/settings/theaters
+/settings/formats
+/stats
+/fnb
+/
 ```
 
 ### Working With Dirty Trees
@@ -1059,6 +1081,5 @@ Potential next improvements:
 - Add a server-side PVR kill switch env var.
 - Add focused unit tests for PVR normalization and recommendation scoring.
 - Add a compact recommendation explanation debugger for each score component.
-- Store a first-class `pvr_id` on watchlist items if PVR integration becomes permanent.
 - Add retry/backoff controls for PVR calls.
 - Add formal API integration if PVR provides partner access.

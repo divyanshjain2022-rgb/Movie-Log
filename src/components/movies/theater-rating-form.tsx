@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useCreateTheaterRating } from "@/hooks";
+import { formatAudiDisplay, normalizeAudiValue } from "@/lib/audi";
 import { cn } from "@/lib/utils";
 
 interface TheaterRatingFormProps {
@@ -83,7 +84,7 @@ export function TheaterRatingForm({
     try {
       await createRating({
         theater_id: theaterId,
-        audi: audi || null,
+        audi: normalizeAudiValue(audi) || null,
         sound: sound || null,
         seat: seat || null,
         screen: screen || null,
@@ -109,7 +110,9 @@ export function TheaterRatingForm({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rate Theater{audi ? ` - ${audi}` : ""}</DialogTitle>
+          <DialogTitle>
+            Rate Theater{formatAudiDisplay(audi) ? ` - ${formatAudiDisplay(audi)}` : ""}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <StarRating value={sound} onChange={setSound} label="Sound" />

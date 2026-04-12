@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { calculateValueScore, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
+import { watchlistItemMatchesMovie } from "@/lib/watchlist";
 import type { Movie, MovieWithRelations, MovieInsert, MovieUpdate, GiftCardUsageEntry, FormulaParams } from "@/types";
 
 const supabase = createClient();
@@ -28,6 +29,14 @@ type GiftCardUsageForScore = {
 
 type FormatForScore = {
   weight: number | null;
+};
+
+type WatchlistForSync = {
+  id: string;
+  title: string;
+  tmdb_id: number | null;
+  release_date: string | null;
+  watched_movie_id: string | null;
 };
 
 function toError(err: unknown, fallback: string) {
@@ -103,6 +112,33 @@ async function computeValueScore(
   return calculateValueScore(rating, cost, formatWeight, params);
 }
 
+async function syncMatchingWatchlistItems(userId: string, movie: Movie): Promise<void> {
+  if (movie.status !== "watched") return;
+
+  const { data, error } = await supabase
+    .from("watchlist")
+    .select("id,title,tmdb_id,release_date,watched_movie_id")
+    .eq("user_id", userId)
+    .is("watched_movie_id", null);
+
+  if (error) throw error;
+
+  const items = (data || []) as WatchlistForSync[];
+  const matchedIds = items
+    .filter((item) => watchlistItemMatchesMovie(item, movie))
+    .map((item) => item.id);
+
+  if (matchedIds.length === 0) return;
+
+  const { error: updateError } = await supabase
+    .from("watchlist")
+    .update({ watched_movie_id: movie.id } as never)
+    .eq("user_id", userId)
+    .in("id", matchedIds);
+
+  if (updateError) throw updateError;
+}
+
 export function useMovies() {
   const [movies, setMovies] = useState<MovieWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -149,43 +185,48 @@ export function useMovie(id: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    async function fetchMovie() {
-      try {
+  const fetchMovie = useCallback(async (options?: { silent?: boolean }) => {
+    try {
+      if (!options?.silent) {
         setIsLoading(true);
-        const { data, error } = await supabase
-          .from("movies")
-          .select(`
-            *,
-            theater:theaters(*),
-            format:formats(*),
-            mood:moods(*),
-            strongest_part:aspects!movies_strongest_part_id_fkey(*),
-            weakest_part:aspects!movies_weakest_part_id_fkey(*),
-            rewatch:rewatch_options(*),
-            gift_card:gift_cards(*),
-            movie_gift_cards(*, gift_card:gift_cards(*)),
-            franchise:franchises(*),
-            movie_companions(id, companion:companions(*))
-          `)
-          .eq("id", id)
-          .single();
+      }
+      setError(null);
+      const { data, error } = await supabase
+        .from("movies")
+        .select(`
+          *,
+          theater:theaters(*),
+          format:formats(*),
+          mood:moods(*),
+          strongest_part:aspects!movies_strongest_part_id_fkey(*),
+          weakest_part:aspects!movies_weakest_part_id_fkey(*),
+          rewatch:rewatch_options(*),
+          gift_card:gift_cards(*),
+          movie_gift_cards(*, gift_card:gift_cards(*)),
+          franchise:franchises(*),
+          movie_companions(id, companion:companions(*))
+        `)
+        .eq("id", id)
+        .single();
 
-        if (error) throw error;
-        setMovie(data);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error("Failed to fetch movie"));
-      } finally {
+      if (error) throw error;
+      setMovie(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error("Failed to fetch movie"));
+    } finally {
+      if (!options?.silent) {
         setIsLoading(false);
       }
     }
+  }, [id]);
 
+  useEffect(() => {
     if (id) {
       fetchMovie();
     }
-  }, [id]);
+  }, [id, fetchMovie]);
 
-  return { movie, isLoading, error };
+  return { movie, isLoading, error, refetch: fetchMovie };
 }
 
 export function useCreateMovie() {
@@ -239,6 +280,12 @@ export function useCreateMovie() {
             await supabase.from("movies").update({ value_score: updatedScore } as never).eq("id", createdMovie.id);
           }
         }
+      }
+
+      try {
+        await syncMatchingWatchlistItems(user.id, createdMovie);
+      } catch (watchlistError) {
+        console.error("Failed to sync matching watchlist items:", watchlistError);
       }
 
       return createdMovie;

@@ -26,6 +26,7 @@ import { PVR_CITIES, todayInIndia } from "@/lib/pvr/cities";
 import { formatCurrency, formatDate, formatTime } from "@/lib/formula";
 import type {
   MovieRecommendation,
+  PredictionConfidenceLabel,
   PvrMovie,
   PvrRecommendationsResponse,
   RecommendationOption,
@@ -59,7 +60,25 @@ function optionMeta(option: RecommendationOption): string {
   return parts.join(" · ");
 }
 
+function confidenceBadgeClass(label: PredictionConfidenceLabel): string {
+  if (label === "high") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  }
+  if (label === "medium") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  }
+  return "border-white/10 bg-white/5 text-muted-foreground";
+}
+
+function crowdDeltaLabel(delta: number | null): string | null {
+  if (delta === null) return null;
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(1)} vs TMDB`;
+}
+
 function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
+  const crowdDelta = crowdDeltaLabel(option.crowdDelta);
+
   return (
     <div className="rounded-lg border border-white/[0.06] bg-background/35 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -86,7 +105,13 @@ function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
           )}
         </div>
 
-        <div className="text-right">
+        <div className="space-y-1 text-right">
+          <div className="rounded-lg bg-primary/12 px-2 py-1">
+            <p className="text-sm font-bold text-primary">
+              {option.predictedPersonalRating.toFixed(1)}
+            </p>
+            <p className="text-[10px] text-primary/70">predicted</p>
+          </div>
           <p className="text-sm font-bold tabular-nums">{formatPrice(option)}</p>
           <p className="text-[11px] text-muted-foreground/60">
             Value {option.valueScore.toFixed(1)}
@@ -111,9 +136,19 @@ function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-          Score {option.score}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className={`rounded-md text-[11px] ${confidenceBadgeClass(option.predictionConfidenceLabel)}`}
+          >
+            {option.predictionConfidenceLabel} confidence
+          </Badge>
+          {crowdDelta && (
+            <Badge variant="outline" className="rounded-md text-[11px]">
+              {crowdDelta}
+            </Badge>
+          )}
+        </div>
         <Button asChild size="sm" variant="outline">
           <a href={option.show.redirectUrl} target="_blank" rel="noreferrer">
             Open on PVR
@@ -167,6 +202,8 @@ function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
 }
 
 function RecommendationCard({ recommendation }: { recommendation: MovieRecommendation }) {
+  const crowdDelta = crowdDeltaLabel(recommendation.crowdDelta);
+
   return (
     <section className="rounded-xl bg-card/40 p-3.5">
       <div className="flex gap-3">
@@ -198,11 +235,22 @@ function RecommendationCard({ recommendation }: { recommendation: MovieRecommend
               <p className="text-sm font-bold text-primary">
                 {recommendation.predictedRating.toFixed(1)}
               </p>
-              <p className="text-[10px] text-primary/70">fit</p>
+              <p className="text-[10px] text-primary/70">predicted</p>
             </div>
           </div>
 
           <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge
+              variant="outline"
+              className={`rounded-md text-[11px] ${confidenceBadgeClass(recommendation.predictionConfidenceLabel)}`}
+            >
+              {recommendation.predictionConfidenceLabel} confidence
+            </Badge>
+            {crowdDelta && (
+              <Badge variant="outline" className="rounded-md text-[11px]">
+                {crowdDelta}
+              </Badge>
+            )}
             {recommendation.reasons.map((reason) => (
               <Badge key={reason} variant="outline" className="rounded-md text-[11px]">
                 {reason}

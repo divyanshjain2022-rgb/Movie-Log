@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Check, Clock, ExternalLink, Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,8 +31,10 @@ import {
   useWatchlist,
   useCreateWatchlistItem,
   useDeleteWatchlistItem,
+  useMovies,
   useUpdateWatchlistItem,
 } from "@/hooks";
+import { watchlistItemMatchesMovie } from "@/lib/watchlist";
 
 const PRIORITY_LABELS = ["Low", "Medium", "High"];
 const PRIORITY_COLORS = ["text-muted-foreground", "text-yellow-500", "text-red-500"];
@@ -50,6 +52,7 @@ function titlesMatch(left: string, right: string): boolean {
 
 export default function WatchlistPage() {
   const { items, isLoading, refetch } = useWatchlist();
+  const { movies: allMovies, isLoading: isMoviesLoading } = useMovies();
   const { createItem, isLoading: isCreating } = useCreateWatchlistItem();
   const { deleteItem } = useDeleteWatchlistItem();
   const { updateItem } = useUpdateWatchlistItem();
@@ -62,6 +65,7 @@ export default function WatchlistPage() {
   const [isPvrLoading, setIsPvrLoading] = useState(true);
   const [pvrError, setPvrError] = useState<string | null>(null);
   const [addingPvrMovieId, setAddingPvrMovieId] = useState<string | null>(null);
+  const syncingItemIdsRef = useRef<Set<string>>(new Set());
 
   const unwatched = items.filter((i) => !i.watched_movie_id);
   const watched = items.filter((i) => i.watched_movie_id);
@@ -187,6 +191,50 @@ export default function WatchlistPage() {
       toast.error("Failed to update priority");
     }
   };
+
+  useEffect(() => {
+    if (isLoading || isMoviesLoading || unwatched.length === 0) return;
+
+    const loggedMovies = allMovies.filter((movie) => movie.status === "watched");
+    if (loggedMovies.length === 0) return;
+
+    const candidates = unwatched
+      .map((item) => ({
+        item,
+        movie: loggedMovies.find((movie) => watchlistItemMatchesMovie(item, movie)),
+      }))
+      .filter(
+        (entry): entry is { item: typeof unwatched[number]; movie: typeof loggedMovies[number] } =>
+          Boolean(entry.movie) && !syncingItemIdsRef.current.has(entry.item.id)
+      );
+
+    if (candidates.length === 0) return;
+
+    candidates.forEach(({ item }) => syncingItemIdsRef.current.add(item.id));
+
+    let cancelled = false;
+
+    void Promise.all(
+      candidates.map(({ item, movie }) =>
+        updateItem(item.id, { watched_movie_id: movie.id })
+      )
+    )
+      .then(() => {
+        if (!cancelled) {
+          void refetch();
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to auto-sync logged watchlist items:", error);
+      })
+      .finally(() => {
+        candidates.forEach(({ item }) => syncingItemIdsRef.current.delete(item.id));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allMovies, isLoading, isMoviesLoading, refetch, unwatched, updateItem]);
 
   return (
     <div className="min-h-screen">
@@ -413,6 +461,13 @@ export default function WatchlistPage() {
                           {item.notes}
                         </p>
                       )}
+                      <div className="mt-2">
+                        <Button asChild size="sm" variant="secondary" className="h-7 px-2 text-xs">
+                          <Link href={`/movies/new?watchlist=${encodeURIComponent(item.id)}`}>
+                            Watched
+                          </Link>
+                        </Button>
+                      </div>
                     </div>
                     <div className="flex flex-col items-center gap-1">
                       <button

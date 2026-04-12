@@ -26,6 +26,9 @@ export interface PvrMovie {
   releaseDate: string | null;
   languages: string[];
   genres: string[];
+  director?: string | null;
+  tmdbRating?: number | null;
+  tmdbVoteCount?: number | null;
   posterUrl: string | null;
   redirectUrl: string;
   source: PvrSource;
@@ -74,16 +77,20 @@ export interface UserMovieForRecommendation {
   id: string;
   title: string;
   rating: number | null;
+  showtime: string | null;
   genres: string[] | null;
   language: string | null;
   director: string | null;
   castMembers: string[] | null;
+  audi: string | null;
+  seat: string | null;
   date: string;
   ticketCost: number;
   convenienceFee: number;
   fnbCost: number | null;
   otherExpenses: number | null;
   passportSavings: number;
+  tmdbRating: number | null;
   formatId: string | null;
   theaterId: string | null;
   rewatchId: string | null;
@@ -136,8 +143,13 @@ export interface RecommendationUserData {
   formulaParams: FormulaParams | null;
 }
 
+export type PredictionConfidenceLabel = "low" | "medium" | "high";
+
 export interface MovieFitResult {
   predictedRating: number;
+  confidence: number;
+  confidenceLabel: PredictionConfidenceLabel;
+  crowdDelta: number | null;
   reasons: string[];
   excluded: boolean;
 }
@@ -152,6 +164,10 @@ export interface RecommendationOption {
   show: PvrShow;
   score: number;
   valueScore: number;
+  predictedPersonalRating: number;
+  predictionConfidence: number;
+  predictionConfidenceLabel: PredictionConfidenceLabel;
+  crowdDelta: number | null;
   exactPrice: boolean;
   displayPrice: number | null;
   targetPrice: number | null;
@@ -166,6 +182,9 @@ export interface RecommendationOption {
 export interface MovieRecommendation {
   movie: PvrMovie;
   predictedRating: number;
+  predictionConfidence: number;
+  predictionConfidenceLabel: PredictionConfidenceLabel;
+  crowdDelta: number | null;
   reasons: string[];
   options: RecommendationOption[];
   bestOption: RecommendationOption;

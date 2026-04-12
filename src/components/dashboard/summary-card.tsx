@@ -1,10 +1,9 @@
 "use client";
 
-import { Film, TrendingUp, Star, Clock } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
 
 interface SummaryCardProps {
-  year: number;
+  yearLabel: string;
   totalSpend: number;
   movieCount: number;
   averageRating: number;
@@ -12,7 +11,7 @@ interface SummaryCardProps {
 }
 
 export function SummaryCard({
-  year,
+  yearLabel,
   totalSpend,
   movieCount,
   averageRating,
@@ -30,8 +29,10 @@ export function SummaryCard({
       <div className="relative">
         {/* Header */}
         <div className="flex items-baseline gap-2 mb-5">
-          <span className="text-3xl font-bold tracking-tight">{year}</span>
-          <span className="text-sm text-muted-foreground font-medium">Year in Cinema</span>
+          <span className="text-3xl font-bold tracking-tight">{yearLabel}</span>
+          <span className="text-sm text-muted-foreground font-medium">
+            {yearLabel === "All Time" ? "Cinema Summary" : "Year in Cinema"}
+          </span>
         </div>
 
         {/* Big number */}

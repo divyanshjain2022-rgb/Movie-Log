@@ -1,0 +1,2 @@
+ALTER TABLE formats
+ADD COLUMN IF NOT EXISTS default_audi TEXT;

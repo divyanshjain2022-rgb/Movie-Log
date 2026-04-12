@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Calendar, Film } from "lucide-react";
 import { PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
+import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports, useWatchlist } from "@/hooks";
 import { cn } from "@/lib/utils";
 import type { MovieFormData, TicketOCRData, GiftCardUsageEntry, MovieInsert } from "@/types";
 
@@ -138,21 +138,25 @@ function compressImage(
 
 export default function NewMoviePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { createMovie, isLoading: isSubmitting } = useCreateMovie();
   const { movies: allMovies } = useMovies();
+  const { items: watchlistItems, isLoading: watchlistLoading } = useWatchlist();
   const { franchises } = useFranchises();
   const { companions } = useCompanions();
   const { passports } = usePassports();
   const { syncCompanions } = useSyncMovieCompanions();
 
+  const watchlistSourceId = searchParams.get("watchlist");
   const [mode, setMode] = useState<BookingMode>("watched");
   const [isUploading, setIsUploading] = useState(false);
   const [extractedData, setExtractedData] = useState<Partial<MovieFormData>>({});
   const [showForm, setShowForm] = useState(false);
   const [tmdbData, setTmdbData] = useState<TMDBMovieDetails | null>(null);
   const [ocrRawData, setOcrRawData] = useState<TicketOCRData | null>(null);
+  const [prefilledWatchlistId, setPrefilledWatchlistId] = useState<string | null>(null);
 
   // Match theater and format once lookup data is loaded
   useEffect(() => {
@@ -169,6 +173,79 @@ export default function NewMoviePage() {
       }
     }
   }, [ocrRawData, theaters, formats, lookupLoading]);
+
+  useEffect(() => {
+    if (!watchlistSourceId) return;
+
+    setMode("watched");
+    setShowForm(true);
+  }, [watchlistSourceId]);
+
+  useEffect(() => {
+    if (!watchlistSourceId || watchlistLoading || prefilledWatchlistId === watchlistSourceId) {
+      return;
+    }
+
+    const watchlistItem = watchlistItems.find((item) => item.id === watchlistSourceId);
+    if (!watchlistItem) return;
+
+    setExtractedData((prev) => ({
+      ...prev,
+      title: watchlistItem.title,
+      tmdb_id: watchlistItem.tmdb_id || undefined,
+      poster_url: watchlistItem.poster_url || undefined,
+      release_date: watchlistItem.release_date || undefined,
+      genres: watchlistItem.genres || undefined,
+      runtime_minutes: watchlistItem.runtime_minutes || undefined,
+    }));
+    setPrefilledWatchlistId(watchlistSourceId);
+
+    if (!watchlistItem.tmdb_id) return;
+
+    const controller = new AbortController();
+
+    void fetch(`/api/tmdb?id=${watchlistItem.tmdb_id}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return await response.json() as TMDBMovieDetails;
+      })
+      .then((movie) => {
+        if (!movie) return;
+
+        setTmdbData(movie);
+        setExtractedData((prev) => ({
+          ...prev,
+          title: movie.title || prev.title,
+          tmdb_id: movie.tmdb_id || prev.tmdb_id,
+          runtime_minutes: movie.runtime_minutes || prev.runtime_minutes,
+          genres: movie.genres && movie.genres.length > 0 ? movie.genres : prev.genres,
+          language: movie.language || prev.language,
+          director: movie.director || prev.director,
+          poster_url: movie.poster_url || prev.poster_url,
+          cast_members: movie.cast_members || prev.cast_members,
+          composer: movie.composer || prev.composer,
+          cinematographer: movie.cinematographer || prev.cinematographer,
+          budget: movie.budget || prev.budget,
+          box_office: movie.box_office || prev.box_office,
+          tmdb_rating: movie.tmdb_rating || prev.tmdb_rating,
+          tmdb_vote_count: movie.tmdb_vote_count || prev.tmdb_vote_count,
+          certification: movie.certification || prev.certification,
+          trailer_url: movie.trailer_url || prev.trailer_url,
+          keywords: movie.keywords || prev.keywords,
+          overview: movie.overview || prev.overview,
+          release_date: movie.release_date || prev.release_date,
+        }));
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("Failed to enrich watchlist prefill from TMDB:", error);
+      });
+
+    return () => controller.abort();
+  }, [prefilledWatchlistId, watchlistItems, watchlistLoading, watchlistSourceId]);
 
   const handleTicketUpload = async (file: File) => {
     setIsUploading(true);
@@ -384,6 +461,11 @@ export default function NewMoviePage() {
   };
 
   const isLoading = lookupLoading || giftCardsLoading;
+  const isWatchlistPrefillLoading =
+    Boolean(watchlistSourceId) &&
+    watchlistLoading &&
+    prefilledWatchlistId !== watchlistSourceId;
+  const hasWatchlistPrefill = Boolean(watchlistSourceId && prefilledWatchlistId === watchlistSourceId);
 
   return (
     <div className="flex min-h-screen flex-col pb-20">
@@ -437,7 +519,7 @@ export default function NewMoviePage() {
                 </button>
               </div>
             </div>
-          ) : isLoading ? (
+          ) : isLoading || isWatchlistPrefillLoading ? (
             <div className="space-y-4">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
@@ -446,6 +528,11 @@ export default function NewMoviePage() {
             </div>
           ) : (
             <div className="space-y-6">
+              {hasWatchlistPrefill && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+                  Prefilled from your watchlist. Add the ticket details and save the log.
+                </div>
+              )}
               {/* TMDB Search */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Search Movie</label>
@@ -453,7 +540,7 @@ export default function NewMoviePage() {
                   initialTitle={extractedData.title || ""}
                   onSelect={handleTMDBSelect}
                   onTitleChange={handleTitleChange}
-                  selectedTmdbId={tmdbData?.tmdb_id}
+                  selectedTmdbId={tmdbData?.tmdb_id || extractedData.tmdb_id}
                 />
                 <p className="text-xs text-muted-foreground">
                   Search to auto-fill movie details and poster

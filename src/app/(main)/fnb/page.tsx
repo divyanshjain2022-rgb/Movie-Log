@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Coffee, MoreHorizontal, Pencil, Trash2, Link2, X, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/shared";
+import { PageHeader, YearFilter, type YearFilterValue } from "@/components/shared";
 import {
   useFnbPurchases,
   useCreateFnbPurchase,
@@ -49,7 +49,6 @@ import {
 } from "@/hooks";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import type { FnbPurchaseWithRelations, GiftCardUsageEntry } from "@/types";
 
 // Unified F&B entry — either from fnb_purchases table or from a movie's fnb fields
@@ -81,6 +80,7 @@ export default function FnbPage() {
   const [deletingPurchase, setDeletingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
   const [linkingPurchase, setLinkingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
   const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>([]);
+  const [selectedYear, setSelectedYear] = useState<YearFilterValue>(new Date().getFullYear());
 
   const activeGiftCards = giftCards.filter(gc => gc.status === "active");
   const availableGiftCards = activeGiftCards.filter(
@@ -128,14 +128,29 @@ export default function FnbPage() {
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [fnbPurchases, movies]);
 
+  const availableYears = useMemo(() => {
+    const years = [...new Set(allFnbEntries.map((entry) => new Date(entry.date).getFullYear()))].sort((a, b) => b - a);
+    return years.length > 0 ? years : [new Date().getFullYear()];
+  }, [allFnbEntries]);
+
+  useEffect(() => {
+    if (selectedYear !== "all" && !availableYears.includes(selectedYear)) {
+      setSelectedYear(availableYears[0]);
+    }
+  }, [availableYears, selectedYear]);
+
+  const filteredFnbEntries = useMemo(() => {
+    return selectedYear === "all"
+      ? allFnbEntries
+      : allFnbEntries.filter((entry) => new Date(entry.date).getFullYear() === selectedYear);
+  }, [allFnbEntries, selectedYear]);
+
   // Stats
   const stats = useMemo(() => {
-    const year = new Date().getFullYear();
-    const yearEntries = allFnbEntries.filter(e => new Date(e.date).getFullYear() === year);
-    const totalSpend = yearEntries.reduce((sum, e) => sum + e.cost, 0);
-    const avgPerVisit = yearEntries.length > 0 ? totalSpend / yearEntries.length : 0;
-    return { totalSpend, count: yearEntries.length, avgPerVisit };
-  }, [allFnbEntries]);
+    const totalSpend = filteredFnbEntries.reduce((sum, entry) => sum + entry.cost, 0);
+    const avgPerVisit = filteredFnbEntries.length > 0 ? totalSpend / filteredFnbEntries.length : 0;
+    return { totalSpend, count: filteredFnbEntries.length, avgPerVisit };
+  }, [filteredFnbEntries]);
 
   const addGiftCard = (gcId: string) => {
     const gc = giftCards.find(g => g.id === gcId);
@@ -477,8 +492,10 @@ export default function FnbPage() {
       </AlertDialog>
 
       <div className="p-4 space-y-5">
+        <YearFilter years={availableYears} value={selectedYear} onChange={setSelectedYear} />
+
         {/* Year Stats */}
-        {!isLoading && allFnbEntries.length > 0 && (
+        {!isLoading && filteredFnbEntries.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-2xl bg-card/50 p-3.5">
               <p className="text-xs text-muted-foreground/60">Total</p>
@@ -509,9 +526,17 @@ export default function FnbPage() {
               Log F&B when adding a movie, or add standalone purchases here
             </p>
           </div>
+        ) : filteredFnbEntries.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-8 text-center">
+            <Coffee className="mx-auto h-12 w-12 text-muted-foreground" />
+            <p className="mt-3 text-muted-foreground">No F&B purchases for this period</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Switch to another year or All Time to see older entries
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
-            {allFnbEntries.map((entry) => (
+            {filteredFnbEntries.map((entry) => (
               <Card key={entry.id}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">

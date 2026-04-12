@@ -3,6 +3,12 @@ import {
   DEFAULT_FORMULA_PARAMS,
   formatCurrency,
 } from "@/lib/formula";
+import {
+  buildPersonalPredictionModel,
+  getPredictionConfidenceLabel,
+  predictMoviePersonalFit,
+  predictShowAdjustment,
+} from "@/lib/pvr/personal-predictor";
 import type {
   MovieFitResult,
   MovieRecommendation,
@@ -49,6 +55,14 @@ export interface RankedMovieCandidate {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function average(stat: AverageStat | undefined): number | null {
@@ -239,6 +253,9 @@ export function predictMovieFit(movie: PvrMovie, profile: PreferenceProfile): Mo
   if (watched) {
     return {
       predictedRating: watched.bestRating || profile.averageRating,
+      confidence: 0.96,
+      confidenceLabel: "high",
+      crowdDelta: null,
       reasons: ["Already watched"],
       excluded: true,
     };
@@ -291,6 +308,9 @@ export function predictMovieFit(movie: PvrMovie, profile: PreferenceProfile): Mo
 
   return {
     predictedRating: Math.round(clamp(predictedRating, 1, 10) * 10) / 10,
+    confidence: 0.5,
+    confidenceLabel: "medium",
+    crowdDelta: null,
     reasons: reasons.slice(0, 3),
     excluded: false,
   };
@@ -301,12 +321,17 @@ export function rankPvrMovies(
   userData: RecommendationUserData,
   limit = 16
 ): RankedMovieCandidate[] {
-  const profile = buildPreferenceProfile(userData);
+  const model = buildPersonalPredictionModel(userData);
 
   return movies
-    .map((movie) => ({ movie, fit: predictMovieFit(movie, profile) }))
+    .map((movie) => ({ movie, fit: predictMoviePersonalFit(movie, model) }))
     .filter((candidate) => !candidate.fit.excluded)
-    .sort((a, b) => b.fit.predictedRating - a.fit.predictedRating)
+    .sort((a, b) => {
+      if (b.fit.predictedRating !== a.fit.predictedRating) {
+        return b.fit.predictedRating - a.fit.predictedRating;
+      }
+      return b.fit.confidence - a.fit.confidence;
+    })
     .slice(0, limit);
 }
 
@@ -503,6 +528,7 @@ export function buildRecommendations(
   seatQuotes: Map<string, PvrSeatQuote>
 ): MovieRecommendation[] {
   const profile = buildPreferenceProfile(userData);
+  const model = buildPersonalPredictionModel(userData);
   const moviesById = new Map(candidates.map((candidate) => [candidate.movie.id, candidate]));
   const optionsByMovie = new Map<string, RecommendationOption[]>();
 
@@ -521,28 +547,40 @@ export function buildRecommendations(
     const price = quote?.recommendedCategory?.price || quote?.minPrice || show.priceRange.min;
     const targetPrice = getTargetPrice(show, profile, formatWeight);
     const priceScore = getPriceScore(price, targetPrice);
+    const showAdjustment = predictShowAdjustment(show, model);
+    const predictedPersonalRating = round1(
+      clamp(candidate.fit.predictedRating + showAdjustment.delta, 1, 10)
+    );
+    const predictionConfidence = round2(
+      clamp(candidate.fit.confidence + showAdjustment.confidenceBoost, 0.2, 0.99)
+    );
+    const predictionConfidenceLabel = getPredictionConfidenceLabel(predictionConfidence);
 
     const score =
-      (candidate.fit.predictedRating / 10) * 100 * 0.35 +
-      formatLanguageScore * 0.2 +
-      time.score * 0.15 +
+      (predictedPersonalRating / 10) * 100 * 0.4 +
+      formatLanguageScore * 0.18 +
+      time.score * 0.12 +
       theaterScore * 0.1 +
       availability.score * 0.1 +
       priceScore * 0.1;
     const valueScore = price
-      ? calculateValueScore(candidate.fit.predictedRating, price, formatWeight, profile.formulaParams)
+      ? calculateValueScore(predictedPersonalRating, price, formatWeight, profile.formulaParams)
       : 0;
 
     const option: RecommendationOption = {
       show,
       score: Math.round(score),
       valueScore,
+      predictedPersonalRating,
+      predictionConfidence,
+      predictionConfidenceLabel,
+      crowdDelta: candidate.fit.crowdDelta,
       exactPrice: Boolean(quote),
       displayPrice: price,
       targetPrice,
       recommendedCategory: quote?.recommendedCategory || null,
       priceAdvice: getPriceAdvice(show, price, targetPrice, formatWeight, quote),
-      formatAdvice: getFormatAdvice(show, formatWeight),
+      formatAdvice: showAdjustment.reason || getFormatAdvice(show, formatWeight),
       timingAdvice: time.advice,
       availabilityLabel: availability.label,
       needsExactPrice: !quote && Boolean(show.encrypted),
@@ -561,12 +599,16 @@ export function buildRecommendations(
     if (options.length === 0) continue;
 
     const selectedOptions = selectDiverseOptions(options);
+    const bestOption = selectedOptions[0];
     recommendations.push({
       movie: candidate.movie,
-      predictedRating: candidate.fit.predictedRating,
+      predictedRating: bestOption.predictedPersonalRating,
+      predictionConfidence: bestOption.predictionConfidence,
+      predictionConfidenceLabel: bestOption.predictionConfidenceLabel,
+      crowdDelta: bestOption.crowdDelta,
       reasons: candidate.fit.reasons,
       options: selectedOptions,
-      bestOption: selectedOptions[0],
+      bestOption,
     });
   }
 
