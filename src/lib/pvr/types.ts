@@ -142,6 +142,16 @@ export interface UserFranchise {
   name: string;
 }
 
+export type DismissalReason = "language" | "genre" | "director" | "cast" | "story" | "seen_it" | "bad_reviews";
+
+export interface UserDismissal {
+  id: string;
+  movieTitle: string;
+  pvrMovieId: string;
+  reason: DismissalReason;
+  reasonDetail: string | null;
+}
+
 export interface RecommendationUserData {
   movies: UserMovieForRecommendation[];
   watchlist: UserWatchlistItem[];
@@ -150,6 +160,7 @@ export interface RecommendationUserData {
   theaterRatings: UserTheaterRating[];
   rewatchOptions: UserRewatchOption[];
   franchises?: UserFranchise[];
+  dismissals?: UserDismissal[];
   formulaParams: FormulaParams | null;
 }
 
