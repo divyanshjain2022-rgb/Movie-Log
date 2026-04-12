@@ -21,6 +21,7 @@ import type {
   PvrSeatQuote,
   PvrShow,
   RecommendationUserData,
+  UserDismissal,
   UserFranchise,
   UserFormatPreference,
   UserMovieForRecommendation,
@@ -245,6 +246,7 @@ async function loadRecommendationUserData(): Promise<{
     rewatchOptionsResult,
     formulaResult,
     franchisesResult,
+    dismissalsResult,
   ] = await Promise.all([
     supabase
       .from("movies")
@@ -280,6 +282,10 @@ async function loadRecommendationUserData(): Promise<{
       .from("franchises")
       .select("id,name")
       .eq("user_id", user.id),
+    supabase
+      .from("movie_dismissals")
+      .select("id,movie_title,pvr_movie_id,reason,reason_detail")
+      .eq("user_id", user.id),
   ]);
 
   for (const result of [
@@ -291,6 +297,7 @@ async function loadRecommendationUserData(): Promise<{
     rewatchOptionsResult,
     formulaResult,
     franchisesResult,
+    // dismissalsResult errors are non-fatal (table may not exist yet)
   ]) {
     if (result.error) throw result.error;
   }
@@ -334,6 +341,15 @@ async function loadRecommendationUserData(): Promise<{
         (row): UserFranchise => ({
           id: row.id,
           name: row.name,
+        })
+      ),
+      dismissals: ((dismissalsResult.data || []) as unknown as Array<{ id: string; movie_title: string; pvr_movie_id: string; reason: string; reason_detail: string | null }>).map(
+        (row): UserDismissal => ({
+          id: row.id,
+          movieTitle: row.movie_title,
+          pvrMovieId: row.pvr_movie_id,
+          reason: row.reason as UserDismissal["reason"],
+          reasonDetail: row.reason_detail,
         })
       ),
       formulaParams: parseFormulaParams(

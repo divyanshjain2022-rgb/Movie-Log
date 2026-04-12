@@ -1,15 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ChevronDown,
   Clock,
   ExternalLink,
+  Globe,
   MapPin,
   RefreshCw,
   Sparkles,
   Ticket,
+  ThumbsDown,
+  X,
+  Film,
+  User,
+  Users,
+  MessageSquare,
+  Star,
+  Eye,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
@@ -201,7 +210,13 @@ function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
   );
 }
 
-function RecommendationCard({ recommendation }: { recommendation: MovieRecommendation }) {
+function RecommendationCard({
+  recommendation,
+  onDismiss,
+}: {
+  recommendation: MovieRecommendation;
+  onDismiss: (movieId: string, movieTitle: string) => void;
+}) {
   const crowdDelta = crowdDeltaLabel(recommendation.crowdDelta);
 
   return (
@@ -219,8 +234,8 @@ function RecommendationCard({ recommendation }: { recommendation: MovieRecommend
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
               <h2 className="line-clamp-2 text-base font-semibold leading-tight">
                 {recommendation.movie.title}
               </h2>
@@ -231,11 +246,20 @@ function RecommendationCard({ recommendation }: { recommendation: MovieRecommend
                 </p>
               )}
             </div>
-            <div className="rounded-lg bg-primary/12 px-2 py-1 text-right">
-              <p className="text-sm font-bold text-primary">
-                {recommendation.predictedRating.toFixed(1)}
-              </p>
-              <p className="text-[10px] text-primary/70">predicted</p>
+            <div className="flex items-start gap-1.5">
+              <button
+                onClick={() => onDismiss(recommendation.movie.id, recommendation.movie.title)}
+                className="rounded-md p-1.5 text-muted-foreground/50 transition hover:bg-destructive/10 hover:text-destructive"
+                title="Not interested"
+              >
+                <ThumbsDown className="h-4 w-4" />
+              </button>
+              <div className="rounded-lg bg-primary/12 px-2 py-1 text-right">
+                <p className="text-sm font-bold text-primary">
+                  {recommendation.predictedRating.toFixed(1)}
+                </p>
+                <p className="text-[10px] text-primary/70">predicted</p>
+              </div>
             </div>
           </div>
 
@@ -269,6 +293,186 @@ function RecommendationCard({ recommendation }: { recommendation: MovieRecommend
   );
 }
 
+interface DismissalReasonOption {
+  reason: string;
+  reasonDetail: string | null;
+  label: string;
+  icon: React.ReactNode;
+}
+
+function DismissalModal({
+  movie,
+  onDismiss,
+  onClose,
+}: {
+  movie: MovieRecommendation | null;
+  onDismiss: (movieId: string, reasons: Array<{ reason: string; reasonDetail?: string | null }>) => void;
+  onClose: () => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!movie) return null;
+
+  const options: DismissalReasonOption[] = [];
+
+  // Language options — each language is its own independent button
+  for (const lang of movie.movie.languages) {
+    options.push({
+      reason: "language",
+      reasonDetail: lang,
+      label: `Not interested in ${lang} movies`,
+      icon: <Globe className="h-4 w-4" />,
+    });
+  }
+
+  // Genre options
+  for (const genre of movie.movie.genres.slice(0, 4)) {
+    options.push({
+      reason: "genre",
+      reasonDetail: genre,
+      label: `Not interested in ${genre}`,
+      icon: <Film className="h-4 w-4" />,
+    });
+  }
+
+  // Director
+  if (movie.movie.director) {
+    options.push({
+      reason: "director",
+      reasonDetail: movie.movie.director,
+      label: `Not interested in ${movie.movie.director}'s films`,
+      icon: <User className="h-4 w-4" />,
+    });
+  }
+
+  // Cast
+  for (const actor of (movie.movie.cast || []).slice(0, 3)) {
+    options.push({
+      reason: "cast",
+      reasonDetail: actor,
+      label: `Not interested in ${actor}`,
+      icon: <Users className="h-4 w-4" />,
+    });
+  }
+
+  // Story / generic
+  options.push({
+    reason: "story",
+    reasonDetail: null,
+    label: "Not my type of story",
+    icon: <MessageSquare className="h-4 w-4" />,
+  });
+
+  // Bad reviews
+  options.push({
+    reason: "bad_reviews",
+    reasonDetail: null,
+    label: "Bad reviews / low quality",
+    icon: <Star className="h-4 w-4" />,
+  });
+
+  // Already seen
+  options.push({
+    reason: "seen_it",
+    reasonDetail: null,
+    label: "Already seen it",
+    icon: <Eye className="h-4 w-4" />,
+  });
+
+  const toggleOption = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const optionKey = (opt: DismissalReasonOption) => `${opt.reason}:${opt.reasonDetail || ""}`;
+
+  const handleSubmit = async () => {
+    if (selected.size === 0) return;
+    setSubmitting(true);
+    const reasons = options
+      .filter((opt) => selected.has(optionKey(opt)))
+      .map((opt) => ({ reason: opt.reason, reasonDetail: opt.reasonDetail }));
+    onDismiss(movie.movie.id, reasons);
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-md rounded-t-2xl bg-card p-5 sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold">Not interested</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
+              {movie.movie.title}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <p className="mb-3 text-xs text-muted-foreground">
+          Select why you&apos;re not interested. This trains the engine to show better recommendations.
+        </p>
+
+        <div className="max-h-64 space-y-1.5 overflow-y-auto">
+          {options.map((opt) => {
+            const key = optionKey(opt);
+            const isSelected = selected.has(key);
+            return (
+              <button
+                key={key}
+                onClick={() => toggleOption(key)}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                  isSelected
+                    ? "bg-destructive/15 text-destructive border border-destructive/30"
+                    : "bg-secondary/30 text-foreground hover:bg-secondary/50 border border-transparent"
+                }`}
+              >
+                {opt.icon}
+                <span className="flex-1">{opt.label}</span>
+                {isSelected && (
+                  <span className="text-xs font-medium">✓</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            className="flex-1"
+            disabled={selected.size === 0 || submitting}
+            onClick={handleSubmit}
+          >
+            {submitting ? "Saving..." : `Dismiss${selected.size > 0 ? ` (${selected.size})` : ""}`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RecommendationsPage() {
   const [city, setCity] = useState("Lucknow");
   const [date, setDate] = useState(todayInIndia());
@@ -279,6 +483,8 @@ export default function RecommendationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [dismissTarget, setDismissTarget] = useState<MovieRecommendation | null>(null);
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -316,6 +522,43 @@ export default function RecommendationsPage() {
     fetchRecommendations();
     return () => controller.abort();
   }, [requestUrl, refreshKey]);
+
+  const handleOpenDismiss = useCallback((movieId: string, _movieTitle: string) => {
+    const rec = data?.recommendations.find((r) => r.movie.id === movieId);
+    if (rec) setDismissTarget(rec);
+  }, [data]);
+
+  const handleDismiss = useCallback(async (
+    movieId: string,
+    reasons: Array<{ reason: string; reasonDetail?: string | null }>
+  ) => {
+    const rec = data?.recommendations.find((r) => r.movie.id === movieId);
+    if (!rec) return;
+
+    // Immediately hide from UI
+    setDismissedIds((prev) => new Set(prev).add(movieId));
+    setDismissTarget(null);
+
+    // Persist to API
+    try {
+      await fetch("/api/pvr/dismissals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          movieTitle: rec.movie.title,
+          pvrMovieId: movieId,
+          reasons,
+        }),
+      });
+    } catch {
+      // Silently fail — movie is already hidden in UI
+    }
+  }, [data]);
+
+  const visibleRecommendations = useMemo(
+    () => (data?.recommendations || []).filter((r) => !dismissedIds.has(r.movie.id)),
+    [data, dismissedIds]
+  );
 
   return (
     <div className="min-h-screen">
@@ -449,12 +692,13 @@ export default function RecommendationsPage() {
               Check the PVR endpoint availability, then refresh.
             </p>
           </div>
-        ) : data && data.recommendations.length > 0 ? (
+        ) : data && visibleRecommendations.length > 0 ? (
           <div className="space-y-4">
-            {data.recommendations.map((recommendation) => (
+            {visibleRecommendations.map((recommendation) => (
               <RecommendationCard
                 key={recommendation.movie.id}
                 recommendation={recommendation}
+                onDismiss={handleOpenDismiss}
               />
             ))}
           </div>
@@ -487,6 +731,14 @@ export default function RecommendationsPage() {
           </details>
         )}
       </div>
+
+      {dismissTarget && (
+        <DismissalModal
+          movie={dismissTarget}
+          onDismiss={handleDismiss}
+          onClose={() => setDismissTarget(null)}
+        />
+      )}
     </div>
   );
 }

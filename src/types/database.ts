@@ -772,6 +772,35 @@ export interface Database {
           is_active?: boolean;
         };
       };
+      movie_dismissals: {
+        Row: {
+          id: string;
+          user_id: string;
+          movie_title: string;
+          pvr_movie_id: string;
+          reason: "language" | "genre" | "director" | "cast" | "story" | "seen_it" | "bad_reviews";
+          reason_detail: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          movie_title: string;
+          pvr_movie_id: string;
+          reason: "language" | "genre" | "director" | "cast" | "story" | "seen_it" | "bad_reviews";
+          reason_detail?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          movie_title?: string;
+          pvr_movie_id?: string;
+          reason?: "language" | "genre" | "director" | "cast" | "story" | "seen_it" | "bad_reviews";
+          reason_detail?: string | null;
+          created_at?: string;
+        };
+      };
     };
     Views: object;
     Functions: object;
@@ -893,3 +922,6 @@ export interface GiftCardUsageEntry {
   amount_used: number;
   purpose?: "ticket" | "fnb";
 }
+
+export type MovieDismissal = Database["public"]["Tables"]["movie_dismissals"]["Row"];
+export type MovieDismissalInsert = Database["public"]["Tables"]["movie_dismissals"]["Insert"];

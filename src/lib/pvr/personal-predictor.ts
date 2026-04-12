@@ -59,6 +59,14 @@ export interface PersonalPredictionModel {
   explicitAudiAdjustments: Map<string, AverageStat>;
   formatNamesById: Map<string, string>;
   theaterNamesById: Map<string, string>;
+  // Dismissal signals — each entry is an independent, specific signal
+  dismissedTitles: Set<string>;
+  dismissedLanguages: Set<string>;
+  dismissedGenres: Set<string>;
+  dismissedDirectors: Set<string>;
+  dismissedCast: Set<string>;
+  dismissedStoryCount: number;
+  dismissedBadReviewsCount: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -369,6 +377,39 @@ export function buildPersonalPredictionModel(
     explicitAudiAdjustments,
     formatNamesById,
     theaterNamesById,
+    // Build dismissal sets from user data
+    dismissedTitles: new Set(
+      (userData.dismissals || [])
+        .filter((d) => d.reason === "seen_it" || d.reason === "story" || d.reason === "bad_reviews")
+        .map((d) => normalizeKey(d.movieTitle))
+        .filter((key): key is string => key !== null)
+    ),
+    dismissedLanguages: new Set(
+      (userData.dismissals || [])
+        .filter((d) => d.reason === "language" && d.reasonDetail)
+        .map((d) => normalizeKey(d.reasonDetail!))
+        .filter((key): key is string => key !== null)
+    ),
+    dismissedGenres: new Set(
+      (userData.dismissals || [])
+        .filter((d) => d.reason === "genre" && d.reasonDetail)
+        .map((d) => normalizeKey(d.reasonDetail!))
+        .filter((key): key is string => key !== null)
+    ),
+    dismissedDirectors: new Set(
+      (userData.dismissals || [])
+        .filter((d) => d.reason === "director" && d.reasonDetail)
+        .map((d) => normalizeKey(d.reasonDetail!))
+        .filter((key): key is string => key !== null)
+    ),
+    dismissedCast: new Set(
+      (userData.dismissals || [])
+        .filter((d) => d.reason === "cast" && d.reasonDetail)
+        .map((d) => normalizeKey(d.reasonDetail!))
+        .filter((key): key is string => key !== null)
+    ),
+    dismissedStoryCount: (userData.dismissals || []).filter((d) => d.reason === "story").length,
+    dismissedBadReviewsCount: (userData.dismissals || []).filter((d) => d.reason === "bad_reviews").length,
   };
 }
 
@@ -408,12 +449,63 @@ export function predictMoviePersonalFit(
     };
   }
 
+  // Check if this specific movie was dismissed
+  const movieKey = normalizeKey(movie.title);
+  if (movieKey && model.dismissedTitles.has(movieKey)) {
+    return {
+      predictedRating: model.globalAverage,
+      confidence: 0.99,
+      confidenceLabel: "high",
+      crowdDelta: null,
+      reasons: ["Not interested"],
+      excluded: true,
+    };
+  }
+
   const reasons: string[] = [];
   // Reduced prior weight from 4→2 to let specific signals dominate
   const signals: Array<{ value: number; weight: number }> = [
     { value: model.globalAverage, weight: 2 },
   ];
   let supportWeight = 0;
+
+  // --- Dismissal penalties (specific, not grouped) ---
+  let dismissalPenalty = 0;
+  // Language: "Not interested in Punjabi" ONLY penalizes Punjabi
+  for (const lang of movie.languages) {
+    const langKey = normalizeKey(lang);
+    if (langKey && model.dismissedLanguages.has(langKey)) {
+      dismissalPenalty -= 1.5;
+      pushReason(reasons, `You've said not interested in ${lang} movies`);
+      break; // one penalty per dimension
+    }
+  }
+  // Genre: penalizes that specific genre only
+  for (const genre of movie.genres) {
+    const genreKey = normalizeKey(genre);
+    if (genreKey && model.dismissedGenres.has(genreKey)) {
+      dismissalPenalty -= 0.8;
+      pushReason(reasons, `You've said not interested in ${genre}`);
+      break;
+    }
+  }
+  // Director
+  if (movie.director) {
+    const dirKey = normalizeKey(movie.director);
+    if (dirKey && model.dismissedDirectors.has(dirKey)) {
+      dismissalPenalty -= 1.0;
+      pushReason(reasons, `You've said not interested in ${movie.director}'s films`);
+    }
+  }
+  // Cast
+  for (const actor of (movie.cast || []).slice(0, 3)) {
+    const castKey = normalizeKey(actor);
+    if (castKey && model.dismissedCast.has(castKey)) {
+      dismissalPenalty -= 1.0;
+      pushReason(reasons, `You've said not interested in ${actor}`);
+      break;
+    }
+  }
 
   // --- Genre signal ---
   const genrePredictions = movie.genres
@@ -694,6 +786,9 @@ export function predictMoviePersonalFit(
       pushReason(reasons, "Limited personal signal — leaning on crowd rating");
     }
   }
+
+  // Apply dismissal penalties
+  predictedRating += dismissalPenalty;
 
   predictedRating = round1(clamp(predictedRating, 1, 10));
 
