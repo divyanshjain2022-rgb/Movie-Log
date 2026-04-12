@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Calendar, Film } from "lucide-react";
@@ -136,7 +136,7 @@ function compressImage(
   });
 }
 
-export default function NewMoviePage() {
+function NewMoviePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
@@ -569,5 +569,23 @@ export default function NewMoviePage() {
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+export default function NewMoviePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen flex-col pb-20">
+          <div className="p-4 space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        </div>
+      }
+    >
+      <NewMoviePageInner />
+    </Suspense>
   );
 }
