@@ -34,6 +34,7 @@ export interface ShowPredictionAdjustment {
 
 export interface PersonalPredictionModel {
   globalAverage: number;
+  ratingStdDev: number;
   historyCount: number;
   watchedTitles: Map<string, WatchedTitleStat>;
   watchlist: Map<string, WatchlistStat>;
@@ -202,6 +203,12 @@ export function buildPersonalPredictionModel(
     ? ratedMovies.reduce((sum, movie) => sum + (movie.rating || 0), 0) / ratedMovies.length
     : 6.7;
 
+  // Compute rating standard deviation for spread calibration
+  const ratingVariance = ratedMovies.length > 1
+    ? ratedMovies.reduce((sum, movie) => sum + Math.pow((movie.rating || 0) - globalAverage, 2), 0) / ratedMovies.length
+    : 2.25;
+  const ratingStdDev = Math.sqrt(ratingVariance);
+
   const formatNamesById = new Map(
     userData.formats.map((format) => [format.id, format.name])
   );
@@ -337,6 +344,7 @@ export function buildPersonalPredictionModel(
 
   return {
     globalAverage,
+    ratingStdDev,
     historyCount: ratedMovies.length,
     watchedTitles,
     watchlist,
@@ -401,8 +409,9 @@ export function predictMoviePersonalFit(
   }
 
   const reasons: string[] = [];
+  // Reduced prior weight from 4→2 to let specific signals dominate
   const signals: Array<{ value: number; weight: number }> = [
-    { value: model.globalAverage, weight: 4 },
+    { value: model.globalAverage, weight: 2 },
   ];
   let supportWeight = 0;
 
@@ -527,32 +536,43 @@ export function predictMoviePersonalFit(
   }
 
   // --- Keyword/theme signal ---
+  // Sort by deviation from average (strongest signal first), not just frequency
   const keywordPredictions = (movie.keywords || [])
     .map((kw) => ({ kw, stat: model.keywordMeans.get(normalizeKey(kw)) }))
     .filter((entry) => entry.stat && entry.stat.count >= 2)
     .map((entry) => ({
       kw: entry.kw,
-      mean: shrinkTowardMean(entry.stat, model.globalAverage, 3) || model.globalAverage,
+      mean: shrinkTowardMean(entry.stat, model.globalAverage, 2) || model.globalAverage,
+      rawMean: (entry.stat!.sum / entry.stat!.count),
       count: entry.stat?.count || 0,
+      deviation: Math.abs((shrinkTowardMean(entry.stat, model.globalAverage, 2) || model.globalAverage) - model.globalAverage),
     }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
+    .sort((a, b) => b.deviation - a.deviation)
+    .slice(0, 4);
 
   if (keywordPredictions.length > 0) {
+    // Weight each keyword by both count AND how strongly it deviates from average
     const kwValue = weightedAverage(
       keywordPredictions.map((entry) => ({
         value: entry.mean,
-        weight: Math.min(1.0, 0.4 + entry.count * 0.12),
+        weight: Math.min(2.0, (0.4 + entry.count * 0.15) * (1 + entry.deviation * 0.6)),
       })),
       model.globalAverage
     );
-    const kwWeight = Math.min(1.0, keywordPredictions.reduce((sum, entry) => sum + entry.count, 0) * 0.1);
+    // Keywords with strong deviation get much higher composite weight
+    const maxDeviation = keywordPredictions[0].deviation;
+    const kwWeight = Math.min(
+      2.5,
+      (keywordPredictions.reduce((sum, entry) => sum + entry.count, 0) * 0.1) * (1 + maxDeviation * 0.8)
+    );
     signals.push({ value: kwValue, weight: kwWeight });
     supportWeight += kwWeight;
 
     const bestKw = keywordPredictions[0];
-    if (bestKw.mean >= model.globalAverage + 0.4) {
-      pushReason(reasons, `Your '${bestKw.kw}' movies average ${round1(bestKw.mean)}`);
+    if (bestKw.mean >= model.globalAverage + 0.3) {
+      pushReason(reasons, `Your '${bestKw.kw}' movies average ${round1(bestKw.rawMean)}`);
+    } else if (bestKw.mean <= model.globalAverage - 0.3) {
+      pushReason(reasons, `Your '${bestKw.kw}' movies only average ${round1(bestKw.rawMean)}`);
     }
   }
 
@@ -651,6 +671,28 @@ export function predictMoviePersonalFit(
       reasons,
       watchlistItem.priority >= 2 ? "High priority on your watchlist" : "On your watchlist"
     );
+  }
+
+  // --- Spread calibration ---
+  // If predictions are compressed (low std dev), scale away from center
+  // to match the user's actual rating spread
+  if (model.historyCount >= 12 && model.ratingStdDev > 0.5) {
+    const deviation = predictedRating - model.globalAverage;
+    // Amplify deviations by up to 1.5x to match user's natural spread
+    const spreadFactor = clamp(model.ratingStdDev / 1.2, 1.0, 1.6);
+    predictedRating = model.globalAverage + deviation * spreadFactor;
+  }
+
+  // --- Low-signal TMDB anchoring ---
+  // When we have few personal signals, lean toward TMDB instead of
+  // defaulting to the inflated global average
+  if (supportWeight < 3 && typeof movie.tmdbRating === "number" && movie.tmdbRating > 0) {
+    const tmdbAnchor = movie.tmdbRating + (average(model.tmdbDeltaOverall) || 0);
+    const anchorBlend = clamp(1 - supportWeight / 3, 0.15, 0.5);
+    predictedRating = predictedRating * (1 - anchorBlend) + tmdbAnchor * anchorBlend;
+    if (supportWeight < 1) {
+      pushReason(reasons, "Limited personal signal — leaning on crowd rating");
+    }
   }
 
   predictedRating = round1(clamp(predictedRating, 1, 10));
