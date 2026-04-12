@@ -12,6 +12,12 @@ interface AverageStat {
   count: number;
 }
 
+interface FranchiseStat {
+  name: string;
+  sum: number;
+  count: number;
+}
+
 interface WatchedTitleStat {
   bestRating: number;
 }
@@ -32,8 +38,12 @@ export interface PersonalPredictionModel {
   watchedTitles: Map<string, WatchedTitleStat>;
   watchlist: Map<string, WatchlistStat>;
   genreMeans: Map<string, AverageStat>;
+  genrePairMeans: Map<string, AverageStat>;
   languageMeans: Map<string, AverageStat>;
   directorMeans: Map<string, AverageStat>;
+  castMeans: Map<string, AverageStat>;
+  keywordMeans: Map<string, AverageStat>;
+  franchiseMeans: Map<string, FranchiseStat>;
   formatMeans: Map<string, AverageStat>;
   audiMeans: Map<string, AverageStat>;
   theaterMeans: Map<string, AverageStat>;
@@ -43,6 +53,7 @@ export interface PersonalPredictionModel {
   tmdbDeltaByGenre: Map<string, AverageStat>;
   tmdbDeltaByLanguage: Map<string, AverageStat>;
   tmdbDeltaByDirector: Map<string, AverageStat>;
+  tmdbDeltaByCast: Map<string, AverageStat>;
   explicitTheaterAdjustments: Map<string, AverageStat>;
   explicitAudiAdjustments: Map<string, AverageStat>;
   formatNamesById: Map<string, string>;
@@ -69,14 +80,32 @@ function titleMatches(a: string, b: string): boolean {
   return left.includes(right) || right.includes(left);
 }
 
-function addStat(map: Map<string, AverageStat>, rawKey: string | null | undefined, value: number): void {
+function addStat(map: Map<string, AverageStat>, rawKey: string | null | undefined, value: number, weight = 1): void {
   if (!rawKey || !Number.isFinite(value)) return;
   const key = normalizeKey(rawKey);
   if (!key) return;
   const current = map.get(key) || { sum: 0, count: 0 };
-  current.sum += value;
-  current.count += 1;
+  current.sum += value * weight;
+  current.count += weight;
   map.set(key, current);
+}
+
+function getRecencyWeight(dateStr: string): number {
+  const daysSince = (Date.now() - new Date(dateStr).getTime()) / 86_400_000;
+  if (!Number.isFinite(daysSince) || daysSince < 0) return 1;
+  return 0.4 + 0.6 * Math.exp(-daysSince / 365);
+}
+
+function makeGenrePairs(genres: string[]): string[] {
+  if (!genres || genres.length < 2) return [];
+  const sorted = genres.map(normalizeKey).filter(Boolean).sort();
+  const pairs: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    for (let j = i + 1; j < sorted.length; j++) {
+      pairs.push(`${sorted[i]}|${sorted[j]}`);
+    }
+  }
+  return pairs;
 }
 
 function average(stat: AverageStat | null | undefined): number | null {
@@ -183,8 +212,12 @@ export function buildPersonalPredictionModel(
   const watchedTitles = new Map<string, WatchedTitleStat>();
   const watchlist = new Map<string, WatchlistStat>();
   const genreMeans = new Map<string, AverageStat>();
+  const genrePairMeans = new Map<string, AverageStat>();
   const languageMeans = new Map<string, AverageStat>();
   const directorMeans = new Map<string, AverageStat>();
+  const castMeans = new Map<string, AverageStat>();
+  const keywordMeans = new Map<string, AverageStat>();
+  const franchiseMeans = new Map<string, FranchiseStat>();
   const formatMeans = new Map<string, AverageStat>();
   const audiMeans = new Map<string, AverageStat>();
   const theaterMeans = new Map<string, AverageStat>();
@@ -193,14 +226,25 @@ export function buildPersonalPredictionModel(
   const tmdbDeltaByGenre = new Map<string, AverageStat>();
   const tmdbDeltaByLanguage = new Map<string, AverageStat>();
   const tmdbDeltaByDirector = new Map<string, AverageStat>();
+  const tmdbDeltaByCast = new Map<string, AverageStat>();
   const explicitTheaterAdjustments = new Map<string, AverageStat>();
   const explicitAudiAdjustments = new Map<string, AverageStat>();
 
   let tmdbDeltaOverall: AverageStat | null = null;
 
+  // Build franchise name lookup from user data
+  const franchiseNamesById = new Map<string, string>();
+  if (userData.franchises) {
+    for (const f of userData.franchises) {
+      franchiseNamesById.set(f.id, f.name);
+    }
+  }
+
   for (const movie of ratedMovies) {
     const rating = movie.rating || 0;
     const titleKey = normalizeKey(movie.title);
+    // Recency decay: recent movies get more weight
+    const rw = getRecencyWeight(movie.date);
 
     if (titleKey) {
       const current = watchedTitles.get(titleKey) || { bestRating: 0 };
@@ -208,28 +252,60 @@ export function buildPersonalPredictionModel(
       watchedTitles.set(titleKey, current);
     }
 
-    for (const genre of movie.genres || []) addStat(genreMeans, genre, rating);
-    addStat(languageMeans, movie.language, rating);
-    addStat(directorMeans, movie.director, rating);
+    for (const genre of movie.genres || []) addStat(genreMeans, genre, rating, rw);
+    // Genre-pair interactions
+    for (const pair of makeGenrePairs(movie.genres || [])) {
+      const current = genrePairMeans.get(pair) || { sum: 0, count: 0 };
+      current.sum += rating * rw;
+      current.count += rw;
+      genrePairMeans.set(pair, current);
+    }
+    addStat(languageMeans, movie.language, rating, rw);
+    addStat(directorMeans, movie.director, rating, rw);
+
+    // Cast affinity
+    for (const actor of movie.castMembers || []) {
+      addStat(castMeans, actor, rating, rw);
+    }
+
+    // Keyword means
+    for (const kw of movie.keywords || []) {
+      addStat(keywordMeans, kw, rating, rw);
+    }
+
+    // Franchise means
+    if (movie.franchiseId) {
+      const fname = franchiseNamesById.get(movie.franchiseId) || movie.franchiseId;
+      const fkey = normalizeKey(fname);
+      if (fkey) {
+        const current = franchiseMeans.get(fkey) || { name: fname, sum: 0, count: 0 };
+        current.sum += rating * rw;
+        current.count += rw;
+        franchiseMeans.set(fkey, current);
+      }
+    }
 
     const formatName = movie.formatId ? formatNamesById.get(movie.formatId) || null : null;
-    addStat(formatMeans, formatName, rating);
-    addStat(audiMeans, normalizeAudiValue(movie.audi), rating);
+    addStat(formatMeans, formatName, rating, rw);
+    addStat(audiMeans, normalizeAudiValue(movie.audi), rating, rw);
 
     const theaterName = getTheaterName(movie.theaterId, theaterNamesById);
-    addStat(theaterMeans, theaterName, rating);
-    addStat(timeBucketMeans, getTimeBucket(movie.showtime), rating);
-    addStat(weekdayMeans, getWeekday(movie.date), rating);
+    addStat(theaterMeans, theaterName, rating, rw);
+    addStat(timeBucketMeans, getTimeBucket(movie.showtime), rating, rw);
+    addStat(weekdayMeans, getWeekday(movie.date), rating, rw);
 
     if (typeof movie.tmdbRating === "number" && movie.tmdbRating > 0) {
       const delta = rating - movie.tmdbRating;
       tmdbDeltaOverall = tmdbDeltaOverall || { sum: 0, count: 0 };
-      tmdbDeltaOverall.sum += delta;
-      tmdbDeltaOverall.count += 1;
+      tmdbDeltaOverall.sum += delta * rw;
+      tmdbDeltaOverall.count += rw;
 
-      for (const genre of movie.genres || []) addStat(tmdbDeltaByGenre, genre, delta);
-      addStat(tmdbDeltaByLanguage, movie.language, delta);
-      addStat(tmdbDeltaByDirector, movie.director, delta);
+      for (const genre of movie.genres || []) addStat(tmdbDeltaByGenre, genre, delta, rw);
+      addStat(tmdbDeltaByLanguage, movie.language, delta, rw);
+      addStat(tmdbDeltaByDirector, movie.director, delta, rw);
+      for (const actor of movie.castMembers || []) {
+        addStat(tmdbDeltaByCast, actor, delta, rw);
+      }
     }
   }
 
@@ -265,8 +341,12 @@ export function buildPersonalPredictionModel(
     watchedTitles,
     watchlist,
     genreMeans,
+    genrePairMeans,
     languageMeans,
     directorMeans,
+    castMeans,
+    keywordMeans,
+    franchiseMeans,
     formatMeans,
     audiMeans,
     theaterMeans,
@@ -276,6 +356,7 @@ export function buildPersonalPredictionModel(
     tmdbDeltaByGenre,
     tmdbDeltaByLanguage,
     tmdbDeltaByDirector,
+    tmdbDeltaByCast,
     explicitTheaterAdjustments,
     explicitAudiAdjustments,
     formatNamesById,
@@ -325,6 +406,7 @@ export function predictMoviePersonalFit(
   ];
   let supportWeight = 0;
 
+  // --- Genre signal ---
   const genrePredictions = movie.genres
     .map((genre) => ({
       genre,
@@ -358,6 +440,30 @@ export function predictMoviePersonalFit(
     }
   }
 
+  // --- Genre-pair synergy signal ---
+  const pairKeys = makeGenrePairs(movie.genres);
+  const pairPredictions = pairKeys
+    .map((pair) => ({ pair, stat: model.genrePairMeans.get(pair) }))
+    .filter((entry) => entry.stat && entry.stat.count >= 2)
+    .map((entry) => ({
+      pair: entry.pair,
+      mean: shrinkTowardMean(entry.stat, model.globalAverage, 2) || model.globalAverage,
+      count: entry.stat?.count || 0,
+    }));
+
+  if (pairPredictions.length > 0) {
+    const bestPair = pairPredictions.sort((a, b) => b.count - a.count)[0];
+    const pairWeight = Math.min(1.2, 0.5 + bestPair.count * 0.15);
+    signals.push({ value: bestPair.mean, weight: pairWeight });
+    supportWeight += pairWeight;
+
+    if (bestPair.mean >= model.globalAverage + 0.3) {
+      const pairLabel = bestPair.pair.split("|").map((g) => g[0].toUpperCase() + g.slice(1)).join(" + ");
+      pushReason(reasons, `Your ${pairLabel} combo averages strong`);
+    }
+  }
+
+  // --- Language signal ---
   const languageStat = movie.languages
     .map((language) => model.languageMeans.get(normalizeKey(language)))
     .find((stat) => Boolean(stat?.count));
@@ -372,6 +478,7 @@ export function predictMoviePersonalFit(
     }
   }
 
+  // --- Director signal ---
   const directorStat = movie.director
     ? model.directorMeans.get(normalizeKey(movie.director))
     : null;
@@ -386,6 +493,86 @@ export function predictMoviePersonalFit(
     }
   }
 
+  // --- Cast affinity signal ---
+  const castPredictions = (movie.cast || [])
+    .map((actor) => ({
+      actor,
+      stat: model.castMeans.get(normalizeKey(actor)),
+    }))
+    .filter((entry) => entry.stat && entry.stat.count >= 2)
+    .map((entry) => ({
+      actor: entry.actor,
+      mean: shrinkTowardMean(entry.stat, model.globalAverage, 2) || model.globalAverage,
+      count: entry.stat?.count || 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 2);
+
+  if (castPredictions.length > 0) {
+    const castValue = weightedAverage(
+      castPredictions.map((entry) => ({
+        value: entry.mean,
+        weight: Math.min(1.5, 0.7 + entry.count * 0.2),
+      })),
+      model.globalAverage
+    );
+    const castWeight = Math.min(2.0, castPredictions.reduce((sum, entry) => sum + entry.count, 0) * 0.2);
+    signals.push({ value: castValue, weight: castWeight });
+    supportWeight += castWeight;
+
+    const topActor = castPredictions[0];
+    if (topActor.mean >= model.globalAverage + 0.35) {
+      pushReason(reasons, `Strong history with ${topActor.actor} (avg ${round1(topActor.mean)} over ${Math.round(topActor.count)} films)`);
+    }
+  }
+
+  // --- Keyword/theme signal ---
+  const keywordPredictions = (movie.keywords || [])
+    .map((kw) => ({ kw, stat: model.keywordMeans.get(normalizeKey(kw)) }))
+    .filter((entry) => entry.stat && entry.stat.count >= 2)
+    .map((entry) => ({
+      kw: entry.kw,
+      mean: shrinkTowardMean(entry.stat, model.globalAverage, 3) || model.globalAverage,
+      count: entry.stat?.count || 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+
+  if (keywordPredictions.length > 0) {
+    const kwValue = weightedAverage(
+      keywordPredictions.map((entry) => ({
+        value: entry.mean,
+        weight: Math.min(1.0, 0.4 + entry.count * 0.12),
+      })),
+      model.globalAverage
+    );
+    const kwWeight = Math.min(1.0, keywordPredictions.reduce((sum, entry) => sum + entry.count, 0) * 0.1);
+    signals.push({ value: kwValue, weight: kwWeight });
+    supportWeight += kwWeight;
+
+    const bestKw = keywordPredictions[0];
+    if (bestKw.mean >= model.globalAverage + 0.4) {
+      pushReason(reasons, `Your '${bestKw.kw}' movies average ${round1(bestKw.mean)}`);
+    }
+  }
+
+  // --- Franchise signal ---
+  for (const [fkey, fstat] of model.franchiseMeans) {
+    if (fstat.count < 2) continue;
+    if (titleMatches(movie.title, fstat.name)) {
+      const fMean = (fstat.sum / fstat.count);
+      const shrunkMean = (model.globalAverage * 2 + fstat.sum) / (2 + fstat.count);
+      const fWeight = Math.min(1.5, 0.6 + fstat.count * 0.2);
+      signals.push({ value: shrunkMean, weight: fWeight });
+      supportWeight += fWeight;
+      if (shrunkMean >= model.globalAverage + 0.3) {
+        pushReason(reasons, `You average ${round1(fMean)} across ${Math.round(fstat.count)} ${fstat.name} films`);
+      }
+      break;
+    }
+  }
+
+  // --- TMDB calibration signal ---
   if (typeof movie.tmdbRating === "number" && movie.tmdbRating > 0) {
     const tmdbDeltas: Array<{ value: number; weight: number }> = [];
     const overallDelta = average(model.tmdbDeltaOverall);
@@ -420,6 +607,18 @@ export function predictMoviePersonalFit(
         tmdbDeltas.push({
           value: delta,
           weight: Math.min(1.2, 0.5 + (stat?.count || 0) * 0.2),
+        });
+      }
+    }
+
+    // Cast TMDB delta
+    for (const actor of (movie.cast || []).slice(0, 2)) {
+      const stat = model.tmdbDeltaByCast.get(normalizeKey(actor));
+      const delta = average(stat);
+      if (delta !== null) {
+        tmdbDeltas.push({
+          value: delta,
+          weight: Math.min(0.9, 0.4 + (stat?.count || 0) * 0.12),
         });
       }
     }

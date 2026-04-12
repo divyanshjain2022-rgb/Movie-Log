@@ -548,8 +548,19 @@ export function buildRecommendations(
     const targetPrice = getTargetPrice(show, profile, formatWeight);
     const priceScore = getPriceScore(price, targetPrice);
     const showAdjustment = predictShowAdjustment(show, model);
+    // Release-day hype: opening weekend energy boosts the experience
+    let releaseHypeBoost = 0;
+    if (candidate.movie.releaseDate) {
+      const releaseTime = Date.parse(candidate.movie.releaseDate);
+      const showTime = Date.parse(show.showDate);
+      if (Number.isFinite(releaseTime) && Number.isFinite(showTime)) {
+        const daysAfterRelease = Math.round((showTime - releaseTime) / 86_400_000);
+        if (daysAfterRelease >= 0 && daysAfterRelease <= 3) releaseHypeBoost = 0.15;
+        else if (daysAfterRelease > 3 && daysAfterRelease <= 7) releaseHypeBoost = 0.08;
+      }
+    }
     const predictedPersonalRating = round1(
-      clamp(candidate.fit.predictedRating + showAdjustment.delta, 1, 10)
+      clamp(candidate.fit.predictedRating + showAdjustment.delta + releaseHypeBoost, 1, 10)
     );
     const predictionConfidence = round2(
       clamp(candidate.fit.confidence + showAdjustment.confidenceBoost, 0.2, 0.99)

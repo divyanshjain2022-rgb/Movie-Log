@@ -27,6 +27,8 @@ export interface PvrMovie {
   languages: string[];
   genres: string[];
   director?: string | null;
+  cast?: string[] | null;
+  keywords?: string[] | null;
   tmdbRating?: number | null;
   tmdbVoteCount?: number | null;
   posterUrl: string | null;
@@ -82,6 +84,8 @@ export interface UserMovieForRecommendation {
   language: string | null;
   director: string | null;
   castMembers: string[] | null;
+  keywords: string[] | null;
+  franchiseId: string | null;
   audi: string | null;
   seat: string | null;
   date: string;
@@ -133,6 +137,11 @@ export interface UserRewatchOption {
   value: number;
 }
 
+export interface UserFranchise {
+  id: string;
+  name: string;
+}
+
 export interface RecommendationUserData {
   movies: UserMovieForRecommendation[];
   watchlist: UserWatchlistItem[];
@@ -140,6 +149,7 @@ export interface RecommendationUserData {
   theaters: UserTheaterPreference[];
   theaterRatings: UserTheaterRating[];
   rewatchOptions: UserRewatchOption[];
+  franchises?: UserFranchise[];
   formulaParams: FormulaParams | null;
 }
 
