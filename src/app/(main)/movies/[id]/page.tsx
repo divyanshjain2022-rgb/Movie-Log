@@ -180,6 +180,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
     let isCancelled = false;
 
     async function refreshTmdbData() {
+      if (!movie) return;
       try {
         setIsRefreshingTmdb(true);
 
