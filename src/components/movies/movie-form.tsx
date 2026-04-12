@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type FieldErrors, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,11 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { RatingSlider } from "./rating-slider";
 import { Plus, X } from "lucide-react";
+import {
+  formatAudiDisplay,
+  getAudiDefaultForFormat,
+  normalizeAudiValue,
+} from "@/lib/audi";
 import { formatCurrency } from "@/lib/formula";
 import { Switch } from "@/components/ui/switch";
 import type {
@@ -35,6 +41,8 @@ import type {
   PassportWithUsage,
 } from "@/types";
 import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
+
+const supabase = createClient();
 
 /** Reusable gift card selector for ticket or F&B */
 function GiftCardSelector({
@@ -297,6 +305,15 @@ export function MovieForm({
       language: initialData?.language || "",
     },
   });
+  const audiField = register("audi");
+  const selectedTheaterId = watch("theater_id") || "";
+  const selectedFormatId = watch("format_id") || "";
+  const audiValue = watch("audi") || "";
+  const selectedTheater = theaters.find((theater) => theater.id === selectedTheaterId) || null;
+  const selectedFormat = formats.find((format) => format.id === selectedFormatId) || null;
+  const [formatDefaultOverrides, setFormatDefaultOverrides] = useState<Record<string, string | null>>({});
+  const [lastAppliedDefaultAudi, setLastAppliedDefaultAudi] = useState<string | null>(null);
+  const [isSavingFormatDefault, setIsSavingFormatDefault] = useState(false);
 
   const rating = watch("rating") || 5;
 
@@ -318,6 +335,23 @@ export function MovieForm({
 
   // State for rewatch
   const [isRewatch, setIsRewatch] = useState(initialData?.is_rewatch || false);
+
+  const selectedTheaterDefaultAudi = getAudiDefaultForFormat(
+    selectedTheater?.default_audi_by_format,
+    selectedFormatId
+  );
+  const selectedFormatDefaultAudi = normalizeAudiValue(
+    selectedFormat
+      ? formatDefaultOverrides[selectedFormat.id] ?? selectedFormat.default_audi
+      : null
+  );
+  const selectedResolvedDefaultAudi = selectedTheaterDefaultAudi || selectedFormatDefaultAudi;
+  const selectedResolvedDefaultLabel = formatAudiDisplay(selectedResolvedDefaultAudi);
+  const selectedResolvedDefaultSource = selectedTheaterDefaultAudi && selectedTheater
+    ? `${selectedTheater.name} for ${selectedFormat?.name}`
+    : selectedFormat
+      ? `${selectedFormat.name} everywhere`
+      : null;
 
   const addPaymentMethod = () => {
     setPaymentMethods(prev => [...prev, { method: "UPI", amount: 0 }]);
@@ -410,9 +444,96 @@ export function MovieForm({
     }
   }, [initialData, setValue]);
 
+  useEffect(() => {
+    const normalizedCurrentAudi = normalizeAudiValue(audiValue);
+
+    if (!selectedResolvedDefaultAudi) {
+      if (lastAppliedDefaultAudi && normalizedCurrentAudi !== lastAppliedDefaultAudi) {
+        setLastAppliedDefaultAudi(null);
+      }
+      return;
+    }
+
+    if (normalizedCurrentAudi === selectedResolvedDefaultAudi && lastAppliedDefaultAudi !== selectedResolvedDefaultAudi) {
+      setLastAppliedDefaultAudi(selectedResolvedDefaultAudi);
+      return;
+    }
+
+    if (!normalizedCurrentAudi || (lastAppliedDefaultAudi && normalizedCurrentAudi === lastAppliedDefaultAudi)) {
+      if (normalizedCurrentAudi !== selectedResolvedDefaultAudi) {
+        setValue("audi", selectedResolvedDefaultAudi, { shouldDirty: true });
+      }
+      if (lastAppliedDefaultAudi !== selectedResolvedDefaultAudi) {
+        setLastAppliedDefaultAudi(selectedResolvedDefaultAudi);
+      }
+    }
+  }, [audiValue, lastAppliedDefaultAudi, selectedResolvedDefaultAudi, setValue]);
+
+  const normalizeAudiField = useCallback(() => {
+    const normalized = normalizeAudiValue(audiValue);
+    setValue("audi", normalized || "", { shouldDirty: true, shouldValidate: true });
+    if (selectedResolvedDefaultAudi && normalized === selectedResolvedDefaultAudi) {
+      setLastAppliedDefaultAudi(selectedResolvedDefaultAudi);
+    } else if (normalized !== lastAppliedDefaultAudi) {
+      setLastAppliedDefaultAudi(null);
+    }
+  }, [audiValue, lastAppliedDefaultAudi, selectedResolvedDefaultAudi, setValue]);
+
+  const handleSaveFormatDefault = useCallback(async () => {
+    if (!selectedFormat) {
+      toast.error("Select a format first");
+      return;
+    }
+
+    const normalizedAudi = normalizeAudiValue(audiValue);
+    if (!normalizedAudi) {
+      toast.error("Enter the screen or audi number first");
+      return;
+    }
+
+    try {
+      setIsSavingFormatDefault(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const { error: formatError } = await supabase
+        .from("formats")
+        .update({ default_audi: normalizedAudi } as never)
+        .eq("id", selectedFormat.id)
+        .eq("user_id", user.id);
+
+      if (formatError) throw formatError;
+
+      const { error: moviesError } = await supabase
+        .from("movies")
+        .update({ audi: normalizedAudi } as never)
+        .eq("user_id", user.id)
+        .eq("format_id", selectedFormat.id);
+
+      if (moviesError) throw moviesError;
+
+      setFormatDefaultOverrides((current) => ({
+        ...current,
+        [selectedFormat.id]: normalizedAudi,
+      }));
+      setLastAppliedDefaultAudi(normalizedAudi);
+      setValue("audi", normalizedAudi, { shouldDirty: true, shouldValidate: true });
+      toast.success(
+        `${selectedFormat.name} now defaults to ${formatAudiDisplay(normalizedAudi) || normalizedAudi}`
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save the format default"
+      );
+    } finally {
+      setIsSavingFormatDefault(false);
+    }
+  }, [audiValue, selectedFormat, setValue]);
+
   const onFormSubmit = async (data: MovieFormValues) => {
     const formData: MovieFormData = {
       ...data,
+      audi: normalizeAudiValue(data.audi) || undefined,
       payment_methods: paymentMethods.length > 0 ? paymentMethods : undefined,
       is_rewatch: isRewatch,
       companion_ids: selectedCompanionIds.length > 0 ? selectedCompanionIds : undefined,
@@ -606,10 +727,36 @@ export function MovieForm({
               <Label htmlFor="audi">Audi/Screen</Label>
               <Input
                 id="audi"
-                {...register("audi")}
-                placeholder="Screen 4"
+                {...audiField}
+                placeholder="6"
                 className="mt-1"
+                onBlur={(event) => {
+                  audiField.onBlur(event);
+                  normalizeAudiField();
+                }}
               />
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>Prefixes like “Audi 6” and “Screen 6” are normalized automatically.</span>
+                {selectedFormat && selectedResolvedDefaultLabel && selectedResolvedDefaultSource && (
+                  <span>Saved default for {selectedResolvedDefaultSource}: {selectedResolvedDefaultLabel}</span>
+                )}
+              </div>
+              {selectedFormat && (
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={handleSaveFormatDefault}
+                    disabled={isSavingFormatDefault || !normalizeAudiValue(audiValue)}
+                  >
+                    {isSavingFormatDefault
+                      ? "Saving format default..."
+                      : `Save ${formatAudiDisplay(audiValue) || "screen"} for ${selectedFormat.name} everywhere`}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

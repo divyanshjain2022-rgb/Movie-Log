@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useMemo } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Edit, Trash2, ExternalLink, Share2 } from "lucide-react";
@@ -24,7 +24,8 @@ import { PageHeader } from "@/components/shared";
 import { PhotoGallery } from "@/components/movies/photo-gallery";
 import { ShareableCard } from "@/components/movies/shareable-card";
 import { TheaterRatingForm } from "@/components/movies/theater-rating-form";
-import { useMovie, useDeleteMovie, useMovies } from "@/hooks";
+import { useDeleteMovie, useMovie, useMovies, useUpdateMovie } from "@/hooks";
+import { formatAudiDisplay } from "@/lib/audi";
 import {
   formatCurrency,
   formatDate,
@@ -33,43 +34,190 @@ import {
   getRatingLabel,
 } from "@/lib/formula";
 import { cn } from "@/lib/utils";
+import type { MovieUpdate, MovieWithRelations } from "@/types";
 
 interface MovieDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+interface TmdbRefreshResponse {
+  runtime_minutes?: number | null;
+  genres?: string[] | null;
+  director?: string | null;
+  poster_url?: string | null;
+  release_date?: string | null;
+  overview?: string | null;
+  cast_members?: string[] | null;
+  composer?: string | null;
+  cinematographer?: string | null;
+  budget?: number | null;
+  box_office?: number | null;
+  tmdb_rating?: number | null;
+  tmdb_vote_count?: number | null;
+  certification?: string | null;
+  trailer_url?: string | null;
+  keywords?: string[] | null;
+}
+
+function normalizeStringArray(value: string[] | null | undefined): string[] | null {
+  return value && value.length > 0 ? value : null;
+}
+
+function stringArraysEqual(
+  left: string[] | null | undefined,
+  right: string[] | null | undefined
+): boolean {
+  const normalizedLeft = normalizeStringArray(left);
+  const normalizedRight = normalizeStringArray(right);
+
+  if (!normalizedLeft && !normalizedRight) return true;
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft.length !== normalizedRight.length) return false;
+
+  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function buildTmdbRefreshPayload(data: TmdbRefreshResponse): MovieUpdate {
+  return {
+    runtime_minutes: data.runtime_minutes ?? null,
+    genres: normalizeStringArray(data.genres),
+    director: data.director ?? null,
+    poster_url: data.poster_url ?? null,
+    release_date: data.release_date ?? null,
+    overview: data.overview ?? null,
+    cast_members: normalizeStringArray(data.cast_members),
+    composer: data.composer ?? null,
+    cinematographer: data.cinematographer ?? null,
+    budget: data.budget ?? null,
+    box_office: data.box_office ?? null,
+    tmdb_rating: data.tmdb_rating ?? null,
+    tmdb_vote_count: data.tmdb_vote_count ?? null,
+    certification: data.certification ?? null,
+    trailer_url: data.trailer_url ?? null,
+    keywords: normalizeStringArray(data.keywords),
+  };
+}
+
+function hasTmdbRefreshChanges(movie: MovieWithRelations, updates: MovieUpdate): boolean {
+  return (
+    movie.runtime_minutes !== (updates.runtime_minutes ?? null) ||
+    !stringArraysEqual(movie.genres, updates.genres as string[] | null | undefined) ||
+    movie.director !== (updates.director ?? null) ||
+    movie.poster_url !== (updates.poster_url ?? null) ||
+    movie.release_date !== (updates.release_date ?? null) ||
+    movie.overview !== (updates.overview ?? null) ||
+    !stringArraysEqual(movie.cast_members, updates.cast_members as string[] | null | undefined) ||
+    movie.composer !== (updates.composer ?? null) ||
+    movie.cinematographer !== (updates.cinematographer ?? null) ||
+    movie.budget !== (updates.budget ?? null) ||
+    movie.box_office !== (updates.box_office ?? null) ||
+    movie.tmdb_rating !== (updates.tmdb_rating ?? null) ||
+    movie.tmdb_vote_count !== (updates.tmdb_vote_count ?? null) ||
+    movie.certification !== (updates.certification ?? null) ||
+    movie.trailer_url !== (updates.trailer_url ?? null) ||
+    !stringArraysEqual(movie.keywords, updates.keywords as string[] | null | undefined)
+  );
+}
+
 export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const { id } = use(params);
   const router = useRouter();
-  const { movie, isLoading, error } = useMovie(id);
+  const { movie, isLoading, error, refetch } = useMovie(id);
   const { movies: allMovies } = useMovies();
+  const { updateMovie } = useUpdateMovie();
   const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isRefreshingTmdb, setIsRefreshingTmdb] = useState(false);
   const [costToggles, setCostToggles] = useState({
     ticket: true,
     bookingFee: true,
     fnb: true,
     other: true,
   });
+  const refreshedTmdbMovieIdRef = useRef<string | null>(null);
+  const includesMovieCharges = costToggles.ticket || costToggles.bookingFee;
+
+  const filteredGiftCardUsages = useMemo(() => {
+    if (!movie?.movie_gift_cards) return [];
+
+    return movie.movie_gift_cards.filter((usage) =>
+      usage.purpose === "fnb" ? costToggles.fnb : includesMovieCharges
+    );
+  }, [costToggles.fnb, includesMovieCharges, movie]);
+
+  const grossTotal = useMemo(() => {
+    if (!movie) return 0;
+
+    return (
+      (costToggles.ticket ? (movie.ticket_cost || 0) : 0) +
+      (costToggles.bookingFee ? (movie.convenience_fee || 0) : 0) +
+      (costToggles.fnb ? (movie.fnb_cost || 0) : 0) +
+      (costToggles.other ? (movie.other_expenses || 0) : 0)
+    );
+  }, [costToggles, movie]);
+
+  const filteredPassportSavings = includesMovieCharges ? movie?.passport_savings || 0 : 0;
+  const filteredGiftCardSavings = useMemo(() => {
+    return filteredGiftCardUsages.reduce((sum, usage) => {
+      const discount = usage.gift_card?.discount_percent || 0;
+      return sum + usage.amount_used * (discount / 100);
+    }, 0);
+  }, [filteredGiftCardUsages]);
 
   const customTotal = useMemo(() => {
     if (!movie) return 0;
-    const m = movie as any;
-    let cost = 0;
-    if (costToggles.ticket) cost += m.ticket_cost || 0;
-    if (costToggles.bookingFee) cost += m.convenience_fee || 0;
-    if (costToggles.fnb) cost += m.fnb_cost || 0;
-    if (costToggles.other) cost += m.other_expenses || 0;
-    cost -= m.passport_savings || 0;
-    const gcSavings = (m.movie_gift_cards || []).reduce((sum: number, mgc: any) => {
-      const discount = mgc.gift_card?.discount_percent || 0;
-      return sum + mgc.amount_used * (discount / 100);
-    }, 0);
-    cost -= gcSavings;
-    return Math.max(cost, 0);
-  }, [movie, costToggles]);
+    return Math.max(grossTotal - filteredPassportSavings - filteredGiftCardSavings, 0);
+  }, [filteredGiftCardSavings, filteredPassportSavings, grossTotal, movie]);
 
   const isCustomCost = !costToggles.ticket || !costToggles.bookingFee || !costToggles.fnb || !costToggles.other;
+
+  useEffect(() => {
+    if (!movie?.tmdb_id || refreshedTmdbMovieIdRef.current === movie.id) {
+      return;
+    }
+
+    refreshedTmdbMovieIdRef.current = movie.id;
+    let isCancelled = false;
+
+    async function refreshTmdbData() {
+      try {
+        setIsRefreshingTmdb(true);
+
+        const response = await fetch(`/api/tmdb?id=${movie.tmdb_id}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`TMDB refresh failed with status ${response.status}`);
+        }
+
+        const tmdbData = (await response.json()) as TmdbRefreshResponse;
+        const updates = buildTmdbRefreshPayload(tmdbData);
+
+        if (!hasTmdbRefreshChanges(movie, updates)) {
+          return;
+        }
+
+        await updateMovie(movie.id, updates);
+
+        if (!isCancelled) {
+          await refetch({ silent: true });
+        }
+      } catch (refreshError) {
+        console.error("Failed to refresh TMDB data for movie detail page", refreshError);
+      } finally {
+        if (!isCancelled) {
+          setIsRefreshingTmdb(false);
+        }
+      }
+    }
+
+    void refreshTmdbData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [movie, refetch, updateMovie]);
 
   const handleDelete = async () => {
     try {
@@ -256,6 +404,12 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
           </div>
         </div>
 
+        {movie.tmdb_id && isRefreshingTmdb && (
+          <p className="mb-3 text-xs text-muted-foreground">
+            Refreshing latest TMDB data...
+          </p>
+        )}
+
         {/* Budget & Box Office */}
         {(movie.budget || movie.box_office) && (
           <div className="mb-4 flex gap-3">
@@ -385,7 +539,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             {movie.audi && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Audi</span>
-                <span>{movie.audi}</span>
+                <span>{formatAudiDisplay(movie.audi) || movie.audi}</span>
               </div>
             )}
             {movie.seat && (
@@ -483,26 +637,21 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
             <Separator className="my-2" />
             <div className="flex justify-between font-medium">
               <span>Gross Total</span>
-              <span>{formatCurrency(
-                (costToggles.ticket ? (movie.ticket_cost || 0) : 0) +
-                (costToggles.bookingFee ? (movie.convenience_fee || 0) : 0) +
-                (costToggles.fnb ? (movie.fnb_cost || 0) : 0) +
-                (costToggles.other ? (movie.other_expenses || 0) : 0)
-              )}</span>
+              <span>{formatCurrency(grossTotal)}</span>
             </div>
 
             {/* Savings */}
-            {(movie.passport_savings > 0 || (movie.movie_gift_cards && movie.movie_gift_cards.length > 0)) && (
+            {(filteredPassportSavings > 0 || filteredGiftCardSavings > 0) && (
               <>
                 <Separator className="my-2" />
                 <p className="text-xs font-medium text-muted-foreground/50">Savings</p>
-                {movie.passport_savings > 0 && (
+                {filteredPassportSavings > 0 && (
                   <div className="flex justify-between text-positive">
                     <span>Passport</span>
-                    <span>-{formatCurrency(movie.passport_savings)}</span>
+                    <span>-{formatCurrency(filteredPassportSavings)}</span>
                   </div>
                 )}
-                {movie.movie_gift_cards && movie.movie_gift_cards.map((mgc) => {
+                {filteredGiftCardUsages.map((mgc) => {
                   const discount = mgc.gift_card?.discount_percent || 0;
                   const savings = mgc.amount_used * (discount / 100);
                   if (savings <= 0) return null;
@@ -531,8 +680,10 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
 
             {/* Payment Breakdown */}
             {(() => {
-              const gcUsages = movie.movie_gift_cards || [];
-              const payments = (movie.payment_methods as Array<{method: string; amount: number}>) || [];
+              const gcUsages = filteredGiftCardUsages;
+              const payments = isCustomCost
+                ? []
+                : (movie.payment_methods as Array<{method: string; amount: number}>) || [];
               if (gcUsages.length === 0 && payments.length === 0) return null;
               return (
                 <>

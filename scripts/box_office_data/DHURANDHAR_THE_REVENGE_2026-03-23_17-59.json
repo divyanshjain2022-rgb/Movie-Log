@@ -1,0 +1,567 @@
+{
+  "movie": "DHURANDHAR THE REVENGE",
+  "movie_id": "36040",
+  "timestamp": "2026-03-23T18:00:07.254858",
+  "national": {
+    "cities": 36,
+    "shows": 3989,
+    "total_seats": 750594,
+    "sold_seats": 345127,
+    "occupancy": 46.0,
+    "revenue_low": 145100343,
+    "revenue_high": 232359681,
+    "revenue_avg": 188730012
+  },
+  "by_date": {
+    "2026-03-23": {
+      "total": 750594,
+      "sold": 345127,
+      "rev_low": 145100343,
+      "rev_high": 232359681
+    }
+  },
+  "by_format": {
+    "Regular": {
+      "total": 536355,
+      "sold": 243991,
+      "rev_low": 84217772,
+      "rev_high": 142110127
+    },
+    "4DX": {
+      "total": 5550,
+      "sold": 2425,
+      "rev_low": 1249480,
+      "rev_high": 1381680
+    },
+    "LUXE": {
+      "total": 3462,
+      "sold": 2496,
+      "rev_low": 3261874,
+      "rev_high": 3495254
+    },
+    "PXL [ATMOS]": {
+      "total": 16717,
+      "sold": 8312,
+      "rev_low": 3473520,
+      "rev_high": 7716044
+    },
+    "[ATMOS]": {
+      "total": 95801,
+      "sold": 42989,
+      "rev_low": 18990451,
+      "rev_high": 32266882
+    },
+    "IMAX": {
+      "total": 24013,
+      "sold": 10867,
+      "rev_low": 7300820,
+      "rev_high": 11411690
+    },
+    "INSIGNIA [ATMOS]": {
+      "total": 2759,
+      "sold": 1752,
+      "rev_low": 2966980,
+      "rev_high": 3152880
+    },
+    "LIBRARY HALL [ATMOS]": {
+      "total": 2872,
+      "sold": 907,
+      "rev_low": 740580,
+      "rev_high": 1660890
+    },
+    "LIVING ROOM": {
+      "total": 248,
+      "sold": 143,
+      "rev_low": 261800,
+      "rev_high": 280100
+    },
+    "THE LOFT": {
+      "total": 54,
+      "sold": 38,
+      "rev_low": 67400,
+      "rev_high": 73000
+    },
+    "INSIGNIA": {
+      "total": 6538,
+      "sold": 4254,
+      "rev_low": 5961640,
+      "rev_high": 6215890
+    },
+    "LASER [ATMOS]": {
+      "total": 5061,
+      "sold": 1915,
+      "rev_low": 989370,
+      "rev_high": 1705250
+    },
+    "LUXE [ATMOS]": {
+      "total": 592,
+      "sold": 268,
+      "rev_low": 439100,
+      "rev_high": 508800
+    },
+    "PLAYHOUSE [ATMOS]": {
+      "total": 258,
+      "sold": 70,
+      "rev_low": 38500,
+      "rev_high": 84000
+    },
+    "AmpliX": {
+      "total": 932,
+      "sold": 493,
+      "rev_low": 273300,
+      "rev_high": 355550
+    },
+    "ONYX Diner": {
+      "total": 334,
+      "sold": 127,
+      "rev_low": 76200,
+      "rev_high": 100000
+    },
+    "KIDDLES": {
+      "total": 465,
+      "sold": 119,
+      "rev_low": 56050,
+      "rev_high": 66150
+    },
+    "LASER": {
+      "total": 11324,
+      "sold": 5126,
+      "rev_low": 2252330,
+      "rev_high": 3793180
+    },
+    "ICE": {
+      "total": 1013,
+      "sold": 540,
+      "rev_low": 331750,
+      "rev_high": 362200
+    },
+    "GOLD": {
+      "total": 1456,
+      "sold": 1063,
+      "rev_low": 1919900,
+      "rev_high": 2048500
+    },
+    "HDFC Millennia IMAX": {
+      "total": 1140,
+      "sold": 639,
+      "rev_low": 482050,
+      "rev_high": 1195100
+    },
+    "DIRECTOR'S CUT": {
+      "total": 3073,
+      "sold": 2346,
+      "rev_low": 4046000,
+      "rev_high": 4400400
+    },
+    "DIRECTOR'S CUT [ATMOS]": {
+      "total": 880,
+      "sold": 734,
+      "rev_low": 1366200,
+      "rev_high": 1475000
+    },
+    "BIGPIX [ATMOS]": {
+      "total": 3798,
+      "sold": 1573,
+      "rev_low": 421000,
+      "rev_high": 788000
+    },
+    "PLAYHOUSE": {
+      "total": 617,
+      "sold": 248,
+      "rev_low": 105430,
+      "rev_high": 183960
+    },
+    "Dolby 7.1": {
+      "total": 1612,
+      "sold": 615,
+      "rev_low": 243000,
+      "rev_high": 369540
+    },
+    "Dolby Atmos [ATMOS]": {
+      "total": 1516,
+      "sold": 604,
+      "rev_low": 227800,
+      "rev_high": 511650
+    },
+    "ATMOS": {
+      "total": 2251,
+      "sold": 1132,
+      "rev_low": 404005,
+      "rev_high": 485120
+    },
+    "ATMOS [ATMOS]": {
+      "total": 11873,
+      "sold": 6217,
+      "rev_low": 1700911,
+      "rev_high": 2031244
+    },
+    "PREMIER": {
+      "total": 856,
+      "sold": 226,
+      "rev_low": 122060,
+      "rev_high": 155580
+    },
+    "CLUB": {
+      "total": 1172,
+      "sold": 600,
+      "rev_low": 218870,
+      "rev_high": 279720
+    },
+    "4K LASER DOLBY 7.1": {
+      "total": 2415,
+      "sold": 1035,
+      "rev_low": 428700,
+      "rev_high": 855700
+    },
+    "4K LASER- ATMOS [ATMOS]": {
+      "total": 1200,
+      "sold": 434,
+      "rev_low": 116550,
+      "rev_high": 260400
+    },
+    "Cosmo": {
+      "total": 672,
+      "sold": 191,
+      "rev_low": 54700,
+      "rev_high": 114600
+    },
+    "LASER 4K": {
+      "total": 1595,
+      "sold": 530,
+      "rev_low": 146650,
+      "rev_high": 318000
+    },
+    "Luxe": {
+      "total": 120,
+      "sold": 108,
+      "rev_low": 147600,
+      "rev_high": 147600
+    }
+  },
+  "by_city": [
+    {
+      "city": "Delhi-NCR",
+      "cinemas": 56,
+      "shows": 876,
+      "total_seats": 142605,
+      "sold_seats": 74831,
+      "revenue_low": 44003840,
+      "revenue_high": 64336374
+    },
+    {
+      "city": "Mumbai",
+      "cinemas": 27,
+      "shows": 493,
+      "total_seats": 89334,
+      "sold_seats": 39375,
+      "revenue_low": 23139400,
+      "revenue_high": 38886920
+    },
+    {
+      "city": "Pune",
+      "cinemas": 10,
+      "shows": 250,
+      "total_seats": 47869,
+      "sold_seats": 22568,
+      "revenue_low": 10846790,
+      "revenue_high": 19813330
+    },
+    {
+      "city": "Kolkata",
+      "cinemas": 13,
+      "shows": 196,
+      "total_seats": 46277,
+      "sold_seats": 20692,
+      "revenue_low": 9166140,
+      "revenue_high": 14417220
+    },
+    {
+      "city": "Hyderabad",
+      "cinemas": 19,
+      "shows": 343,
+      "total_seats": 65217,
+      "sold_seats": 31228,
+      "revenue_low": 9449794,
+      "revenue_high": 10849270
+    },
+    {
+      "city": "Ahmedabad",
+      "cinemas": 6,
+      "shows": 136,
+      "total_seats": 24536,
+      "sold_seats": 10259,
+      "revenue_low": 4562920,
+      "revenue_high": 8216320
+    },
+    {
+      "city": "Lucknow",
+      "cinemas": 8,
+      "shows": 158,
+      "total_seats": 28653,
+      "sold_seats": 12743,
+      "revenue_low": 4777730,
+      "revenue_high": 7363220
+    },
+    {
+      "city": "Jaipur",
+      "cinemas": 8,
+      "shows": 128,
+      "total_seats": 23100,
+      "sold_seats": 10377,
+      "revenue_low": 4242360,
+      "revenue_high": 7444090
+    },
+    {
+      "city": "Noida",
+      "cinemas": 3,
+      "shows": 85,
+      "total_seats": 9919,
+      "sold_seats": 5360,
+      "revenue_low": 4224740,
+      "revenue_high": 5849854
+    },
+    {
+      "city": "Indore",
+      "cinemas": 4,
+      "shows": 110,
+      "total_seats": 17934,
+      "sold_seats": 6687,
+      "revenue_low": 2853180,
+      "revenue_high": 4155280
+    },
+    {
+      "city": "Ghaziabad",
+      "cinemas": 5,
+      "shows": 53,
+      "total_seats": 12815,
+      "sold_seats": 6193,
+      "revenue_low": 2451570,
+      "revenue_high": 4432960
+    },
+    {
+      "city": "Dehradun",
+      "cinemas": 3,
+      "shows": 52,
+      "total_seats": 7313,
+      "sold_seats": 4812,
+      "revenue_low": 1884350,
+      "revenue_high": 4024150
+    },
+    {
+      "city": "Raipur",
+      "cinemas": 5,
+      "shows": 83,
+      "total_seats": 19200,
+      "sold_seats": 6885,
+      "revenue_low": 1946270,
+      "revenue_high": 3935400
+    },
+    {
+      "city": "Faridabad",
+      "cinemas": 5,
+      "shows": 61,
+      "total_seats": 11495,
+      "sold_seats": 5855,
+      "revenue_low": 1991700,
+      "revenue_high": 3540790
+    },
+    {
+      "city": "Vadodara",
+      "cinemas": 6,
+      "shows": 109,
+      "total_seats": 20519,
+      "sold_seats": 5313,
+      "revenue_low": 1708600,
+      "revenue_high": 3260670
+    },
+    {
+      "city": "Chandigarh",
+      "cinemas": 3,
+      "shows": 48,
+      "total_seats": 10710,
+      "sold_seats": 5562,
+      "revenue_low": 1530250,
+      "revenue_high": 3276230
+    },
+    {
+      "city": "Kanpur",
+      "cinemas": 3,
+      "shows": 30,
+      "total_seats": 6910,
+      "sold_seats": 3595,
+      "revenue_low": 1640960,
+      "revenue_high": 2925220
+    },
+    {
+      "city": "Patna",
+      "cinemas": 2,
+      "shows": 28,
+      "total_seats": 5304,
+      "sold_seats": 3256,
+      "revenue_low": 1452730,
+      "revenue_high": 2629730
+    },
+    {
+      "city": "Ludhiana",
+      "cinemas": 3,
+      "shows": 54,
+      "total_seats": 9709,
+      "sold_seats": 4223,
+      "revenue_low": 1410400,
+      "revenue_high": 2496550
+    },
+    {
+      "city": "Bhubaneswar",
+      "cinemas": 4,
+      "shows": 55,
+      "total_seats": 11275,
+      "sold_seats": 4248,
+      "revenue_low": 1550590,
+      "revenue_high": 2245810
+    },
+    {
+      "city": "Surat",
+      "cinemas": 4,
+      "shows": 96,
+      "total_seats": 18160,
+      "sold_seats": 3554,
+      "revenue_low": 1301610,
+      "revenue_high": 2425990
+    },
+    {
+      "city": "Aurangabad",
+      "cinemas": 2,
+      "shows": 26,
+      "total_seats": 6425,
+      "sold_seats": 3520,
+      "revenue_low": 1133450,
+      "revenue_high": 2226250
+    },
+    {
+      "city": "Guwahati",
+      "cinemas": 3,
+      "shows": 45,
+      "total_seats": 6374,
+      "sold_seats": 2475,
+      "revenue_low": 1059510,
+      "revenue_high": 1604660
+    },
+    {
+      "city": "Kochi",
+      "cinemas": 3,
+      "shows": 34,
+      "total_seats": 5603,
+      "sold_seats": 3183,
+      "revenue_low": 771510,
+      "revenue_high": 1858180
+    },
+    {
+      "city": "Nashik",
+      "cinemas": 1,
+      "shows": 20,
+      "total_seats": 3592,
+      "sold_seats": 2120,
+      "revenue_low": 812200,
+      "revenue_high": 1788700
+    },
+    {
+      "city": "Amritsar",
+      "cinemas": 2,
+      "shows": 36,
+      "total_seats": 6503,
+      "sold_seats": 2801,
+      "revenue_low": 849030,
+      "revenue_high": 1287310
+    },
+    {
+      "city": "Vizag",
+      "cinemas": 4,
+      "shows": 43,
+      "total_seats": 8931,
+      "sold_seats": 4723,
+      "revenue_low": 835971,
+      "revenue_high": 1052265
+    },
+    {
+      "city": "Ranchi",
+      "cinemas": 1,
+      "shows": 12,
+      "total_seats": 2481,
+      "sold_seats": 1530,
+      "revenue_low": 529810,
+      "revenue_high": 924280
+    },
+    {
+      "city": "Nagpur",
+      "cinemas": 1,
+      "shows": 15,
+      "total_seats": 4291,
+      "sold_seats": 1675,
+      "revenue_low": 637600,
+      "revenue_high": 779700
+    },
+    {
+      "city": "Vijayawada",
+      "cinemas": 4,
+      "shows": 32,
+      "total_seats": 8601,
+      "sold_seats": 3094,
+      "revenue_low": 547638,
+      "revenue_high": 827888
+    },
+    {
+      "city": "Agra",
+      "cinemas": 1,
+      "shows": 14,
+      "total_seats": 1565,
+      "sold_seats": 892,
+      "revenue_low": 401400,
+      "revenue_high": 942100
+    },
+    {
+      "city": "Bhopal",
+      "cinemas": 1,
+      "shows": 12,
+      "total_seats": 3496,
+      "sold_seats": 1126,
+      "revenue_low": 367600,
+      "revenue_high": 840450
+    },
+    {
+      "city": "Trivandrum",
+      "cinemas": 2,
+      "shows": 24,
+      "total_seats": 3625,
+      "sold_seats": 1451,
+      "revenue_low": 420750,
+      "revenue_high": 763170
+    },
+    {
+      "city": "Mangalore",
+      "cinemas": 1,
+      "shows": 12,
+      "total_seats": 2759,
+      "sold_seats": 957,
+      "revenue_low": 281900,
+      "revenue_high": 612170
+    },
+    {
+      "city": "Chennai",
+      "cinemas": 16,
+      "shows": 190,
+      "total_seats": 51348,
+      "sold_seats": 25191,
+      "revenue_low": 316050,
+      "revenue_high": 327180
+    },
+    {
+      "city": "Coimbatore",
+      "cinemas": 3,
+      "shows": 30,
+      "total_seats": 6146,
+      "sold_seats": 2773,
+      "revenue_low": 0,
+      "revenue_high": 0
+    }
+  ]
+}

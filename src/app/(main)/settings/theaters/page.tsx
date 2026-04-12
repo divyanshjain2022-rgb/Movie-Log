@@ -25,15 +25,38 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
-import { useTheaters, useTheaterRatings } from "@/hooks";
+import { useFormats, useTheaters, useTheaterRatings } from "@/hooks";
 import { computeTheaterAvgRatings } from "@/hooks/use-theater-ratings";
+import {
+    formatAudiDisplay,
+    normalizeAudiDefaultsByFormat,
+    normalizeAudiValue,
+    type AudiDefaultsByFormat,
+} from "@/lib/audi";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { Theater } from "@/types";
+import type { Format, Theater } from "@/types";
+
+function buildDefaultAudiByFormat(formData: FormData, formats: Format[]): AudiDefaultsByFormat {
+    const defaults: AudiDefaultsByFormat = {};
+
+    for (const format of formats) {
+        const normalizedAudi = normalizeAudiValue(
+            formData.get(`default_audi_${format.id}`) as string | null
+        );
+
+        if (normalizedAudi) {
+            defaults[format.id] = normalizedAudi;
+        }
+    }
+
+    return defaults;
+}
 
 export default function TheatersPage() {
     const { theaters, isLoading, addTheater, updateTheater, deleteTheater } = useTheaters();
+    const { formats, isLoading: areFormatsLoading } = useFormats();
     const { ratings: allRatings } = useTheaterRatings();
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [editingTheater, setEditingTheater] = useState<Theater | null>(null);
@@ -51,6 +74,14 @@ export default function TheatersPage() {
             ? capabilitiesStr.split(",").map(c => c.trim()).filter(Boolean)
             : [];
 
+        if (areFormatsLoading) {
+            toast.error("Formats are still loading");
+            setIsSubmitting(false);
+            return;
+        }
+
+        const defaultAudiByFormat = buildDefaultAudiByFormat(formData, formats);
+
         try {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
@@ -64,6 +95,7 @@ export default function TheatersPage() {
                 has_4dx: formData.get("has_4dx") === "on",
                 notes: (formData.get("notes") as string) || null,
                 capabilities,
+                default_audi_by_format: defaultAudiByFormat,
             });
             toast.success("Theater added!");
             setIsAddDialogOpen(false);
@@ -85,7 +117,19 @@ export default function TheatersPage() {
             ? updateCapStr.split(",").map(c => c.trim()).filter(Boolean)
             : [];
 
+        if (areFormatsLoading) {
+            toast.error("Formats are still loading");
+            setIsSubmitting(false);
+            return;
+        }
+
+        const defaultAudiByFormat = buildDefaultAudiByFormat(formData, formats);
+
         try {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
+
             await updateTheater(editingTheater.id, {
                 name: formData.get("name") as string,
                 city: (formData.get("city") as string) || null,
@@ -93,7 +137,23 @@ export default function TheatersPage() {
                 has_4dx: formData.get("has_4dx") === "on",
                 notes: (formData.get("notes") as string) || null,
                 capabilities: updateCapabilities,
+                default_audi_by_format: defaultAudiByFormat,
             });
+
+            const movieUpdates = Object.entries(defaultAudiByFormat).map(([formatId, audi]) =>
+                supabase
+                    .from("movies")
+                    .update({ audi } as never)
+                    .eq("user_id", user.id)
+                    .eq("theater_id", editingTheater.id)
+                    .eq("format_id", formatId)
+            );
+
+            const movieResults = await Promise.all(movieUpdates);
+            for (const result of movieResults) {
+                if (result.error) throw result.error;
+            }
+
             toast.success("Theater updated!");
             setEditingTheater(null);
         } catch {
@@ -118,75 +178,120 @@ export default function TheatersPage() {
         }
     };
 
-    const TheaterForm = ({ theater, onSubmit }: { theater?: Theater; onSubmit: (e: React.FormEvent<HTMLFormElement>) => void }) => (
-        <form onSubmit={onSubmit} className="space-y-4">
-            <div>
-                <Label htmlFor="name">Name</Label>
-                <Input
-                    id="name"
-                    name="name"
-                    required
-                    defaultValue={theater?.name}
-                    placeholder="e.g., Phoenix Pallassio"
-                    className="mt-1"
-                />
-            </div>
-            <div>
-                <Label htmlFor="city">City</Label>
-                <Input
-                    id="city"
-                    name="city"
-                    defaultValue={theater?.city || ""}
-                    placeholder="e.g., Lucknow"
-                    className="mt-1"
-                />
-            </div>
-            <div className="flex gap-6">
-                <label className="flex items-center gap-2">
-                    <input
-                        type="checkbox"
-                        name="has_imax"
-                        defaultChecked={theater?.has_imax}
-                        className="h-4 w-4 rounded border-border"
+    const TheaterForm = ({ theater, onSubmit }: { theater?: Theater; onSubmit: (e: React.FormEvent<HTMLFormElement>) => void }) => {
+        const theaterAudiDefaults = normalizeAudiDefaultsByFormat(theater?.default_audi_by_format);
+
+        return (
+            <form onSubmit={onSubmit} className="space-y-4">
+                <div>
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                        id="name"
+                        name="name"
+                        required
+                        defaultValue={theater?.name}
+                        placeholder="e.g., Phoenix Pallassio"
+                        className="mt-1"
                     />
-                    <span className="text-sm">Has IMAX</span>
-                </label>
-                <label className="flex items-center gap-2">
-                    <input
-                        type="checkbox"
-                        name="has_4dx"
-                        defaultChecked={theater?.has_4dx}
-                        className="h-4 w-4 rounded border-border"
+                </div>
+                <div>
+                    <Label htmlFor="city">City</Label>
+                    <Input
+                        id="city"
+                        name="city"
+                        defaultValue={theater?.city || ""}
+                        placeholder="e.g., Lucknow"
+                        className="mt-1"
                     />
-                    <span className="text-sm">Has 4DX</span>
-                </label>
-            </div>
-            <div>
-                <Label htmlFor="capabilities">Capabilities</Label>
-                <Input
-                    id="capabilities"
-                    name="capabilities"
-                    defaultValue={theater?.capabilities?.join(", ") || ""}
-                    placeholder="PXL, MX4D, Dolby Atmos, ScreenX, Kotak Insignia..."
-                    className="mt-1"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">Comma-separated list of formats/features</p>
-            </div>
-            <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Input
-                    id="notes"
-                    name="notes"
-                    defaultValue={theater?.notes || ""}
-                    placeholder="Any notes..."
-                    className="mt-1"
-                />
-            </div>
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : theater ? "Save Changes" : "Add Theater"}
-            </Button>
-        </form>
-    );
+                </div>
+                <div className="flex gap-6">
+                    <label className="flex items-center gap-2">
+                        <input
+                            type="checkbox"
+                            name="has_imax"
+                            defaultChecked={theater?.has_imax}
+                            className="h-4 w-4 rounded border-border"
+                        />
+                        <span className="text-sm">Has IMAX</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                        <input
+                            type="checkbox"
+                            name="has_4dx"
+                            defaultChecked={theater?.has_4dx}
+                            className="h-4 w-4 rounded border-border"
+                        />
+                        <span className="text-sm">Has 4DX</span>
+                    </label>
+                </div>
+                <div>
+                    <Label htmlFor="capabilities">Capabilities</Label>
+                    <Input
+                        id="capabilities"
+                        name="capabilities"
+                        defaultValue={theater?.capabilities?.join(", ") || ""}
+                        placeholder="PXL, MX4D, Dolby Atmos, ScreenX, Kotak Insignia..."
+                        className="mt-1"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">Comma-separated list of formats/features</p>
+                </div>
+                <div className="space-y-3">
+                    <div>
+                        <Label>Screen Defaults By Format</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            These theater-specific overrides beat the format-wide fallback when this theater is selected.
+                        </p>
+                    </div>
+                    {areFormatsLoading ? (
+                        <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                            Loading formats...
+                        </p>
+                    ) : formats.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                            Add formats first to save theater-specific screens.
+                        </p>
+                    ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {formats.map((format) => {
+                                const formatFallback = formatAudiDisplay(format.default_audi);
+
+                                return (
+                                    <div key={format.id}>
+                                        <Label htmlFor={`default_audi_${format.id}`}>{format.name}</Label>
+                                        <Input
+                                            id={`default_audi_${format.id}`}
+                                            name={`default_audi_${format.id}`}
+                                            defaultValue={theaterAudiDefaults[format.id] || ""}
+                                            placeholder={format.default_audi || "6"}
+                                            className="mt-1"
+                                        />
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            {formatFallback
+                                                ? `Format fallback: ${formatFallback}`
+                                                : "Leave blank to use the format-wide fallback."}
+                                        </p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+                <div>
+                    <Label htmlFor="notes">Notes</Label>
+                    <Input
+                        id="notes"
+                        name="notes"
+                        defaultValue={theater?.notes || ""}
+                        placeholder="Any notes..."
+                        className="mt-1"
+                    />
+                </div>
+                <Button type="submit" className="w-full" disabled={isSubmitting || areFormatsLoading}>
+                    {isSubmitting ? "Saving..." : theater ? "Save Changes" : "Add Theater"}
+                </Button>
+            </form>
+        );
+    };
 
     return (
         <div className="min-h-screen">
@@ -256,6 +361,12 @@ export default function TheatersPage() {
                             const theaterRatings = allRatings.filter(r => r.theater_id === theater.id);
                             const avg = computeTheaterAvgRatings(theaterRatings);
                             const isExpanded = expandedTheater === theater.id;
+                            const theaterAudiDefaults = normalizeAudiDefaultsByFormat(theater.default_audi_by_format);
+                            const savedDefaultLabels = formats.flatMap((format) => {
+                                const savedAudi = theaterAudiDefaults[format.id];
+                                if (!savedAudi) return [];
+                                return [`${format.name}: ${formatAudiDisplay(savedAudi) || savedAudi}`];
+                            });
 
                             return (
                                 <Card key={theater.id}>
@@ -281,6 +392,15 @@ export default function TheatersPage() {
                                                         <Badge key={cap} variant="outline" className="text-xs">{cap}</Badge>
                                                     ))}
                                                 </div>
+                                                {savedDefaultLabels.length > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1">
+                                                        {savedDefaultLabels.map((label) => (
+                                                            <Badge key={label} variant="outline" className="text-xs">
+                                                                {label}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 {avg.count > 0 && (
@@ -339,17 +459,25 @@ export default function TheatersPage() {
 
                                                 {/* Per-audi breakdown if multiple audis */}
                                                 {(() => {
-                                                    const audis = [...new Set(theaterRatings.filter(r => r.audi).map(r => r.audi!))];
+                                                    const audis = [
+                                                        ...new Set(
+                                                            theaterRatings
+                                                                .map(r => normalizeAudiValue(r.audi))
+                                                                .filter(Boolean)
+                                                        ),
+                                                    ] as string[];
                                                     if (audis.length <= 1) return null;
                                                     return (
                                                         <div className="mt-2 space-y-1.5">
                                                             <p className="text-xs font-medium text-muted-foreground">By Audi</p>
                                                             {audis.map(audi => {
-                                                                const audiRatings = theaterRatings.filter(r => r.audi === audi);
+                                                                const audiRatings = theaterRatings.filter(
+                                                                    r => normalizeAudiValue(r.audi) === audi
+                                                                );
                                                                 const audiAvg = computeTheaterAvgRatings(audiRatings);
                                                                 return (
                                                                     <div key={audi} className="flex items-center justify-between text-xs">
-                                                                        <span>Audi {audi}</span>
+                                                                        <span>{formatAudiDisplay(audi) || audi}</span>
                                                                         <div className="flex items-center gap-1">
                                                                             <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                                                                             <span className="font-medium">{audiAvg.overall.toFixed(1)}</span>

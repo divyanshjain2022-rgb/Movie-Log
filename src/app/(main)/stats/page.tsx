@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared";
+import { PageHeader, YearFilter, type YearFilterValue } from "@/components/shared";
 import { useMovies } from "@/hooks";
 import {
   BarChart,
@@ -26,7 +26,7 @@ import { formatCurrency } from "@/lib/formula";
 
 export default function StatsPage() {
   const { movies, isLoading } = useMovies();
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<YearFilterValue>(new Date().getFullYear());
   const [selectedFormat, setSelectedFormat] = useState<string>("all");
   const [selectedTheater, setSelectedTheater] = useState<string>("all");
 
@@ -35,11 +35,19 @@ export default function StatsPage() {
     return years.length > 0 ? years : [new Date().getFullYear()];
   }, [movies]);
 
+  useEffect(() => {
+    if (selectedYear !== "all" && !availableYears.includes(selectedYear)) {
+      setSelectedYear(availableYears[0]);
+    }
+  }, [availableYears, selectedYear]);
+
   // Price fluctuation data for Insights tab
   const priceFluctuation = useMemo(() => {
     if (movies.length === 0) return null;
 
-    const yearMovies = movies.filter((m) => new Date(m.date).getFullYear() === selectedYear);
+    const yearMovies = selectedYear === "all"
+      ? movies
+      : movies.filter((m) => new Date(m.date).getFullYear() === selectedYear);
 
     // Get unique formats and theaters
     const formats = [...new Set(yearMovies.map((m) => m.format?.name).filter(Boolean))] as string[];
@@ -110,14 +118,26 @@ export default function StatsPage() {
     return { formats, theaters, dayData, timeData, timeSlotData, totalFiltered: filtered.length };
   }, [movies, selectedYear, selectedFormat, selectedTheater]);
 
+  useEffect(() => {
+    if (!priceFluctuation) return;
+
+    if (selectedFormat !== "all" && !priceFluctuation.formats.includes(selectedFormat)) {
+      setSelectedFormat("all");
+    }
+
+    if (selectedTheater !== "all" && !priceFluctuation.theaters.includes(selectedTheater)) {
+      setSelectedTheater("all");
+    }
+  }, [priceFluctuation, selectedFormat, selectedTheater]);
+
   const stats = useMemo(() => {
     if (movies.length === 0) {
       return null;
     }
 
-    const yearMovies = movies.filter(
-      (m) => new Date(m.date).getFullYear() === selectedYear
-    );
+    const yearMovies = selectedYear === "all"
+      ? movies
+      : movies.filter((m) => new Date(m.date).getFullYear() === selectedYear);
 
     // Basic stats
     const totalMovies = yearMovies.length;
@@ -267,7 +287,6 @@ export default function StatsPage() {
     }).filter((d) => d.count > 0);
 
     return {
-      year: selectedYear,
       totalMovies,
       totalSpend,
       avgCost,
@@ -295,24 +314,12 @@ export default function StatsPage() {
       <PageHeader title="Statistics" />
 
       <div className="p-4">
-        {availableYears.length > 1 && (
-          <div className="mb-3 flex gap-1.5">
-            {availableYears.map((y) => (
-              <button
-                key={y}
-                onClick={() => setSelectedYear(y)}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-                  selectedYear === y
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary/50 text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {y}
-              </button>
-            ))}
-          </div>
-        )}
+        <YearFilter
+          years={availableYears}
+          value={selectedYear}
+          onChange={setSelectedYear}
+          className="mb-3"
+        />
 
         <Tabs defaultValue="overview">
           <TabsList className="mb-4 w-full">

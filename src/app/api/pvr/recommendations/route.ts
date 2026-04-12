@@ -14,6 +14,7 @@ import {
   rankPvrMovies,
 } from "@/lib/pvr/recommendations";
 import { LOCAL_RECOMMENDATION_USER_DATA } from "@/lib/pvr/local-user-data";
+import { enrichPvrMoviesWithTmdb } from "@/lib/pvr/tmdb-enrichment";
 import type {
   PvrCacheMeta,
   PvrRecommendationsResponse,
@@ -36,16 +37,20 @@ interface MovieRow {
   id: string;
   title: string;
   rating: number | null;
+  showtime: string | null;
   genres: string[] | null;
   language: string | null;
   director: string | null;
   cast_members: string[] | null;
+  audi: string | null;
+  seat: string | null;
   date: string;
   ticket_cost: number | null;
   convenience_fee: number | null;
   fnb_cost: number | null;
   other_expenses: number | null;
   passport_savings: number | null;
+  tmdb_rating: number | null;
   format_id: string | null;
   theater_id: string | null;
   rewatch_id: string | null;
@@ -101,16 +106,20 @@ function toUserMovies(rows: MovieRow[]): UserMovieForRecommendation[] {
     id: row.id,
     title: row.title,
     rating: row.rating,
+    showtime: row.showtime,
     genres: row.genres,
     language: row.language,
     director: row.director,
     castMembers: row.cast_members,
+    audi: row.audi,
+    seat: row.seat,
     date: row.date,
     ticketCost: toNumber(row.ticket_cost),
     convenienceFee: toNumber(row.convenience_fee),
     fnbCost: row.fnb_cost,
     otherExpenses: row.other_expenses,
     passportSavings: toNumber(row.passport_savings),
+    tmdbRating: row.tmdb_rating,
     formatId: row.format_id,
     theaterId: row.theater_id,
     rewatchId: row.rewatch_id,
@@ -228,7 +237,7 @@ async function loadRecommendationUserData(): Promise<{
   ] = await Promise.all([
     supabase
       .from("movies")
-      .select("id,title,rating,genres,language,director,cast_members,date,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,format_id,theater_id,rewatch_id,release_date")
+      .select("id,title,rating,showtime,genres,language,director,cast_members,audi,seat,date,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,tmdb_rating,format_id,theater_id,rewatch_id,release_date")
       .eq("user_id", user.id),
     supabase
       .from("watchlist")
@@ -341,8 +350,13 @@ export async function GET(request: NextRequest) {
       }),
     ]);
     const pvrMovies = combineMovies([...searchMovies.data, ...comingSoon.data]);
+    const enrichedMovies = await enrichPvrMoviesWithTmdb(pvrMovies);
+    const enrichedById = new Map(enrichedMovies.map((movie) => [movie.id, movie]));
+    const enrichedComingSoonMovies = comingSoon.data.map(
+      (movie) => enrichedById.get(movie.id) || movie
+    );
     const candidates = rankPvrMovies(
-      pvrMovies,
+      enrichedMovies,
       userData,
       MAX_MOVIE_CANDIDATES
     );
@@ -431,8 +445,9 @@ export async function GET(request: NextRequest) {
         .filter(Boolean)
     );
     const otherPlaying = searchMovies.data.filter((movie) => {
+      const enrichedMovie = enrichedById.get(movie.id) || movie;
       if (recommendedIds.has(movie.id)) return false;
-      const normalized = movie.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const normalized = enrichedMovie.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
       if (!normalized) return true;
       for (const watched of watchedTitleTokens) {
         if (watched === normalized || watched.includes(normalized) || normalized.includes(watched)) {
@@ -440,17 +455,17 @@ export async function GET(request: NextRequest) {
         }
       }
       return true;
-    });
+    }).map((movie) => enrichedById.get(movie.id) || movie);
 
     const response: PvrRecommendationsResponse = {
       city,
       date,
       generatedAt: new Date().toISOString(),
       recommendations,
-      upcoming: comingSoon.data.slice(0, 20),
+      upcoming: enrichedComingSoonMovies.slice(0, 20),
       otherPlaying,
       diagnostics: {
-        pvrMovieCount: pvrMovies.length,
+        pvrMovieCount: enrichedMovies.length,
         candidateMovieCount: candidates.length,
         fetchedSessionMovieCount: sessionCaches.length,
         showCount: shows.length,
