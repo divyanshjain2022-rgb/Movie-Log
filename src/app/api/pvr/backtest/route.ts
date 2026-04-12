@@ -239,6 +239,39 @@ export async function GET() {
   const worstOverpredict = results.reduce((worst, r) => (r.error > worst.error ? r : worst), results[0]);
   const worstUnderpredict = results.reduce((worst, r) => (r.error < worst.error ? r : worst), results[0]);
 
+  // Data coverage diagnostics
+  const withKeywords = allMovies.filter((m) => m.keywords && m.keywords.length > 0);
+  const withCast = allMovies.filter((m) => m.castMembers && m.castMembers.length > 0);
+  const withFranchise = allMovies.filter((m) => m.franchiseId);
+  const withDirector = allMovies.filter((m) => m.director);
+  const withTmdb = allMovies.filter((m) => typeof m.tmdbRating === "number" && m.tmdbRating > 0);
+
+  // Keyword frequency across all movies
+  const keywordCounts = new Map<string, { count: number; avgRating: number; sumRating: number }>();
+  for (const movie of allMovies) {
+    if (!movie.keywords || !movie.rating) continue;
+    for (const kw of movie.keywords) {
+      const current = keywordCounts.get(kw) || { count: 0, avgRating: 0, sumRating: 0 };
+      current.count += 1;
+      current.sumRating += movie.rating;
+      current.avgRating = current.sumRating / current.count;
+      keywordCounts.set(kw, current);
+    }
+  }
+  const topKeywords = [...keywordCounts.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20)
+    .map(([kw, stats]) => ({
+      keyword: kw,
+      movies: stats.count,
+      avgRating: Math.round(stats.avgRating * 10) / 10,
+    }));
+
+  // Movies missing keywords
+  const missingKeywords = allMovies
+    .filter((m) => !m.keywords || m.keywords.length === 0)
+    .map((m) => m.title);
+
   return NextResponse.json({
     summary: {
       totalMovies: ratedMovies.length,
@@ -255,6 +288,16 @@ export async function GET() {
       worstUnderpredict: worstUnderpredict
         ? { title: worstUnderpredict.title, predicted: worstUnderpredict.predicted, actual: worstUnderpredict.actual, error: Math.round(worstUnderpredict.error * 10) / 10 }
         : null,
+    },
+    dataCoverage: {
+      total: allMovies.length,
+      withKeywords: `${withKeywords.length}/${allMovies.length} (${Math.round((withKeywords.length / allMovies.length) * 100)}%)`,
+      withCast: `${withCast.length}/${allMovies.length} (${Math.round((withCast.length / allMovies.length) * 100)}%)`,
+      withDirector: `${withDirector.length}/${allMovies.length} (${Math.round((withDirector.length / allMovies.length) * 100)}%)`,
+      withFranchise: `${withFranchise.length}/${allMovies.length} (${Math.round((withFranchise.length / allMovies.length) * 100)}%)`,
+      withTmdbRating: `${withTmdb.length}/${allMovies.length} (${Math.round((withTmdb.length / allMovies.length) * 100)}%)`,
+      topKeywords,
+      missingKeywords,
     },
     results: results.map((r) => ({
       ...r,
