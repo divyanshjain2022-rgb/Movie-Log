@@ -69,26 +69,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No valid reasons provided" }, { status: 400 });
   }
 
-  const { data, error } = await supabase
-    .from("movie_dismissals")
-    .upsert(rows, { onConflict: "user_id,pvr_movie_id,reason,coalesce(reason_detail, '')" })
-    .select("id,movie_title,pvr_movie_id,reason,reason_detail,created_at");
-
-  if (error) {
-    // Fallback: insert individually to handle unique constraint gracefully
-    const results = [];
-    for (const row of rows) {
-      const { data: single, error: singleError } = await supabase
-        .from("movie_dismissals")
-        .insert(row)
-        .select("id,movie_title,pvr_movie_id,reason,reason_detail,created_at")
-        .single();
-      if (!singleError && single) results.push(single);
-    }
-    return NextResponse.json({ dismissals: results });
+  // Insert each dismissal individually, skipping duplicates
+  const results = [];
+  for (const row of rows) {
+    const { data: single, error: singleError } = await supabase
+      .from("movie_dismissals")
+      .insert(row as never)
+      .select("id,movie_title,pvr_movie_id,reason,reason_detail,created_at")
+      .single();
+    if (!singleError && single) results.push(single);
+    // Silently skip if duplicate (unique constraint violation)
   }
 
-  return NextResponse.json({ dismissals: data || [] });
+  return NextResponse.json({ dismissals: results });
 }
 
 export async function DELETE(request: NextRequest) {
