@@ -21,6 +21,7 @@ import type {
   PvrSeatQuote,
   PvrShow,
   RecommendationUserData,
+  UserFranchise,
   UserFormatPreference,
   UserMovieForRecommendation,
   UserRewatchOption,
@@ -42,6 +43,8 @@ interface MovieRow {
   language: string | null;
   director: string | null;
   cast_members: string[] | null;
+  keywords: string[] | null;
+  franchise_id: string | null;
   audi: string | null;
   seat: string | null;
   date: string;
@@ -97,6 +100,11 @@ interface FormulaConfigRow {
   params: unknown;
 }
 
+interface FranchiseRow {
+  id: string;
+  name: string;
+}
+
 function toNumber(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -111,6 +119,8 @@ function toUserMovies(rows: MovieRow[]): UserMovieForRecommendation[] {
     language: row.language,
     director: row.director,
     castMembers: row.cast_members,
+    keywords: row.keywords,
+    franchiseId: row.franchise_id,
     audi: row.audi,
     seat: row.seat,
     date: row.date,
@@ -234,10 +244,11 @@ async function loadRecommendationUserData(): Promise<{
     theaterRatingsResult,
     rewatchOptionsResult,
     formulaResult,
+    franchisesResult,
   ] = await Promise.all([
     supabase
       .from("movies")
-      .select("id,title,rating,showtime,genres,language,director,cast_members,audi,seat,date,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,tmdb_rating,format_id,theater_id,rewatch_id,release_date")
+      .select("id,title,rating,showtime,genres,language,director,cast_members,keywords,franchise_id,audi,seat,date,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,tmdb_rating,format_id,theater_id,rewatch_id,release_date")
       .eq("user_id", user.id),
     supabase
       .from("watchlist")
@@ -265,6 +276,10 @@ async function loadRecommendationUserData(): Promise<{
       .eq("user_id", user.id)
       .eq("is_active", true)
       .maybeSingle(),
+    supabase
+      .from("franchises")
+      .select("id,name")
+      .eq("user_id", user.id),
   ]);
 
   for (const result of [
@@ -275,6 +290,7 @@ async function loadRecommendationUserData(): Promise<{
     theaterRatingsResult,
     rewatchOptionsResult,
     formulaResult,
+    franchisesResult,
   ]) {
     if (result.error) throw result.error;
   }
@@ -312,6 +328,12 @@ async function loadRecommendationUserData(): Promise<{
         (row): UserRewatchOption => ({
           id: row.id,
           value: row.value || 0,
+        })
+      ),
+      franchises: ((franchisesResult.data || []) as unknown as FranchiseRow[]).map(
+        (row): UserFranchise => ({
+          id: row.id,
+          name: row.name,
         })
       ),
       formulaParams: parseFormulaParams(

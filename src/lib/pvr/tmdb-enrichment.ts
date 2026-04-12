@@ -22,10 +22,17 @@ interface TmdbMovieDetail {
   vote_average?: number;
   vote_count?: number;
   credits?: {
+    cast?: Array<{
+      name?: string;
+      order?: number;
+    }>;
     crew?: Array<{
       job?: string;
       name?: string;
     }>;
+  };
+  keywords?: {
+    keywords?: Array<{ name: string }>;
   };
 }
 
@@ -89,7 +96,7 @@ async function fetchTmdbJson<T>(path: string): Promise<T | null> {
 
 async function enrichMovie(movie: PvrMovie): Promise<PvrMovie> {
   if (!TMDB_API_KEY) return movie;
-  if (movie.tmdbRating && movie.director) return movie;
+  if (movie.tmdbRating && movie.director && movie.cast?.length) return movie;
 
   const year = getYear(movie.releaseDate);
   const query = encodeURIComponent(movie.title);
@@ -111,7 +118,7 @@ async function enrichMovie(movie: PvrMovie): Promise<PvrMovie> {
   if (!bestMatch || bestMatch.score < 5) return movie;
 
   const detail = await fetchTmdbJson<TmdbMovieDetail>(
-    `/movie/${bestMatch.candidate.id}?append_to_response=credits`
+    `/movie/${bestMatch.candidate.id}?append_to_response=credits,keywords`
   );
   if (!detail) {
     return {
@@ -130,6 +137,18 @@ async function enrichMovie(movie: PvrMovie): Promise<PvrMovie> {
   const director =
     detail.credits?.crew?.find((member) => member.job === "Director")?.name || null;
 
+  // Top 3 cast members by billing order
+  const cast = (detail.credits?.cast || [])
+    .filter((member) => member.name)
+    .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
+    .slice(0, 3)
+    .map((member) => member.name!);
+
+  // Top 10 keywords
+  const keywords = (detail.keywords?.keywords || [])
+    .slice(0, 10)
+    .map((kw) => kw.name);
+
   return {
     ...movie,
     releaseDate:
@@ -142,6 +161,8 @@ async function enrichMovie(movie: PvrMovie): Promise<PvrMovie> {
           ? `https://image.tmdb.org/t/p/w500${bestMatch.candidate.poster_path}`
           : null),
     director: movie.director ?? director,
+    cast: movie.cast?.length ? movie.cast : (cast.length > 0 ? cast : null),
+    keywords: movie.keywords?.length ? movie.keywords : (keywords.length > 0 ? keywords : null),
     tmdbRating:
       movie.tmdbRating ??
       detail.vote_average ??
