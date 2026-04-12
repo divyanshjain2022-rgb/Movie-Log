@@ -34,6 +34,7 @@ export interface ShowPredictionAdjustment {
 
 export interface PersonalPredictionModel {
   globalAverage: number;
+  ratingStdDev: number;
   historyCount: number;
   watchedTitles: Map<string, WatchedTitleStat>;
   watchlist: Map<string, WatchlistStat>;
@@ -202,6 +203,12 @@ export function buildPersonalPredictionModel(
     ? ratedMovies.reduce((sum, movie) => sum + (movie.rating || 0), 0) / ratedMovies.length
     : 6.7;
 
+  // Compute rating standard deviation for spread calibration
+  const ratingVariance = ratedMovies.length > 1
+    ? ratedMovies.reduce((sum, movie) => sum + Math.pow((movie.rating || 0) - globalAverage, 2), 0) / ratedMovies.length
+    : 2.25;
+  const ratingStdDev = Math.sqrt(ratingVariance);
+
   const formatNamesById = new Map(
     userData.formats.map((format) => [format.id, format.name])
   );
@@ -337,6 +344,7 @@ export function buildPersonalPredictionModel(
 
   return {
     globalAverage,
+    ratingStdDev,
     historyCount: ratedMovies.length,
     watchedTitles,
     watchlist,
@@ -401,8 +409,9 @@ export function predictMoviePersonalFit(
   }
 
   const reasons: string[] = [];
+  // Reduced prior weight from 4→2 to let specific signals dominate
   const signals: Array<{ value: number; weight: number }> = [
-    { value: model.globalAverage, weight: 4 },
+    { value: model.globalAverage, weight: 2 },
   ];
   let supportWeight = 0;
 
@@ -651,6 +660,28 @@ export function predictMoviePersonalFit(
       reasons,
       watchlistItem.priority >= 2 ? "High priority on your watchlist" : "On your watchlist"
     );
+  }
+
+  // --- Spread calibration ---
+  // If predictions are compressed (low std dev), scale away from center
+  // to match the user's actual rating spread
+  if (model.historyCount >= 12 && model.ratingStdDev > 0.5) {
+    const deviation = predictedRating - model.globalAverage;
+    // Amplify deviations by up to 1.5x to match user's natural spread
+    const spreadFactor = clamp(model.ratingStdDev / 1.2, 1.0, 1.6);
+    predictedRating = model.globalAverage + deviation * spreadFactor;
+  }
+
+  // --- Low-signal TMDB anchoring ---
+  // When we have few personal signals, lean toward TMDB instead of
+  // defaulting to the inflated global average
+  if (supportWeight < 3 && typeof movie.tmdbRating === "number" && movie.tmdbRating > 0) {
+    const tmdbAnchor = movie.tmdbRating + (average(model.tmdbDeltaOverall) || 0);
+    const anchorBlend = clamp(1 - supportWeight / 3, 0.15, 0.5);
+    predictedRating = predictedRating * (1 - anchorBlend) + tmdbAnchor * anchorBlend;
+    if (supportWeight < 1) {
+      pushReason(reasons, "Limited personal signal — leaning on crowd rating");
+    }
   }
 
   predictedRating = round1(clamp(predictedRating, 1, 10));
