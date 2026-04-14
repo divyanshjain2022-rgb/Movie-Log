@@ -70,7 +70,7 @@ const TOOLTIP_STYLE = {
 
 function formatChartSeries(
   value: number | string,
-  fallbackName: string,
+  fallbackName: string | number,
   dataKey?: string | number
 ): [string, string] {
   const key = String(dataKey ?? fallbackName);
@@ -91,7 +91,7 @@ function formatChartSeries(
     return [`₹${value}`, "Avg Total"];
   }
 
-  return [String(value), fallbackName];
+  return [String(value), String(fallbackName)];
 }
 
 export default function StatsPage() {
