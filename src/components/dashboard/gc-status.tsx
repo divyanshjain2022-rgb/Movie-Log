@@ -13,6 +13,14 @@ interface GCStatusProps {
 export function GCStatus({ giftCards }: GCStatusProps) {
   const activeCards = giftCards.filter((gc) => gc.status === "active");
   const totalBalance = activeCards.reduce((sum, gc) => sum + gc.balance, 0);
+  const expiringSoonCards = activeCards
+    .map((gc) => ({
+      ...gc,
+      daysLeft: Math.ceil(
+        (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      ),
+    }))
+    .filter((gc) => gc.daysLeft <= 30 && gc.daysLeft > 0);
 
   if (activeCards.length === 0) {
     return (
@@ -34,8 +42,7 @@ export function GCStatus({ giftCards }: GCStatusProps) {
   }
 
   return (
-    <div className="space-y-2">
-      {/* Total balance */}
+    <div className="space-y-3">
       <Link href="/gift-cards">
         <div className="flex items-center justify-between rounded-2xl bg-emerald-500/[0.06] p-4 transition-all active:scale-[0.98] hover:bg-emerald-500/[0.10]">
           <div className="flex items-center gap-3">
@@ -54,53 +61,53 @@ export function GCStatus({ giftCards }: GCStatusProps) {
         </div>
       </Link>
 
-      {/* Expiring soon */}
-      {activeCards.some((gc) => {
-        const daysLeft = Math.ceil(
-          (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-        );
-        return daysLeft <= 30 && daysLeft > 0;
-      }) && (
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          {activeCards
-            .filter((gc) => {
-              const daysLeft = Math.ceil(
-                (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-              );
-              return daysLeft <= 30 && daysLeft > 0;
-            })
-            .map((gc) => {
-              const daysLeft = Math.ceil(
-                (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-              );
-              const urgent = daysLeft <= 7;
+      {expiringSoonCards.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/45">
+              Expiring Soon
+            </p>
+            <p className="text-[11px] text-muted-foreground/45">
+              {expiringSoonCards.length} {expiringSoonCards.length === 1 ? "card" : "cards"}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {expiringSoonCards.map((gc) => {
+              const urgent = gc.daysLeft <= 7;
 
               return (
                 <div
                   key={gc.id}
                   className={cn(
-                    "flex min-w-[160px] items-center gap-2 rounded-xl px-3 py-2",
-                    urgent ? "bg-red-500/8" : "bg-orange-500/8"
+                    "flex min-h-[68px] items-center gap-2 rounded-2xl border px-3.5 py-3",
+                    urgent
+                      ? "border-red-500/12 bg-red-500/8"
+                      : "border-orange-500/12 bg-orange-500/8"
                   )}
                 >
-                  <AlertTriangle className={cn(
-                    "h-3.5 w-3.5 flex-shrink-0",
-                    urgent ? "text-red-400/80" : "text-orange-400/80"
-                  )} />
+                  <AlertTriangle
+                    className={cn(
+                      "h-3.5 w-3.5 flex-shrink-0",
+                      urgent ? "text-red-400/80" : "text-orange-400/80"
+                    )}
+                  />
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium">
                       {gc.platform?.name || "Gift Card"}
                     </p>
-                    <p className={cn(
-                      "text-[11px]",
-                      urgent ? "text-red-400/70" : "text-orange-400/70"
-                    )}>
-                      {formatCurrency(gc.balance)} · {daysLeft}d left
+                    <p
+                      className={cn(
+                        "text-[11px]",
+                        urgent ? "text-red-400/70" : "text-orange-400/70"
+                      )}
+                    >
+                      {formatCurrency(gc.balance)} · {gc.daysLeft}d left
                     </p>
                   </div>
                 </div>
               );
             })}
+          </div>
         </div>
       )}
     </div>

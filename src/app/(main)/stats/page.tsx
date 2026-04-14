@@ -20,9 +20,79 @@ import {
   ResponsiveContainer,
   Legend,
   Cell,
+  ReferenceLine,
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formula";
+
+const CHART_COLORS = {
+  amber: "var(--chart-1)",
+  emerald: "var(--chart-2)",
+  blue: "var(--chart-3)",
+  violet: "var(--chart-4)",
+  red: "var(--chart-5)",
+  border: "var(--border)",
+  card: "var(--card)",
+  text: "var(--card-foreground)",
+  muted: "var(--muted-foreground)",
+};
+
+const RATING_BUCKET_COLORS = [
+  "#7f1d1d",
+  "#991b1b",
+  "#c2410c",
+  "#ea580c",
+  "#f59e0b",
+  "#eab308",
+  "#84cc16",
+  "#22c55e",
+  "#14b8a6",
+  "#3b82f6",
+];
+
+const AXIS_TICK = {
+  fontSize: 11,
+  fill: CHART_COLORS.muted,
+};
+
+const LEGEND_STYLE = {
+  fontSize: 11,
+  color: CHART_COLORS.muted,
+};
+
+const TOOLTIP_STYLE = {
+  fontSize: 12,
+  borderRadius: 12,
+  border: `1px solid ${CHART_COLORS.border}`,
+  backgroundColor: CHART_COLORS.card,
+  color: CHART_COLORS.text,
+};
+
+function formatChartSeries(
+  value: number | string,
+  fallbackName: string,
+  dataKey?: string | number
+): [string, string] {
+  const key = String(dataKey ?? fallbackName);
+
+  if (key === "costPerMin") {
+    return [`₹${Number(value).toFixed(2)}/min`, "Cost/Min"];
+  }
+
+  if (key === "avgRating") {
+    return [Number(value).toFixed(1), "Avg Rating"];
+  }
+
+  if (key === "avgTicket") {
+    return [`₹${value}`, "Avg Ticket"];
+  }
+
+  if (key === "avgTotal") {
+    return [`₹${value}`, "Avg Total"];
+  }
+
+  return [String(value), fallbackName];
+}
 
 export default function StatsPage() {
   const { movies, isLoading } = useMovies();
@@ -143,9 +213,10 @@ export default function StatsPage() {
     const totalMovies = yearMovies.length;
     const totalSpend = yearMovies.reduce((sum, m) => sum + m.total_cost, 0);
     const avgCost = totalMovies > 0 ? totalSpend / totalMovies : 0;
+    const ratedMovies = yearMovies.filter((m) => typeof m.rating === "number" && m.rating > 0);
     const avgRating =
-      totalMovies > 0
-        ? yearMovies.reduce((sum, m) => sum + (m.rating || 0), 0) / totalMovies
+      ratedMovies.length > 0
+        ? ratedMovies.reduce((sum, m) => sum + (m.rating || 0), 0) / ratedMovies.length
         : 0;
 
     // Format breakdown
@@ -179,12 +250,27 @@ export default function StatsPage() {
 
     // Rating distribution
     const ratingDist: Record<number, number> = {};
-    yearMovies.forEach((m) => {
+    ratedMovies.forEach((m) => {
       if (m.rating) {
-        const bucket = Math.floor(m.rating);
+        const bucket = Math.max(1, Math.min(10, Math.round(m.rating)));
         ratingDist[bucket] = (ratingDist[bucket] || 0) + 1;
       }
     });
+
+    const ratingDistribution = Array.from({ length: 10 }, (_, i) => {
+      const rating = i + 1;
+
+      return {
+        rating,
+        count: ratingDist[rating] || 0,
+        fill: RATING_BUCKET_COLORS[i],
+      };
+    });
+
+    const topRatingBucket = ratingDistribution.reduce(
+      (best, current) => (current.count > best.count ? current : best),
+      ratingDistribution[0]
+    );
 
     // Genre breakdown
     const genreCounts: Record<string, number> = {};
@@ -295,6 +381,9 @@ export default function StatsPage() {
       theaterCounts,
       monthlyData,
       ratingDist,
+      ratingDistribution,
+      ratedMoviesCount: ratedMovies.length,
+      topRatingBucket,
       genreCounts,
       dayOfWeekCounts,
       directorCounts,
@@ -535,21 +624,40 @@ export default function StatsPage() {
                       <CardTitle className="text-base">Cost/Min by Format</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={200}>
+                      <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={stats.costPerMinuteByFormat}>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                          <XAxis dataKey="format" tick={{ fontSize: 11 }} />
-                          <YAxis tick={{ fontSize: 11 }} />
-                          <Tooltip
-                            formatter={(value: number, name: string) => [
-                              name === "costPerMin" ? `₹${value}/min` : value,
-                              name === "costPerMin" ? "Cost/Min" : "Avg Rating",
-                            ]}
-                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }}
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.border} vertical={false} />
+                          <XAxis
+                            dataKey="format"
+                            tick={AXIS_TICK}
+                            tickLine={false}
+                            axisLine={false}
+                            interval={0}
+                            angle={-18}
+                            textAnchor="end"
+                            height={56}
                           />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                          <Bar dataKey="costPerMin" fill="hsl(var(--primary))" name="Cost/Min" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="avgRating" fill="hsl(var(--primary) / 0.4)" name="Avg Rating" radius={[4, 4, 0, 0]} />
+                          <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                          <Tooltip
+                            formatter={(value, name, item) =>
+                              formatChartSeries(
+                                value as number | string,
+                                name,
+                                (item && "dataKey" in item ? item.dataKey : undefined) as
+                                  | string
+                                  | number
+                                  | undefined
+                              )
+                            }
+                            labelFormatter={(label, payload) => {
+                              const count = payload?.[0]?.payload?.count;
+                              return count ? `${label} · ${count} movies` : label;
+                            }}
+                            contentStyle={TOOLTIP_STYLE}
+                          />
+                          <Legend wrapperStyle={LEGEND_STYLE} iconType="circle" />
+                          <Bar dataKey="costPerMin" fill={CHART_COLORS.amber} name="Cost/Min" radius={[6, 6, 0, 0]} />
+                          <Bar dataKey="avgRating" fill={CHART_COLORS.blue} name="Avg Rating" radius={[6, 6, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </CardContent>
@@ -563,21 +671,48 @@ export default function StatsPage() {
                       <CardTitle className="text-base">Price Trends</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={200}>
+                      <ResponsiveContainer width="100%" height={220}>
                         <LineChart data={stats.priceTrends}>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                          <YAxis tick={{ fontSize: 11 }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.border} vertical={false} />
+                          <XAxis dataKey="month" tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                          <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} />
                           <Tooltip
-                            formatter={(value: number, name: string) => [
-                              `₹${value}`,
-                              name === "avgTicket" ? "Avg Ticket" : "Avg Total",
-                            ]}
-                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }}
+                            formatter={(value, name, item) =>
+                              formatChartSeries(
+                                value as number | string,
+                                name,
+                                (item && "dataKey" in item ? item.dataKey : undefined) as
+                                  | string
+                                  | number
+                                  | undefined
+                              )
+                            }
+                            labelFormatter={(label, payload) => {
+                              const count = payload?.[0]?.payload?.count;
+                              return count ? `${label} · ${count} movies` : label;
+                            }}
+                            contentStyle={TOOLTIP_STYLE}
                           />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                          <Line type="monotone" dataKey="avgTicket" stroke="hsl(var(--primary))" name="Avg Ticket" strokeWidth={2} dot={{ r: 3 }} />
-                          <Line type="monotone" dataKey="avgTotal" stroke="hsl(var(--primary) / 0.5)" name="Avg Total" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
+                          <Legend wrapperStyle={LEGEND_STYLE} iconType="circle" />
+                          <Line
+                            type="monotone"
+                            dataKey="avgTicket"
+                            stroke={CHART_COLORS.amber}
+                            name="Avg Ticket"
+                            strokeWidth={2.5}
+                            dot={{ r: 3, fill: CHART_COLORS.amber, strokeWidth: 0 }}
+                            activeDot={{ r: 5, fill: CHART_COLORS.amber, strokeWidth: 0 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="avgTotal"
+                            stroke={CHART_COLORS.blue}
+                            name="Avg Total"
+                            strokeWidth={2.5}
+                            dot={{ r: 3, fill: CHART_COLORS.blue, strokeWidth: 0 }}
+                            activeDot={{ r: 5, fill: CHART_COLORS.blue, strokeWidth: 0 }}
+                            strokeDasharray="6 6"
+                          />
                         </LineChart>
                       </ResponsiveContainer>
                     </CardContent>
@@ -659,32 +794,78 @@ export default function StatsPage() {
               </TabsContent>
 
               <TabsContent value="ratings" className="space-y-4">
-                {/* Rating Distribution */}
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">Rating Distribution</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-end justify-between gap-1" style={{ height: "120px" }}>
-                      {Array.from({ length: 10 }, (_, i) => {
-                        const rating = i + 1;
-                        const count = stats.ratingDist[rating] || 0;
-                        const maxCount = Math.max(...Object.values(stats.ratingDist), 1);
-                        const height = count > 0 ? (count / maxCount) * 100 : 0;
-
-                        return (
-                          <div key={rating} className="flex flex-1 flex-col items-center gap-1">
-                            <div className="relative w-full flex-1">
-                              <div
-                                className="absolute bottom-0 w-full rounded-t bg-primary transition-all"
-                                style={{ height: `${height}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-muted-foreground">{rating}</span>
+                    {stats.ratedMoviesCount === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-border/80 bg-secondary/20 px-4 py-10 text-center">
+                        <p className="text-sm font-medium">No ratings logged yet</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Rate a few movies to unlock your distribution.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-2xl bg-secondary/30 p-3">
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/55">
+                              Rated Movies
+                            </p>
+                            <p className="mt-2 text-2xl font-semibold">{stats.ratedMoviesCount}</p>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="rounded-2xl bg-secondary/30 p-3">
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/55">
+                              Peak Bucket
+                            </p>
+                            <p className="mt-2 text-2xl font-semibold">{stats.topRatingBucket.rating}</p>
+                          </div>
+                          <div className="rounded-2xl bg-secondary/30 p-3">
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/55">
+                              Avg Rating
+                            </p>
+                            <p className="mt-2 text-2xl font-semibold">{stats.avgRating.toFixed(1)}</p>
+                          </div>
+                        </div>
+
+                        <ResponsiveContainer width="100%" height={240}>
+                          <BarChart data={stats.ratingDistribution}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.border} vertical={false} />
+                            <XAxis
+                              dataKey="rating"
+                              tick={AXIS_TICK}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              allowDecimals={false}
+                              tick={AXIS_TICK}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip
+                              formatter={(value: number) => [
+                                `${value} ${value === 1 ? "movie" : "movies"}`,
+                                "Count",
+                              ]}
+                              labelFormatter={(label) => `Rating ${label}`}
+                              contentStyle={TOOLTIP_STYLE}
+                            />
+                            <ReferenceLine
+                              x={Math.round(stats.avgRating)}
+                              stroke={CHART_COLORS.muted}
+                              strokeDasharray="4 4"
+                            />
+                            <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                              {stats.ratingDistribution.map((entry) => (
+                                <Cell key={entry.rating} fill={entry.fill} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -770,9 +951,9 @@ export default function StatsPage() {
                             <p className="mb-2 text-xs font-medium text-muted-foreground">Avg Ticket by Day of Week</p>
                             <ResponsiveContainer width="100%" height={180}>
                               <BarChart data={priceFluctuation.dayData}>
-                                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                                <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v}`} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.border} vertical={false} />
+                                <XAxis dataKey="day" tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                                <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${v}`} />
                                 <Tooltip
                                   content={({ active, payload }) => {
                                     if (!active || !payload?.length) return null;
@@ -788,9 +969,9 @@ export default function StatsPage() {
                                     );
                                   }}
                                 />
-                                <Bar dataKey="avg" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]}>
+                                <Bar dataKey="avg" fill={CHART_COLORS.blue} radius={[6, 6, 0, 0]}>
                                   {priceFluctuation.dayData.map((entry, i) => (
-                                    <Cell key={i} opacity={entry.count > 0 ? 1 : 0.15} />
+                                    <Cell key={i} fill={CHART_COLORS.blue} opacity={entry.count > 0 ? 1 : 0.15} />
                                   ))}
                                 </Bar>
                               </BarChart>
@@ -802,9 +983,9 @@ export default function StatsPage() {
                             <p className="mb-2 text-xs font-medium text-muted-foreground">Avg Ticket by Time of Day</p>
                             <ResponsiveContainer width="100%" height={160}>
                               <BarChart data={priceFluctuation.timeSlotData}>
-                                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                                <XAxis dataKey="slot" tick={{ fontSize: 11 }} />
-                                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v}`} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.border} vertical={false} />
+                                <XAxis dataKey="slot" tick={AXIS_TICK} tickLine={false} axisLine={false} />
+                                <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${v}`} />
                                 <Tooltip
                                   content={({ active, payload }) => {
                                     if (!active || !payload?.length) return null;
@@ -819,9 +1000,9 @@ export default function StatsPage() {
                                     );
                                   }}
                                 />
-                                <Bar dataKey="avg" fill="hsl(var(--primary) / 0.7)" radius={[4, 4, 0, 0]}>
+                                <Bar dataKey="avg" fill={CHART_COLORS.violet} radius={[6, 6, 0, 0]}>
                                   {priceFluctuation.timeSlotData.map((entry, i) => (
-                                    <Cell key={i} opacity={entry.count > 0 ? 1 : 0.15} />
+                                    <Cell key={i} fill={CHART_COLORS.violet} opacity={entry.count > 0 ? 1 : 0.15} />
                                   ))}
                                 </Bar>
                               </BarChart>
@@ -834,18 +1015,22 @@ export default function StatsPage() {
                               <p className="mb-2 text-xs font-medium text-muted-foreground">Each Movie by Showtime</p>
                               <ResponsiveContainer width="100%" height={180}>
                                 <ScatterChart>
-                                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.border} />
                                   <XAxis
                                     dataKey="time"
                                     type="number"
                                     domain={[8, 24]}
-                                    tick={{ fontSize: 11 }}
+                                    tick={AXIS_TICK}
+                                    tickLine={false}
+                                    axisLine={false}
                                     tickFormatter={(v) => `${Math.floor(v)}:00`}
-                                    label={{ value: "Showtime", position: "insideBottom", offset: -2, fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                                    label={{ value: "Showtime", position: "insideBottom", offset: -2, fontSize: 10, fill: CHART_COLORS.muted }}
                                   />
                                   <YAxis
                                     dataKey="price"
-                                    tick={{ fontSize: 11 }}
+                                    tick={AXIS_TICK}
+                                    tickLine={false}
+                                    axisLine={false}
                                     tickFormatter={(v) => `₹${v}`}
                                   />
                                   <Tooltip
@@ -861,7 +1046,7 @@ export default function StatsPage() {
                                       );
                                     }}
                                   />
-                                  <Scatter data={priceFluctuation.timeData} fill="hsl(var(--primary))" />
+                                  <Scatter data={priceFluctuation.timeData} fill={CHART_COLORS.emerald} />
                                 </ScatterChart>
                               </ResponsiveContainer>
                             </div>
