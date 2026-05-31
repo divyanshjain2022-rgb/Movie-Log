@@ -498,11 +498,6 @@ function seatStatusIsAvailable(value: unknown): boolean {
   return false;
 }
 
-function seatStatusCountsAsSeat(value: unknown): boolean {
-  if (typeof value === "number") return value >= 0;
-  if (typeof value === "string") return value.trim().length > 0;
-  return true;
-}
 
 function getCategoryQualityWeight(description: string): number {
   const normalized = normalizeToken(description);
@@ -542,36 +537,34 @@ export function normalizePvrSeatLayout(
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
-    const rowLabel = pickString(row, [
-      "row",
-      "rowName",
-      "rn",
-      "name",
-      "label",
-      "rowLabel",
-      "physicalRowName",
-    ]);
+    // Rows with type "area" are section headers (e.g. "CLUB"), not seat rows.
+    if (pickString(row, ["t", "type"]) === "area") continue;
+
+    const rowLabel = pickString(row, ["n", "row", "rowName", "rn", "label", "rowLabel"]);
     const seats = pickArray(row, ["s", "seats", "seat"]);
     const cells: PvrSeatCell[] = [];
 
     for (const seat of seats) {
       if (!isRecord(seat)) continue;
-      const categoryCode = pickString(seat, ["c", "category", "classCode", "showClass"]);
+      // A real, bookable seat has a price category; cells without one are
+      // aisles/spacing. Status (st): 0 = available, anything else = taken.
+      const categoryCode = pickString(seat, ["c", "pc", "category", "classCode", "showClass"]);
       const status = pickValue(seat, ["st", "status", "seatStatus"]);
-      const seatId = pickString(seat, ["sn", "seatNumber", "seatNo", "num", "number", "n"]);
-      const isSeat = seatStatusCountsAsSeat(status);
+      const seatId = pickString(seat, ["sn", "seatNumber", "displaynumber", "seatNo"]);
+      const isSeat = Boolean(categoryCode);
+      const available = isSeat && seatStatusIsAvailable(status);
 
       cells.push({
         id: seatId,
-        status: !isSeat ? "gap" : seatStatusIsAvailable(status) ? "available" : "taken",
+        status: !isSeat ? "gap" : available ? "available" : "taken",
         categoryCode,
       });
 
-      if (categoryCode && isSeat) {
-        const current = counts.get(categoryCode) || { totalSeats: 0, availableSeats: 0 };
+      if (isSeat) {
+        const current = counts.get(categoryCode!) || { totalSeats: 0, availableSeats: 0 };
         current.totalSeats += 1;
-        if (seatStatusIsAvailable(status)) current.availableSeats += 1;
-        counts.set(categoryCode, current);
+        if (available) current.availableSeats += 1;
+        counts.set(categoryCode!, current);
       }
     }
 
