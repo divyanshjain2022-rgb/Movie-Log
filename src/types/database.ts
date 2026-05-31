@@ -12,6 +12,34 @@ export interface PaymentMethodEntry {
   amount: number;
 }
 
+// Snapshot of a PVR seat layout captured at log time (stored on movies.seat_map).
+export interface MovieSeatSnapshot {
+  capturedAt: string;
+  occupancyPct: number;
+  totalSeats: number;
+  availableSeats: number;
+  soldSeats: number;
+  cinemaName: string | null;
+  screenName: string | null;
+  showTime: string | null;
+  categories: Array<{
+    code: string;
+    description: string;
+    price: number;
+    totalSeats: number;
+    availableSeats: number;
+    soldSeats: number;
+  }>;
+  rows: Array<{
+    label: string | null;
+    seats: Array<{
+      id: string | null;
+      status: "available" | "taken" | "gap";
+      categoryCode: string | null;
+    }>;
+  }>;
+}
+
 export const PAYMENT_METHODS = [
   "UPI",
   "Credit Card",
@@ -84,6 +112,9 @@ export interface Database {
           is_rewatch: boolean;
           // Passport (migration 006)
           passport_id: string | null;
+          // Occupancy snapshot (migration 010)
+          occupancy: number | null;
+          seat_map: MovieSeatSnapshot | null;
         };
         Insert: {
           id?: string;
@@ -138,6 +169,8 @@ export interface Database {
           original_movie_id?: string | null;
           is_rewatch?: boolean;
           passport_id?: string | null;
+          occupancy?: number | null;
+          seat_map?: MovieSeatSnapshot | null;
         };
         Update: {
           id?: string;
@@ -192,6 +225,8 @@ export interface Database {
           original_movie_id?: string | null;
           is_rewatch?: boolean;
           passport_id?: string | null;
+          occupancy?: number | null;
+          seat_map?: MovieSeatSnapshot | null;
         };
       };
       fnb_purchases: {

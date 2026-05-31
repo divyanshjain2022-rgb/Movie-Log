@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLookupData, useGiftCards, useCreateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports, useWatchlist } from "@/hooks";
+import { useLookupData, useGiftCards, useCreateMovie, useUpdateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports, useWatchlist } from "@/hooks";
 import { cn } from "@/lib/utils";
 import type { MovieFormData, TicketOCRData, GiftCardUsageEntry, MovieInsert } from "@/types";
 
@@ -142,6 +142,7 @@ function NewMoviePageInner() {
   const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
   const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
   const { createMovie, isLoading: isSubmitting } = useCreateMovie();
+  const { updateMovie } = useUpdateMovie();
   const { movies: allMovies } = useMovies();
   const { items: watchlistItems, isLoading: watchlistLoading } = useWatchlist();
   const { franchises } = useFranchises();
@@ -446,6 +447,31 @@ function NewMoviePageInner() {
       const movieId = movie?.id;
       if (data.companion_ids?.length && movieId) {
         await syncCompanions(movieId, data.companion_ids);
+      }
+
+      // Best-effort: snapshot hall occupancy if this is today's show and PVR still has it.
+      const todayStr = new Date().toISOString().split("T")[0];
+      if (mode !== "advance" && movieId && data.date === todayStr) {
+        try {
+          const theater = theaters.find((t) => t.id === data.theater_id);
+          const res = await fetch("/api/pvr/occupancy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              city: theater?.city || "Lucknow",
+              title: data.title,
+              theaterName: theater?.name || null,
+              date: data.date,
+              showtime: convertTo24Hour(data.showtime),
+            }),
+          });
+          const payload = await res.json();
+          if (res.ok && payload.found) {
+            await updateMovie(movieId, { occupancy: payload.occupancy, seat_map: payload.seatMap });
+          }
+        } catch {
+          // Best effort — never block the save on occupancy capture.
+        }
       }
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");

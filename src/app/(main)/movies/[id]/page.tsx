@@ -3,7 +3,7 @@
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Edit, Trash2, ExternalLink, Share2 } from "lucide-react";
+import { Armchair, Edit, Loader2, Trash2, ExternalLink, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
+import { SeatMap } from "@/components/movies/seat-map";
 import { PhotoGallery } from "@/components/movies/photo-gallery";
 import { ShareableCard } from "@/components/movies/shareable-card";
 import { TheaterRatingForm } from "@/components/movies/theater-rating-form";
@@ -128,6 +129,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isRefreshingTmdb, setIsRefreshingTmdb] = useState(false);
+  const [isCapturingOccupancy, setIsCapturingOccupancy] = useState(false);
   const [costToggles, setCostToggles] = useState({
     ticket: true,
     bookingFee: true,
@@ -228,6 +230,41 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
     } catch (error) {
       toast.error("Failed to delete movie");
       console.error(error);
+    }
+  };
+
+  const handleCaptureOccupancy = async () => {
+    if (!movie) return;
+    setIsCapturingOccupancy(true);
+    try {
+      const response = await fetch("/api/pvr/occupancy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: movie.theater?.city || "Lucknow",
+          title: movie.title,
+          theaterName: movie.theater?.name || null,
+          date: movie.date,
+          showtime: movie.showtime,
+          format: movie.format?.name || null,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Failed to capture occupancy");
+      if (!payload.found) {
+        toast.error(payload.reason || "No live PVR record for this show");
+        return;
+      }
+      await updateMovie(id, {
+        occupancy: payload.occupancy,
+        seat_map: payload.seatMap,
+      });
+      await refetch();
+      toast.success(`Captured — hall was ${payload.occupancy}% full`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to capture occupancy");
+    } finally {
+      setIsCapturingOccupancy(false);
     }
   };
 
@@ -570,6 +607,57 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
               </div>
             )}
           </div>
+        </section>
+
+        <Separator className="my-4" />
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Hall occupancy</h2>
+              {movie.seat_map ? (
+                <p className="text-xs text-muted-foreground">
+                  {movie.seat_map.soldSeats}/{movie.seat_map.totalSeats} seats sold when captured
+                  {movie.seat_map.capturedAt
+                    ? ` · ${formatDate(movie.seat_map.capturedAt)}`
+                    : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Snapshot how full the hall was — works if the show is still live at PVR.
+                </p>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isCapturingOccupancy}
+              onClick={handleCaptureOccupancy}
+            >
+              {isCapturingOccupancy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Armchair className="h-3.5 w-3.5" />
+              )}
+              {movie.seat_map ? "Recapture" : "Capture from PVR"}
+            </Button>
+          </div>
+
+          {movie.seat_map && (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-primary">
+                  {Math.round(movie.occupancy ?? movie.seat_map.occupancyPct)}%
+                </span>
+                <span className="text-sm text-muted-foreground">full</span>
+              </div>
+              <SeatMap
+                categories={movie.seat_map.categories}
+                rows={movie.seat_map.rows}
+                availableSeatCount={movie.seat_map.availableSeats}
+              />
+            </>
+          )}
         </section>
 
         <Separator className="my-4" />
