@@ -8,7 +8,9 @@ import {
   Clock,
   ExternalLink,
   Globe,
+  Loader2,
   MapPin,
+  Plus,
   RefreshCw,
   Sparkles,
   Ticket,
@@ -189,14 +191,19 @@ function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
   );
 }
 
-function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
+function OtherPlayingCard({
+  movie,
+  pulling,
+  error,
+  onPull,
+}: {
+  movie: PvrMovie;
+  pulling: boolean;
+  error: string | null;
+  onPull: (movie: PvrMovie) => void;
+}) {
   return (
-    <a
-      href={movie.redirectUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex gap-3 rounded-lg bg-card/40 p-2.5 transition hover:bg-card/60"
-    >
+    <div className="flex gap-3 rounded-lg bg-card/40 p-2.5">
       {movie.posterUrl ? (
         <img
           src={movie.posterUrl}
@@ -210,9 +217,18 @@ function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <h3 className="line-clamp-2 text-sm font-semibold leading-tight group-hover:text-primary">
-          {movie.title}
-        </h3>
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="line-clamp-2 text-sm font-semibold leading-tight">{movie.title}</h3>
+          <a
+            href={movie.redirectUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 text-muted-foreground/60 transition hover:text-primary"
+            title="Open on PVR"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
         <div className="mt-1 flex flex-wrap gap-1">
           {movie.languages.slice(0, 2).map((lang) => (
             <Badge key={lang} variant="outline" className="rounded-md text-[10px]">
@@ -225,9 +241,25 @@ function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
             </Badge>
           ))}
         </div>
+        <div className="mt-2 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-xs"
+            disabled={pulling}
+            onClick={() => onPull(movie)}
+          >
+            {pulling ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
+            {pulling ? "Loading" : "Get showtimes"}
+          </Button>
+          {error && <span className="text-[11px] text-muted-foreground/70">{error}</span>}
+        </div>
       </div>
-      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
-    </a>
+    </div>
   );
 }
 
@@ -590,6 +622,9 @@ export default function RecommendationsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [dismissTarget, setDismissTarget] = useState<MovieRecommendation | null>(null);
+  const [pulledById, setPulledById] = useState<Record<string, MovieRecommendation>>({});
+  const [pullingId, setPullingId] = useState<string | null>(null);
+  const [pullErrorById, setPullErrorById] = useState<Record<string, string>>({});
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -609,6 +644,9 @@ export default function RecommendationsPage() {
       try {
         setIsLoading(true);
         setError(null);
+        // A new query invalidates any movies pulled in from the previous one.
+        setPulledById({});
+        setPullErrorById({});
         const response = await fetch(requestUrl, { signal: controller.signal });
         const payload = await response.json();
         if (!response.ok) {
@@ -642,20 +680,32 @@ export default function RecommendationsPage() {
   const toggleCard = (id: string) =>
     setExpandedId((current) => (current === id ? null : id));
 
+  const findRec = useCallback(
+    (movieId: string) =>
+      data?.recommendations.find((r) => r.movie.id === movieId) || pulledById[movieId] || null,
+    [data, pulledById]
+  );
+
   const handleOpenDismiss = useCallback((movieId: string, _movieTitle: string) => {
-    const rec = data?.recommendations.find((r) => r.movie.id === movieId);
+    const rec = findRec(movieId);
     if (rec) setDismissTarget(rec);
-  }, [data]);
+  }, [findRec]);
 
   const handleDismiss = useCallback(async (
     movieId: string,
     reasons: Array<{ reason: string; reasonDetail?: string | null }>
   ) => {
-    const rec = data?.recommendations.find((r) => r.movie.id === movieId);
+    const rec = findRec(movieId);
     if (!rec) return;
 
-    // Immediately hide from UI
+    // Immediately hide from UI (covers both ranked and pulled-in movies)
     setDismissedIds((prev) => new Set(prev).add(movieId));
+    setPulledById((prev) => {
+      if (!prev[movieId]) return prev;
+      const next = { ...prev };
+      delete next[movieId];
+      return next;
+    });
     setDismissTarget(null);
 
     // Persist to API
@@ -672,7 +722,43 @@ export default function RecommendationsPage() {
     } catch {
       // Silently fail — movie is already hidden in UI
     }
-  }, [data]);
+  }, [findRec]);
+
+  const handlePull = useCallback(async (movie: PvrMovie) => {
+    setPullingId(movie.id);
+    setPullErrorById((prev) => {
+      const next = { ...prev };
+      delete next[movie.id];
+      return next;
+    });
+    try {
+      const response = await fetch("/api/pvr/movie-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ city, date, language, format, time, movie }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load showtimes");
+      }
+      if (payload.recommendation) {
+        setPulledById((prev) => ({ ...prev, [movie.id]: payload.recommendation as MovieRecommendation }));
+        setExpandedId(movie.id);
+      } else {
+        setPullErrorById((prev) => ({
+          ...prev,
+          [movie.id]: "No showtimes for these filters",
+        }));
+      }
+    } catch (err) {
+      setPullErrorById((prev) => ({
+        ...prev,
+        [movie.id]: err instanceof Error ? err.message : "Failed to load showtimes",
+      }));
+    } finally {
+      setPullingId(null);
+    }
+  }, [city, date, language, format, time]);
 
   const visibleRecommendations = useMemo(
     () => (data?.recommendations || []).filter((r) => !dismissedIds.has(r.movie.id)),
@@ -692,6 +778,17 @@ export default function RecommendationsPage() {
   );
   const forYou = useMemo(() => nonWatchlist.slice(0, FOR_YOU_LIMIT), [nonWatchlist]);
   const alsoPlaying = useMemo(() => nonWatchlist.slice(FOR_YOU_LIMIT), [nonWatchlist]);
+  const pulledList = useMemo(
+    () => Object.values(pulledById).filter((rec) => !dismissedIds.has(rec.movie.id)),
+    [pulledById, dismissedIds]
+  );
+  const nowPlaying = useMemo(
+    () =>
+      (data?.otherPlaying || []).filter(
+        (movie) => !pulledById[movie.id] && !dismissedIds.has(movie.id)
+      ),
+    [data, pulledById, dismissedIds]
+  );
 
   return (
     <div className="min-h-screen">
@@ -825,7 +922,7 @@ export default function RecommendationsPage() {
               Check the PVR endpoint availability, then refresh.
             </p>
           </div>
-        ) : data && (nonWatchlist.length > 0 || watchlistPlaying.length > 0 || watchlistUpcoming.length > 0) ? (
+        ) : data && (nonWatchlist.length > 0 || watchlistPlaying.length > 0 || watchlistUpcoming.length > 0 || pulledList.length > 0) ? (
           <div className="space-y-6">
             {(watchlistPlaying.length > 0 || watchlistUpcoming.length > 0) && (
               <section className="space-y-3">
@@ -857,7 +954,7 @@ export default function RecommendationsPage() {
               </section>
             )}
 
-            {forYou.length > 0 && (
+            {(forYou.length > 0 || pulledList.length > 0) && (
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Star className="h-4 w-4 text-primary" />
@@ -867,6 +964,15 @@ export default function RecommendationsPage() {
                   </span>
                 </div>
                 <div className="space-y-3">
+                  {pulledList.map((recommendation) => (
+                    <RecommendationCard
+                      key={recommendation.movie.id}
+                      recommendation={recommendation}
+                      expanded={expandedId === recommendation.movie.id}
+                      onToggle={() => toggleCard(recommendation.movie.id)}
+                      onDismiss={handleOpenDismiss}
+                    />
+                  ))}
                   {forYou.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.movie.id}
@@ -913,20 +1019,26 @@ export default function RecommendationsPage() {
           </div>
         )}
 
-        {data && data.otherPlaying && data.otherPlaying.length > 0 && (
-          <details className="group rounded-xl bg-card/35 p-3">
+        {data && nowPlaying.length > 0 && (
+          <details className="group rounded-xl bg-card/35 p-3" open>
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold">Other titles in {data.city}</h2>
+                <h2 className="text-sm font-semibold">More now playing in {data.city}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {data.otherPlaying.length} without showtimes for these filters
+                  {nowPlaying.length} more — tap “Get showtimes” to add one to For you
                 </p>
               </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
             </summary>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {data.otherPlaying.map((movie) => (
-                <OtherPlayingCard key={movie.id} movie={movie} />
+              {nowPlaying.map((movie) => (
+                <OtherPlayingCard
+                  key={movie.id}
+                  movie={movie}
+                  pulling={pullingId === movie.id}
+                  error={pullErrorById[movie.id] || null}
+                  onPull={handlePull}
+                />
               ))}
             </div>
           </details>
