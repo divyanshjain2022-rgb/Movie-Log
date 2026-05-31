@@ -15,6 +15,7 @@ interface OccupancyRequest {
   date?: string;
   showtime?: string | null;
   format?: string | null;
+  audi?: string | null;
 }
 
 function norm(value: string): string {
@@ -34,6 +35,13 @@ function hhmm(value: string | null | undefined): string | null {
   return m ? `${m[1].padStart(2, "0")}:${m[2]}` : null;
 }
 
+// Trailing screen/audi number, e.g. "Screen 5" -> "5", "AUDI 05" -> "5".
+function audiNumber(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = value.match(/(\d+)\s*$/);
+  return m ? String(Number(m[1])) : null;
+}
+
 export async function POST(request: NextRequest) {
   let body: OccupancyRequest;
   try {
@@ -50,40 +58,50 @@ export async function POST(request: NextRequest) {
   const date = body.date || todayInIndia();
   const targetTime = hhmm(body.showtime);
   const targetTheater = body.theaterName ? norm(body.theaterName) : null;
+  const targetFormat = body.format ? norm(body.format) : null;
+  const targetAudi = audiNumber(body.audi);
 
   try {
-    // 1. Find the movie currently playing at PVR by title.
+    // 1. Find all PVR movies whose title matches (a title can map to several ids,
+    //    e.g. a dead duplicate + the live one) — we'll try each until one yields shows.
     const search = await fetchPvrSearchMovies({ city, text: body.title });
-    const movie = search.data.find((m) => titleMatches(m.title, body.title!));
-    if (!movie) {
+    const matchedMovies = search.data.filter((m) => titleMatches(m.title, body.title!));
+    if (matchedMovies.length === 0) {
       return NextResponse.json({ found: false, reason: "Movie isn't currently listed at PVR" });
     }
 
-    // 2. Pull its sessions for the date and find the show matching theater + time.
-    const sessions = await fetchPvrSessions({
-      city,
-      movieId: movie.id,
-      movieTitle: movie.title,
-      date,
-      language: "ALL",
-      format: "ALL",
-      time: "08:00-24:00",
-    });
-
+    // 2. Gather candidate shows across all matching ids.
     const matchesTheater = (show: PvrShow) =>
       !targetTheater ||
       norm(show.cinemaName).includes(targetTheater) ||
       targetTheater.includes(norm(show.cinemaName));
     const matchesTime = (show: PvrShow) => !targetTime || hhmm(show.showTime) === targetTime;
 
-    const show =
-      sessions.data.find((s) => matchesTheater(s) && matchesTime(s)) ||
-      // Fall back to theater-only if the exact time isn't found.
-      sessions.data.find((s) => matchesTheater(s));
+    const candidateShows: PvrShow[] = [];
+    for (const movie of matchedMovies.slice(0, 4)) {
+      const sessions = await fetchPvrSessions({
+        city,
+        movieId: movie.id,
+        movieTitle: movie.title,
+        date,
+        language: "ALL",
+        format: "ALL",
+        time: "08:00-24:00",
+      });
+      candidateShows.push(...sessions.data.filter((s) => s.encrypted && matchesTheater(s)));
+    }
 
-    if (!show) {
+    if (candidateShows.length === 0) {
       return NextResponse.json({ found: false, reason: "No matching PVR showtime found" });
     }
+
+    // 3. Score: prefer same time, then same format, then same audi.
+    const score = (s: PvrShow) =>
+      (matchesTime(s) ? 4 : 0) +
+      (targetFormat && norm(s.format).includes(targetFormat) ? 2 : 0) +
+      (targetAudi && audiNumber(s.screenName) === targetAudi ? 1 : 0);
+    const show = [...candidateShows].sort((a, b) => score(b) - score(a))[0];
+
     if (!show.encrypted) {
       return NextResponse.json({ found: false, reason: "Show has no live seat data" });
     }

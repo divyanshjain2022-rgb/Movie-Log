@@ -489,16 +489,6 @@ export function normalizePvrSessions(payload: unknown, params: SessionsParams): 
   return shows;
 }
 
-function seatStatusIsAvailable(value: unknown): boolean {
-  if (typeof value === "number") return value === 0;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    return normalized === "0" || normalized === "available" || normalized === "a";
-  }
-  return false;
-}
-
-
 function getCategoryQualityWeight(description: string): number {
   const normalized = normalizeToken(description);
   if (/insignia|luxe|recliner|lounger|sofa|luxury/.test(normalized)) return 1.35;
@@ -546,13 +536,15 @@ export function normalizePvrSeatLayout(
 
     for (const seat of seats) {
       if (!isRecord(seat)) continue;
-      // A real, bookable seat has a price category; cells without one are
-      // aisles/spacing. Status (st): 0 = available, anything else = taken.
+      // Field meanings (verified against the live PVR layout):
+      //   c/pc  = price category — a cell with one is a real seat; without = aisle/gap
+      //   s     = sale state: 1 = available to book, 2 = unavailable (sold OR blocked by cinema)
+      //   st    = special-seat marker (0 normal, 1/2 = wheelchair/companion) — NOT sold, ignore here
       const categoryCode = pickString(seat, ["c", "pc", "category", "classCode", "showClass"]);
-      const status = pickValue(seat, ["st", "status", "seatStatus"]);
+      const seatType = pickNumber(seat, ["s", "seatType"]);
       const seatId = pickString(seat, ["sn", "seatNumber", "displaynumber", "seatNo"]);
       const isSeat = Boolean(categoryCode);
-      const available = isSeat && seatStatusIsAvailable(status);
+      const available = isSeat && seatType !== 2;
 
       cells.push({
         id: seatId,

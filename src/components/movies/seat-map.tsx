@@ -57,7 +57,7 @@ export function SeatMap({
 
   const seatClass = (seat: { status: string; categoryCode: string | null }): string => {
     if (seat.status === "gap") return "bg-transparent";
-    if (seat.status === "taken") return "bg-muted-foreground/15";
+    if (seat.status === "taken") return "bg-muted-foreground/35";
     const idx = seat.categoryCode ? colorIndex.get(seat.categoryCode) : undefined;
     const palette = idx === undefined ? SEAT_PALETTE[0] : SEAT_PALETTE[idx];
     return `${palette.seat} ring-1`;
@@ -130,7 +130,7 @@ export function SeatMap({
               </span>
             ))}
             <span className="flex items-center gap-1">
-              <span className="h-3 w-3 rounded-[3px] bg-muted-foreground/15" /> taken
+              <span className="h-3 w-3 rounded-[3px] bg-muted-foreground/35" /> sold / blocked
             </span>
             <span className="ml-auto font-medium text-foreground">{availableSeatCount} free</span>
           </div>

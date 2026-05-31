@@ -247,6 +247,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
           date: movie.date,
           showtime: movie.showtime,
           format: movie.format?.name || null,
+          audi: movie.audi || null,
         }),
       });
       const payload = await response.json();
@@ -617,7 +618,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
               <h2 className="text-sm font-semibold">Hall occupancy</h2>
               {movie.seat_map ? (
                 <p className="text-xs text-muted-foreground">
-                  {movie.seat_map.soldSeats}/{movie.seat_map.totalSeats} seats sold when captured
+                  {movie.seat_map.soldSeats}/{movie.seat_map.totalSeats} seats taken (sold or blocked) when captured
                   {movie.seat_map.capturedAt
                     ? ` · ${formatDate(movie.seat_map.capturedAt)}`
                     : ""}

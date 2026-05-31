@@ -463,6 +463,8 @@ function NewMoviePageInner() {
               theaterName: theater?.name || null,
               date: data.date,
               showtime: convertTo24Hour(data.showtime),
+              format: formats.find((f) => f.id === data.format_id)?.name || null,
+              audi: data.audi || null,
             }),
           });
           const payload = await res.json();
