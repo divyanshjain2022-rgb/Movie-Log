@@ -68,6 +68,19 @@ export interface PvrSeatCategory {
   qualityWeight: number;
 }
 
+export type PvrSeatStatus = "available" | "taken" | "gap";
+
+export interface PvrSeatCell {
+  id: string | null;
+  status: PvrSeatStatus;
+  categoryCode: string | null;
+}
+
+export interface PvrSeatRow {
+  label: string | null;
+  seats: PvrSeatCell[];
+}
+
 export interface PvrSeatQuote {
   showKey: string;
   categories: PvrSeatCategory[];
@@ -75,6 +88,7 @@ export interface PvrSeatQuote {
   minPrice: number | null;
   maxPrice: number | null;
   availableSeatCount: number;
+  rows: PvrSeatRow[];
 }
 
 export interface UserMovieForRecommendation {

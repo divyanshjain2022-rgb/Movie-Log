@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Armchair,
   Bookmark,
   BookmarkCheck,
   BookmarkPlus,
@@ -45,6 +46,8 @@ import type {
   PredictionConfidenceLabel,
   PvrMovie,
   PvrRecommendationsResponse,
+  PvrSeatQuote,
+  PvrShow,
   RecommendationOption,
 } from "@/lib/pvr/types";
 
@@ -130,7 +133,13 @@ function showtimeSummary(recommendation: MovieRecommendation): string {
   return `${count} ${showWord}`;
 }
 
-function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
+function RecommendationOptionRow({
+  option,
+  onViewSeats,
+}: {
+  option: RecommendationOption;
+  onViewSeats?: (show: PvrShow) => void;
+}) {
   const crowdDelta = crowdDeltaLabel(option.crowdDelta);
 
   return (
@@ -203,12 +212,24 @@ function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
             </Badge>
           )}
         </div>
-        <Button asChild size="sm" variant="outline">
-          <a href={option.show.redirectUrl} target="_blank" rel="noreferrer">
-            Open on PVR
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        </Button>
+        <div className="flex items-center gap-2">
+          {onViewSeats && option.show.encrypted && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onViewSeats(option.show)}
+            >
+              <Armchair className="h-3.5 w-3.5" />
+              Seats
+            </Button>
+          )}
+          <Button asChild size="sm" variant="outline">
+            <a href={option.show.redirectUrl} target="_blank" rel="noreferrer">
+              Open on PVR
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -353,6 +374,7 @@ function RecommendationCard({
   repricing,
   onAddToWatchlist,
   watchlistState = "none",
+  onViewSeats,
 }: {
   recommendation: MovieRecommendation;
   expanded: boolean;
@@ -362,6 +384,7 @@ function RecommendationCard({
   repricing?: boolean;
   onAddToWatchlist?: (movie: PvrMovie) => void;
   watchlistState?: "none" | "adding" | "added";
+  onViewSeats?: (show: PvrShow) => void;
 }) {
   const crowdDelta = crowdDeltaLabel(recommendation.crowdDelta);
   const topReason = recommendation.reasons[0];
@@ -511,7 +534,11 @@ function RecommendationCard({
             </Button>
           )}
           {recommendation.options.map((option) => (
-            <RecommendationOptionRow key={option.show.showKey} option={option} />
+            <RecommendationOptionRow
+              key={option.show.showKey}
+              option={option}
+              onViewSeats={onViewSeats}
+            />
           ))}
         </div>
       )}
@@ -699,6 +726,135 @@ function DismissalModal({
   );
 }
 
+function seatCellClass(status: "available" | "taken" | "gap"): string {
+  if (status === "gap") return "bg-transparent";
+  if (status === "available") return "bg-emerald-500/25 ring-1 ring-emerald-500/40";
+  return "bg-muted-foreground/25";
+}
+
+function SeatLayoutModal({
+  show,
+  quote,
+  loading,
+  error,
+  onClose,
+}: {
+  show: PvrShow;
+  quote: PvrSeatQuote | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const pricedCategories = (quote?.categories || []).filter((category) => category.price > 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-card p-5 sm:rounded-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="line-clamp-1 text-base font-semibold">{show.movieTitle}</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {formatTime(show.showTime)} · {show.format}
+              {show.screenName ? ` · ${show.screenName}` : ""}
+            </p>
+            <p className="line-clamp-1 text-xs text-muted-foreground/70">{show.cinemaName}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading seat map…
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            {error}
+          </div>
+        ) : quote ? (
+          <div className="space-y-4">
+            {pricedCategories.length > 0 && (
+              <div className="space-y-1.5">
+                {pricedCategories.map((category) => (
+                  <div
+                    key={category.code}
+                    className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                      quote.recommendedCategory?.code === category.code
+                        ? "bg-primary/10 text-primary"
+                        : "bg-secondary/30"
+                    }`}
+                  >
+                    <span className="font-medium">
+                      {category.description}
+                      {quote.recommendedCategory?.code === category.code && (
+                        <span className="ml-1 text-[11px] font-normal">· best value</span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-3 tabular-nums">
+                      <span className="font-semibold">{formatCurrency(category.price)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {category.availableSeats}/{category.totalSeats} free
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {quote.rows.length > 0 ? (
+              <div>
+                <div className="mb-2 rounded-md bg-secondary/30 py-1 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Screen this way
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="inline-block min-w-full space-y-1">
+                    {quote.rows.map((row, rowIndex) => (
+                      <div key={`${row.label ?? rowIndex}`} className="flex items-center gap-1">
+                        <span className="w-4 shrink-0 text-right text-[9px] text-muted-foreground/60">
+                          {row.label ?? ""}
+                        </span>
+                        <div className="flex gap-0.5">
+                          {row.seats.map((seat, seatIndex) => (
+                            <span
+                              key={seatIndex}
+                              className={`h-3 w-3 rounded-[2px] ${seatCellClass(seat.status)}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-3 w-3 rounded-[2px] bg-emerald-500/25 ring-1 ring-emerald-500/40" /> free
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-3 w-3 rounded-[2px] bg-muted-foreground/25" /> taken
+                  </span>
+                  <span className="ml-auto">{quote.availableSeatCount} seats available</span>
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-lg bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+                Seat map isn&apos;t available for this show, but the price classes above are live.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function RecommendationsPage() {
   const [city, setCity] = useState("Lucknow");
   const [date, setDate] = useState(todayInIndia());
@@ -720,6 +876,10 @@ export default function RecommendationsPage() {
   const [addedWatchlistIds, setAddedWatchlistIds] = useState<Set<string>>(new Set());
   const [addingWatchlistId, setAddingWatchlistId] = useState<string | null>(null);
   const { createItem: createWatchlistItem } = useCreateWatchlistItem();
+  const [seatShow, setSeatShow] = useState<PvrShow | null>(null);
+  const [seatQuote, setSeatQuote] = useState<PvrSeatQuote | null>(null);
+  const [seatLoading, setSeatLoading] = useState(false);
+  const [seatError, setSeatError] = useState<string | null>(null);
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -898,6 +1058,34 @@ export default function RecommendationsPage() {
       setAddingWatchlistId(null);
     }
   }, [createWatchlistItem]);
+
+  const handleViewSeats = useCallback(async (show: PvrShow) => {
+    setSeatShow(show);
+    setSeatQuote(null);
+    setSeatError(null);
+    setSeatLoading(true);
+    try {
+      const response = await fetch("/api/pvr/seat-layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city,
+          dated: show.showDate,
+          encrypted: show.encrypted,
+          showKey: show.showKey,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load seat layout");
+      }
+      setSeatQuote(payload.quote as PvrSeatQuote);
+    } catch (err) {
+      setSeatError(err instanceof Error ? err.message : "Failed to load seat layout");
+    } finally {
+      setSeatLoading(false);
+    }
+  }, [city]);
 
   const visibleRecommendations = useMemo(
     () => (data?.recommendations || []).filter((r) => !dismissedIds.has(r.movie.id)),
@@ -1145,6 +1333,7 @@ export default function RecommendationsPage() {
                       repricing={repricingId === recommendation.movie.id}
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
+                      onViewSeats={handleViewSeats}
                     />
                   ))}
                 </div>
@@ -1179,6 +1368,7 @@ export default function RecommendationsPage() {
                       repricing={repricingId === recommendation.movie.id}
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
+                      onViewSeats={handleViewSeats}
                     />
                   ))}
                   {forYou.map((recommendation) => (
@@ -1192,6 +1382,7 @@ export default function RecommendationsPage() {
                       repricing={repricingId === recommendation.movie.id}
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
+                      onViewSeats={handleViewSeats}
                     />
                   ))}
                 </div>
@@ -1219,6 +1410,7 @@ export default function RecommendationsPage() {
                       repricing={repricingId === recommendation.movie.id}
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
+                      onViewSeats={handleViewSeats}
                     />
                   ))}
                 </div>
@@ -1302,6 +1494,16 @@ export default function RecommendationsPage() {
           movie={dismissTarget}
           onDismiss={handleDismiss}
           onClose={() => setDismissTarget(null)}
+        />
+      )}
+
+      {seatShow && (
+        <SeatLayoutModal
+          show={seatShow}
+          quote={seatQuote}
+          loading={seatLoading}
+          error={seatError}
+          onClose={() => setSeatShow(null)}
         />
       )}
     </div>

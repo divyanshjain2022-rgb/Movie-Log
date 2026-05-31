@@ -5,7 +5,9 @@ import type {
   PvrMovie,
   PvrPriceRange,
   PvrSeatCategory,
+  PvrSeatCell,
   PvrSeatQuote,
+  PvrSeatRow,
   PvrShow,
 } from "@/lib/pvr/types";
 
@@ -536,23 +538,44 @@ export function normalizePvrSeatLayout(
   const rows = pickArray(outputRecord, ["rows", "seatLayout", "layout"]);
 
   const counts = new Map<string, { totalSeats: number; availableSeats: number }>();
+  const layoutRows: PvrSeatRow[] = [];
 
   for (const row of rows) {
     if (!isRecord(row)) continue;
+    const rowLabel = pickString(row, [
+      "row",
+      "rowName",
+      "rn",
+      "name",
+      "label",
+      "rowLabel",
+      "physicalRowName",
+    ]);
     const seats = pickArray(row, ["s", "seats", "seat"]);
+    const cells: PvrSeatCell[] = [];
+
     for (const seat of seats) {
       if (!isRecord(seat)) continue;
       const categoryCode = pickString(seat, ["c", "category", "classCode", "showClass"]);
-      if (!categoryCode) continue;
-
       const status = pickValue(seat, ["st", "status", "seatStatus"]);
-      if (!seatStatusCountsAsSeat(status)) continue;
+      const seatId = pickString(seat, ["sn", "seatNumber", "seatNo", "num", "number", "n"]);
+      const isSeat = seatStatusCountsAsSeat(status);
 
-      const current = counts.get(categoryCode) || { totalSeats: 0, availableSeats: 0 };
-      current.totalSeats += 1;
-      if (seatStatusIsAvailable(status)) current.availableSeats += 1;
-      counts.set(categoryCode, current);
+      cells.push({
+        id: seatId,
+        status: !isSeat ? "gap" : seatStatusIsAvailable(status) ? "available" : "taken",
+        categoryCode,
+      });
+
+      if (categoryCode && isSeat) {
+        const current = counts.get(categoryCode) || { totalSeats: 0, availableSeats: 0 };
+        current.totalSeats += 1;
+        if (seatStatusIsAvailable(status)) current.availableSeats += 1;
+        counts.set(categoryCode, current);
+      }
     }
+
+    if (cells.length > 0) layoutRows.push({ label: rowLabel, seats: cells });
   }
 
   const categoryCodes = new Set<string>([
@@ -589,6 +612,7 @@ export function normalizePvrSeatLayout(
     minPrice: pricedCategories.length > 0 ? pricedCategories[0].price : null,
     maxPrice: pricedCategories.length > 0 ? pricedCategories[pricedCategories.length - 1].price : null,
     availableSeatCount: categories.reduce((sum, category) => sum + category.availableSeats, 0),
+    rows: layoutRows,
   };
 }
 
