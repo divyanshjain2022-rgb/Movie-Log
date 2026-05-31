@@ -99,6 +99,15 @@ export async function POST(request: NextRequest) {
     const totalSeats = quote.data.categories.reduce((sum, c) => sum + c.totalSeats, 0);
     const availableSeats = quote.data.categories.reduce((sum, c) => sum + c.availableSeats, 0);
     const soldSeats = Math.max(totalSeats - availableSeats, 0);
+
+    // PVR returns an empty layout (HTTP 200, "Session Not Found") once a show has
+    // started — the seat map / occupancy is only available while booking is open.
+    if (totalSeats === 0) {
+      return NextResponse.json({
+        found: false,
+        reason: "PVR closes the seat map once the show starts — occupancy is only available before showtime.",
+      });
+    }
     const occupancyPct = totalSeats > 0 ? Math.round((soldSeats / totalSeats) * 1000) / 10 : 0;
 
     const snapshot: MovieSeatSnapshot = {
