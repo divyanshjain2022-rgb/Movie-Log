@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchPvrSeatLayout, fetchPvrSessions } from "@/lib/pvr/client";
 import { findPvrCity, todayInIndia } from "@/lib/pvr/cities";
+import { settledWithConcurrency } from "@/lib/pvr/concurrency";
 import {
   buildRecommendations,
   getShowsForExactPricing,
@@ -106,15 +107,17 @@ export async function POST(request: NextRequest) {
       MAX_EXACT_SEAT_QUOTES
     );
 
-    const seatResults = await Promise.allSettled(
-      showsForExactPricing.map((show) =>
+    const seatResults = await settledWithConcurrency(
+      showsForExactPricing,
+      3,
+      (show) =>
         fetchPvrSeatLayout({
           city,
           dated: show.showDate,
           encrypted: show.encrypted || "",
           showKey: show.showKey,
-        })
-      )
+        }),
+      150
     );
     const seatQuotes = new Map<string, PvrSeatQuote>();
     for (let index = 0; index < seatResults.length; index += 1) {

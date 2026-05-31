@@ -6,6 +6,7 @@ import {
   fetchPvrSessions,
 } from "@/lib/pvr/client";
 import { findPvrCity, todayInIndia } from "@/lib/pvr/cities";
+import { settledWithConcurrency } from "@/lib/pvr/concurrency";
 import {
   buildRecommendations,
   getShowsForExactPricing,
@@ -27,6 +28,10 @@ import type {
 
 const MAX_MOVIE_CANDIDATES = 16;
 const MAX_EXACT_SEAT_QUOTES = 8;
+// Bounded concurrency keeps PVR from rate-limiting the burst of session/seat calls.
+const SESSION_CONCURRENCY = 4;
+const SEAT_CONCURRENCY = 3;
+const PVR_CALL_GAP_MS = 150;
 
 function staleFromCaches(caches: Array<PvrCacheMeta | null>): boolean {
   return caches.some((cache) => Boolean(cache?.stale));
@@ -81,8 +86,10 @@ export async function GET(request: NextRequest) {
       MAX_MOVIE_CANDIDATES
     );
 
-    const sessionResults = await Promise.allSettled(
-      candidates.map((candidate) =>
+    const sessionResults = await settledWithConcurrency(
+      candidates,
+      SESSION_CONCURRENCY,
+      (candidate) =>
         fetchPvrSessions({
           city,
           movieId: candidate.movie.id,
@@ -91,8 +98,8 @@ export async function GET(request: NextRequest) {
           language,
           format,
           time,
-        })
-      )
+        }),
+      PVR_CALL_GAP_MS
     );
 
     const sessionCaches: PvrCacheMeta[] = [];
@@ -127,15 +134,17 @@ export async function GET(request: NextRequest) {
       MAX_EXACT_SEAT_QUOTES
     );
 
-    const seatResults = await Promise.allSettled(
-      showsForExactPricing.map((show) =>
+    const seatResults = await settledWithConcurrency(
+      showsForExactPricing,
+      SEAT_CONCURRENCY,
+      (show) =>
         fetchPvrSeatLayout({
           city,
           dated: show.showDate,
           encrypted: show.encrypted || "",
           showKey: show.showKey,
-        })
-      )
+        }),
+      PVR_CALL_GAP_MS
     );
     const seatLayoutCaches: PvrCacheMeta[] = [];
     const seatQuotes = new Map<string, PvrSeatQuote>();

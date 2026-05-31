@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
+  BookmarkCheck,
+  BookmarkPlus,
   CalendarDays,
   ChevronDown,
   Clock,
@@ -23,6 +25,8 @@ import {
   Star,
   Eye,
 } from "lucide-react";
+import { toast } from "sonner";
+import { useCreateWatchlistItem } from "@/hooks/use-watchlist";
 import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +60,25 @@ const TIME_OPTIONS = [
 
 // How many taste-ranked picks sit in "For you" before the rest fall into "Also playing".
 const FOR_YOU_LIMIT = 6;
+
+const DEFAULT_TIME = "08:00-24:00";
+
+function addDays(iso: string, days: number): string {
+  const date = new Date(`${iso}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+// Today / Tomorrow / next Saturday, relative to "today in India".
+function dateChips(today: string): Array<{ label: string; value: string }> {
+  const day = new Date(`${today}T00:00:00`).getDay(); // 0 Sun .. 6 Sat
+  const daysUntilSaturday = (6 - day + 7) % 7;
+  return [
+    { label: "Today", value: today },
+    { label: "Tomorrow", value: addDays(today, 1) },
+    { label: "Weekend", value: addDays(today, daysUntilSaturday) },
+  ];
+}
 
 function formatPrice(option: RecommendationOption): string {
   if (option.displayPrice) return formatCurrency(option.displayPrice);
@@ -196,11 +219,15 @@ function OtherPlayingCard({
   pulling,
   error,
   onPull,
+  onAddToWatchlist,
+  watchlistState = "none",
 }: {
   movie: PvrMovie;
   pulling: boolean;
   error: string | null;
   onPull: (movie: PvrMovie) => void;
+  onAddToWatchlist: (movie: PvrMovie) => void;
+  watchlistState?: "none" | "adding" | "added";
 }) {
   return (
     <div className="flex gap-3 rounded-lg bg-card/40 p-2.5">
@@ -241,7 +268,7 @@ function OtherPlayingCard({
             </Badge>
           ))}
         </div>
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -255,6 +282,23 @@ function OtherPlayingCard({
               <Plus className="h-3.5 w-3.5" />
             )}
             {pulling ? "Loading" : "Get showtimes"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            disabled={watchlistState !== "none"}
+            onClick={() => onAddToWatchlist(movie)}
+            title="Add to watchlist"
+          >
+            {watchlistState === "adding" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : watchlistState === "added" ? (
+              <BookmarkCheck className="h-3.5 w-3.5 text-primary" />
+            ) : (
+              <BookmarkPlus className="h-3.5 w-3.5" />
+            )}
+            {watchlistState === "added" ? "On watchlist" : "Watchlist"}
           </Button>
           {error && <span className="text-[11px] text-muted-foreground/70">{error}</span>}
         </div>
@@ -305,14 +349,24 @@ function RecommendationCard({
   expanded,
   onToggle,
   onDismiss,
+  onReprice,
+  repricing,
+  onAddToWatchlist,
+  watchlistState = "none",
 }: {
   recommendation: MovieRecommendation;
   expanded: boolean;
   onToggle: () => void;
   onDismiss: (movieId: string, movieTitle: string) => void;
+  onReprice?: (recommendation: MovieRecommendation) => void;
+  repricing?: boolean;
+  onAddToWatchlist?: (movie: PvrMovie) => void;
+  watchlistState?: "none" | "adding" | "added";
 }) {
   const crowdDelta = crowdDeltaLabel(recommendation.crowdDelta);
   const topReason = recommendation.reasons[0];
+  const needsExactPrice = recommendation.options.some((option) => !option.exactPrice);
+  const showWatchlistAdd = Boolean(onAddToWatchlist) && !recommendation.onWatchlist;
 
   return (
     <section className="overflow-hidden rounded-xl bg-card/40">
@@ -355,6 +409,26 @@ function RecommendationCard({
               )}
             </div>
             <div className="flex shrink-0 items-start gap-1.5">
+              {showWatchlistAdd && (
+                <button
+                  type="button"
+                  disabled={watchlistState !== "none"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onAddToWatchlist?.(recommendation.movie);
+                  }}
+                  className="rounded-md p-1.5 text-muted-foreground/50 transition hover:bg-primary/10 hover:text-primary disabled:opacity-100"
+                  title={watchlistState === "added" ? "On your watchlist" : "Add to watchlist"}
+                >
+                  {watchlistState === "adding" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : watchlistState === "added" ? (
+                    <BookmarkCheck className="h-4 w-4 text-primary" />
+                  ) : (
+                    <BookmarkPlus className="h-4 w-4" />
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(event) => {
@@ -419,6 +493,22 @@ function RecommendationCard({
                 </Badge>
               ))}
             </div>
+          )}
+          {needsExactPrice && onReprice && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-full text-xs"
+              disabled={repricing}
+              onClick={() => onReprice(recommendation)}
+            >
+              {repricing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Ticket className="h-3.5 w-3.5" />
+              )}
+              {repricing ? "Checking prices" : "Get exact prices"}
+            </Button>
           )}
           {recommendation.options.map((option) => (
             <RecommendationOptionRow key={option.show.showKey} option={option} />
@@ -625,6 +715,11 @@ export default function RecommendationsPage() {
   const [pulledById, setPulledById] = useState<Record<string, MovieRecommendation>>({});
   const [pullingId, setPullingId] = useState<string | null>(null);
   const [pullErrorById, setPullErrorById] = useState<Record<string, string>>({});
+  const [repricedById, setRepricedById] = useState<Record<string, MovieRecommendation>>({});
+  const [repricingId, setRepricingId] = useState<string | null>(null);
+  const [addedWatchlistIds, setAddedWatchlistIds] = useState<Set<string>>(new Set());
+  const [addingWatchlistId, setAddingWatchlistId] = useState<string | null>(null);
+  const { createItem: createWatchlistItem } = useCreateWatchlistItem();
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -644,9 +739,10 @@ export default function RecommendationsPage() {
       try {
         setIsLoading(true);
         setError(null);
-        // A new query invalidates any movies pulled in from the previous one.
+        // A new query invalidates any movies pulled in / repriced from the previous one.
         setPulledById({});
         setPullErrorById({});
+        setRepricedById({});
         const response = await fetch(requestUrl, { signal: controller.signal });
         const payload = await response.json();
         if (!response.ok) {
@@ -760,6 +856,49 @@ export default function RecommendationsPage() {
     }
   }, [city, date, language, format, time]);
 
+  // Re-fetch a single movie's sessions with exact seat prices (one PVR call set,
+  // so it succeeds where the bulk fan-out got rate-limited and left prices pending).
+  const handleReprice = useCallback(async (rec: MovieRecommendation) => {
+    setRepricingId(rec.movie.id);
+    try {
+      const response = await fetch("/api/pvr/movie-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ city, date, language, format, time, movie: rec.movie }),
+      });
+      const payload = await response.json();
+      if (response.ok && payload.recommendation) {
+        setRepricedById((prev) => ({
+          ...prev,
+          [rec.movie.id]: payload.recommendation as MovieRecommendation,
+        }));
+      }
+    } catch {
+      // Leave the existing card as-is on failure.
+    } finally {
+      setRepricingId(null);
+    }
+  }, [city, date, language, format, time]);
+
+  const handleAddToWatchlist = useCallback(async (movie: PvrMovie) => {
+    setAddingWatchlistId(movie.id);
+    try {
+      await createWatchlistItem({
+        title: movie.title,
+        poster_url: movie.posterUrl,
+        release_date: movie.releaseDate,
+        genres: movie.genres,
+        priority: 1,
+      });
+      setAddedWatchlistIds((prev) => new Set(prev).add(movie.id));
+      toast.success(`Added “${movie.title}” to your watchlist`);
+    } catch {
+      toast.error("Couldn't add to watchlist");
+    } finally {
+      setAddingWatchlistId(null);
+    }
+  }, [createWatchlistItem]);
+
   const visibleRecommendations = useMemo(
     () => (data?.recommendations || []).filter((r) => !dismissedIds.has(r.movie.id)),
     [data, dismissedIds]
@@ -789,6 +928,28 @@ export default function RecommendationsPage() {
       ),
     [data, pulledById, dismissedIds]
   );
+
+  // Prefer the freshly-repriced version of a card when the user has fetched exact prices.
+  const withReprice = (rec: MovieRecommendation): MovieRecommendation =>
+    repricedById[rec.movie.id] || rec;
+
+  const watchlistStateFor = (movieId: string): "none" | "adding" | "added" =>
+    addingWatchlistId === movieId
+      ? "adding"
+      : addedWatchlistIds.has(movieId)
+        ? "added"
+        : "none";
+
+  const todayStr = todayInIndia();
+  const chips = dateChips(todayStr);
+  const filtersActive =
+    language !== "ALL" || format !== "ALL" || time !== DEFAULT_TIME || date !== todayStr;
+  const clearFilters = () => {
+    setLanguage("ALL");
+    setFormat("ALL");
+    setTime(DEFAULT_TIME);
+    setDate(todayStr);
+  };
 
   return (
     <div className="min-h-screen">
@@ -869,6 +1030,32 @@ export default function RecommendationsPage() {
           </Select>
         </section>
 
+        <div className="flex flex-wrap items-center gap-2">
+          {chips.map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              onClick={() => setDate(chip.value)}
+              className={`rounded-full px-3 py-1 text-xs transition ${
+                date === chip.value
+                  ? "bg-primary/15 text-primary"
+                  : "bg-card/40 text-muted-foreground hover:bg-card/60"
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="ml-auto flex items-center gap-1 rounded-full px-3 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+            >
+              <X className="h-3 w-3" /> Clear filters
+            </button>
+          )}
+        </div>
+
         {data && (
           <section className="rounded-xl bg-card/35 p-3 text-xs text-muted-foreground">
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -909,6 +1096,19 @@ export default function RecommendationsPage() {
           </section>
         )}
 
+        {data && (
+          <details className="rounded-xl bg-card/35 px-3 py-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer list-none font-medium">What do these mean?</summary>
+            <ul className="mt-2 space-y-1.5">
+              <li><span className="font-medium text-foreground">predicted</span> — the rating we think you&apos;d give it (out of 10), from your Movie Log history.</li>
+              <li><span className="font-medium text-foreground">confidence</span> — how sure that prediction is, based on how much relevant history you have.</li>
+              <li><span className="font-medium text-foreground">vs TMDB</span> — how your predicted rating compares to the public TMDB score (+ above the crowd, − below).</li>
+              <li><span className="font-medium text-foreground">Value</span> — predicted enjoyment per rupee; higher means more bang for the ticket price.</li>
+              <li><span className="font-medium text-foreground">fast price</span> = estimate from PVR&apos;s range; <span className="font-medium text-foreground">exact price</span> = confirmed from the live seat map.</li>
+            </ul>
+          </details>
+        )}
+
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-44 rounded-xl" />
@@ -937,10 +1137,14 @@ export default function RecommendationsPage() {
                   {watchlistPlaying.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.movie.id}
-                      recommendation={recommendation}
+                      recommendation={withReprice(recommendation)}
                       expanded={expandedId === recommendation.movie.id}
                       onToggle={() => toggleCard(recommendation.movie.id)}
                       onDismiss={handleOpenDismiss}
+                      onReprice={handleReprice}
+                      repricing={repricingId === recommendation.movie.id}
+                      onAddToWatchlist={handleAddToWatchlist}
+                      watchlistState={watchlistStateFor(recommendation.movie.id)}
                     />
                   ))}
                 </div>
@@ -967,19 +1171,27 @@ export default function RecommendationsPage() {
                   {pulledList.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.movie.id}
-                      recommendation={recommendation}
+                      recommendation={withReprice(recommendation)}
                       expanded={expandedId === recommendation.movie.id}
                       onToggle={() => toggleCard(recommendation.movie.id)}
                       onDismiss={handleOpenDismiss}
+                      onReprice={handleReprice}
+                      repricing={repricingId === recommendation.movie.id}
+                      onAddToWatchlist={handleAddToWatchlist}
+                      watchlistState={watchlistStateFor(recommendation.movie.id)}
                     />
                   ))}
                   {forYou.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.movie.id}
-                      recommendation={recommendation}
+                      recommendation={withReprice(recommendation)}
                       expanded={expandedId === recommendation.movie.id}
                       onToggle={() => toggleCard(recommendation.movie.id)}
                       onDismiss={handleOpenDismiss}
+                      onReprice={handleReprice}
+                      repricing={repricingId === recommendation.movie.id}
+                      onAddToWatchlist={handleAddToWatchlist}
+                      watchlistState={watchlistStateFor(recommendation.movie.id)}
                     />
                   ))}
                 </div>
@@ -999,22 +1211,60 @@ export default function RecommendationsPage() {
                   {alsoPlaying.map((recommendation) => (
                     <RecommendationCard
                       key={recommendation.movie.id}
-                      recommendation={recommendation}
+                      recommendation={withReprice(recommendation)}
                       expanded={expandedId === recommendation.movie.id}
                       onToggle={() => toggleCard(recommendation.movie.id)}
                       onDismiss={handleOpenDismiss}
+                      onReprice={handleReprice}
+                      repricing={repricingId === recommendation.movie.id}
+                      onAddToWatchlist={handleAddToWatchlist}
+                      watchlistState={watchlistStateFor(recommendation.movie.id)}
                     />
                   ))}
                 </div>
               </section>
             )}
           </div>
+        ) : data && nowPlaying.length > 0 ? (
+          <div className="rounded-xl border border-dashed p-6 text-center">
+            <Sparkles className="mx-auto mb-2 h-7 w-7 text-muted-foreground/50" />
+            <p className="text-sm font-medium">No ranked picks for these filters</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              But there are titles playing in {data.city} below — tap “Get showtimes” on any of them.
+            </p>
+          </div>
+        ) : data && data.diagnostics.errors.length > 0 && data.diagnostics.showCount === 0 ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-8 text-center">
+            <p className="text-sm font-medium text-amber-300">PVR didn&apos;t respond</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The cinema data source is unavailable right now. Wait a moment and refresh.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={() => setRefreshKey((value) => value + 1)}
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          </div>
+        ) : filtersActive ? (
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <Sparkles className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm font-medium">No movies match your filters</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Your language, format, time, or date filter is too narrow.
+            </p>
+            <Button size="sm" variant="outline" className="mt-3" onClick={clearFilters}>
+              <X className="h-3.5 w-3.5" /> Clear filters
+            </Button>
+          </div>
         ) : (
           <div className="rounded-xl border border-dashed p-8 text-center">
             <Sparkles className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
             <p className="text-sm font-medium">No live PVR sessions found</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Try another city, date, language, or format.
+              Try another city or date.
             </p>
           </div>
         )}
@@ -1038,6 +1288,8 @@ export default function RecommendationsPage() {
                   pulling={pullingId === movie.id}
                   error={pullErrorById[movie.id] || null}
                   onPull={handlePull}
+                  onAddToWatchlist={handleAddToWatchlist}
+                  watchlistState={watchlistStateFor(movie.id)}
                 />
               ))}
             </div>
