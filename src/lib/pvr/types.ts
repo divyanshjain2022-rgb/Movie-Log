@@ -34,6 +34,8 @@ export interface PvrMovie {
   posterUrl: string | null;
   redirectUrl: string;
   source: PvrSource;
+  onWatchlist?: boolean;
+  watchlistPriority?: number | null;
 }
 
 export interface PvrShow {
@@ -209,6 +211,12 @@ export interface MovieRecommendation {
   reasons: string[];
   options: RecommendationOption[];
   bestOption: RecommendationOption;
+  /** Taste-forward ranking score: dominated by predicted personal rating. */
+  personalScore: number;
+  /** Whether this title matches an item on the user's watchlist. */
+  onWatchlist: boolean;
+  /** Watchlist priority (0-2) when matched, otherwise null. */
+  watchlistPriority: number | null;
 }
 
 export interface PvrRecommendationsResponse {

@@ -525,7 +525,8 @@ export function buildRecommendations(
   candidates: RankedMovieCandidate[],
   shows: PvrShow[],
   userData: RecommendationUserData,
-  seatQuotes: Map<string, PvrSeatQuote>
+  seatQuotes: Map<string, PvrSeatQuote>,
+  limit = 40
 ): MovieRecommendation[] {
   const profile = buildPreferenceProfile(userData);
   const model = buildPersonalPredictionModel(userData);
@@ -611,8 +612,24 @@ export function buildRecommendations(
 
     const selectedOptions = selectDiverseOptions(options);
     const bestOption = selectedOptions[0];
+
+    const watchlistItem = matchingWatchlistItem(candidate.movie, profile);
+    const onWatchlist = Boolean(watchlistItem);
+    const watchlistPriority = watchlistItem ? watchlistItem.priority : null;
+
+    // Taste-first ranking: predicted personal rating dominates, with logistics
+    // (the already-optimised best showtime score) as a light tiebreak. A small
+    // watchlist bump keeps explicitly-wanted titles near the top.
+    const watchlistBoost = onWatchlist ? 4 + (watchlistPriority || 0) * 2 : 0;
+    const personalScore = Math.round(
+      (bestOption.predictedPersonalRating / 10) * 100 * 0.82 +
+        bestOption.predictionConfidence * 100 * 0.08 +
+        bestOption.score * 0.1 +
+        watchlistBoost
+    );
+
     recommendations.push({
-      movie: candidate.movie,
+      movie: { ...candidate.movie, onWatchlist, watchlistPriority },
       predictedRating: bestOption.predictedPersonalRating,
       predictionConfidence: bestOption.predictionConfidence,
       predictionConfidenceLabel: bestOption.predictionConfidenceLabel,
@@ -620,12 +637,15 @@ export function buildRecommendations(
       reasons: candidate.fit.reasons,
       options: selectedOptions,
       bestOption,
+      personalScore,
+      onWatchlist,
+      watchlistPriority,
     });
   }
 
   return recommendations
-    .sort((a, b) => b.bestOption.score - a.bestOption.score)
-    .slice(0, 10);
+    .sort((a, b) => b.personalScore - a.personalScore)
+    .slice(0, limit);
 }
 
 export function getShowsForExactPricing(

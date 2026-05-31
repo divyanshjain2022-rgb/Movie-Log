@@ -32,7 +32,7 @@ import type {
 } from "@/lib/pvr/types";
 import type { FormulaParams } from "@/types";
 
-const MAX_MOVIE_CANDIDATES = 16;
+const MAX_MOVIE_CANDIDATES = 40;
 const MAX_EXACT_SEAT_QUOTES = 8;
 
 interface MovieRow {
@@ -495,12 +495,40 @@ export async function GET(request: NextRequest) {
       return true;
     }).map((movie) => enrichedById.get(movie.id) || movie);
 
+    const normalizeTitle = (value: string) =>
+      value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const watchlistTitles = userData.watchlist
+      .filter((item) => !item.watchedMovieId)
+      .map((item) => ({ key: normalizeTitle(item.title), priority: item.priority }));
+    const matchWatchlist = (title: string) => {
+      const normalized = normalizeTitle(title);
+      if (!normalized) return null;
+      for (const entry of watchlistTitles) {
+        if (
+          entry.key === normalized ||
+          entry.key.includes(normalized) ||
+          normalized.includes(entry.key)
+        ) {
+          return entry;
+        }
+      }
+      return null;
+    };
+    const upcoming = enrichedComingSoonMovies.slice(0, 20).map((movie) => {
+      const match = matchWatchlist(movie.title);
+      return {
+        ...movie,
+        onWatchlist: Boolean(match),
+        watchlistPriority: match ? match.priority : null,
+      };
+    });
+
     const response: PvrRecommendationsResponse = {
       city,
       date,
       generatedAt: new Date().toISOString(),
       recommendations,
-      upcoming: enrichedComingSoonMovies.slice(0, 20),
+      upcoming,
       otherPlaying,
       diagnostics: {
         pvrMovieCount: enrichedMovies.length,

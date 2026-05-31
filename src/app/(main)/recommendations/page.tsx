@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Bookmark,
   CalendarDays,
   ChevronDown,
   Clock,
@@ -51,6 +52,9 @@ const TIME_OPTIONS = [
   { value: "22:00-24:00", label: "Late" },
 ];
 
+// How many taste-ranked picks sit in "For you" before the rest fall into "Also playing".
+const FOR_YOU_LIMIT = 6;
+
 function formatPrice(option: RecommendationOption): string {
   if (option.displayPrice) return formatCurrency(option.displayPrice);
 
@@ -83,6 +87,22 @@ function crowdDeltaLabel(delta: number | null): string | null {
   if (delta === null) return null;
   const sign = delta > 0 ? "+" : "";
   return `${sign}${delta.toFixed(1)} vs TMDB`;
+}
+
+function cheapestOptionPrice(recommendation: MovieRecommendation): number | null {
+  const prices = recommendation.options
+    .map((option) => option.displayPrice || option.show.priceRange.min)
+    .filter((value): value is number => typeof value === "number" && value > 0);
+  if (prices.length === 0) return null;
+  return Math.min(...prices);
+}
+
+function showtimeSummary(recommendation: MovieRecommendation): string {
+  const count = recommendation.options.length;
+  const showWord = count === 1 ? "show" : "shows";
+  const price = cheapestOptionPrice(recommendation);
+  if (price) return `${count} ${showWord} · from ${formatCurrency(price)}`;
+  return `${count} ${showWord}`;
 }
 
 function RecommendationOptionRow({ option }: { option: RecommendationOption }) {
@@ -181,6 +201,7 @@ function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
         <img
           src={movie.posterUrl}
           alt={movie.title}
+          loading="lazy"
           className="h-20 w-14 shrink-0 rounded-md object-cover"
         />
       ) : (
@@ -210,22 +231,77 @@ function OtherPlayingCard({ movie }: { movie: PvrMovie }) {
   );
 }
 
+function UpcomingWatchlistCard({ movie }: { movie: PvrMovie }) {
+  return (
+    <a
+      href={movie.redirectUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="group flex gap-3 rounded-lg bg-card/40 p-2.5 transition hover:bg-card/60"
+    >
+      {movie.posterUrl ? (
+        <img
+          src={movie.posterUrl}
+          alt={movie.title}
+          loading="lazy"
+          className="h-20 w-14 shrink-0 rounded-md object-cover"
+        />
+      ) : (
+        <div className="flex h-20 w-14 shrink-0 items-center justify-center rounded-md bg-secondary/40">
+          <Bookmark className="h-4 w-4 text-muted-foreground/40" />
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-tight group-hover:text-primary">
+          {movie.title}
+        </h3>
+        {movie.releaseDate && (
+          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <CalendarDays className="h-3.5 w-3.5" />
+            {formatDate(movie.releaseDate)}
+          </p>
+        )}
+        <p className="mt-1 text-[11px] text-muted-foreground/70">No shows yet — coming soon</p>
+      </div>
+      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
+    </a>
+  );
+}
+
 function RecommendationCard({
   recommendation,
+  expanded,
+  onToggle,
   onDismiss,
 }: {
   recommendation: MovieRecommendation;
+  expanded: boolean;
+  onToggle: () => void;
   onDismiss: (movieId: string, movieTitle: string) => void;
 }) {
   const crowdDelta = crowdDeltaLabel(recommendation.crowdDelta);
+  const topReason = recommendation.reasons[0];
 
   return (
-    <section className="rounded-xl bg-card/40 p-3.5">
-      <div className="flex gap-3">
+    <section className="overflow-hidden rounded-xl bg-card/40">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={onToggle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+        className="flex w-full cursor-pointer gap-3 p-3.5 text-left transition hover:bg-card/60"
+      >
         {recommendation.movie.posterUrl ? (
           <img
             src={recommendation.movie.posterUrl}
             alt={recommendation.movie.title}
+            loading="lazy"
             className="h-24 w-16 shrink-0 rounded-lg object-cover"
           />
         ) : (
@@ -246,9 +322,13 @@ function RecommendationCard({
                 </p>
               )}
             </div>
-            <div className="flex items-start gap-1.5">
+            <div className="flex shrink-0 items-start gap-1.5">
               <button
-                onClick={() => onDismiss(recommendation.movie.id, recommendation.movie.title)}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDismiss(recommendation.movie.id, recommendation.movie.title);
+                }}
                 className="rounded-md p-1.5 text-muted-foreground/50 transition hover:bg-destructive/10 hover:text-destructive"
                 title="Not interested"
               >
@@ -260,35 +340,59 @@ function RecommendationCard({
                 </p>
                 <p className="text-[10px] text-primary/70">predicted</p>
               </div>
+              <ChevronDown
+                className={`mt-1 h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
+              />
             </div>
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          {topReason && (
+            <p className="mt-1.5 line-clamp-1 text-xs text-muted-foreground">{topReason}</p>
+          )}
+
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <Badge
               variant="outline"
               className={`rounded-md text-[11px] ${confidenceBadgeClass(recommendation.predictionConfidenceLabel)}`}
             >
               {recommendation.predictionConfidenceLabel} confidence
             </Badge>
+            {recommendation.onWatchlist && (
+              <Badge
+                variant="outline"
+                className="rounded-md border-primary/30 bg-primary/10 text-[11px] text-primary"
+              >
+                <Bookmark className="mr-0.5 h-3 w-3" /> Watchlist
+              </Badge>
+            )}
             {crowdDelta && (
               <Badge variant="outline" className="rounded-md text-[11px]">
                 {crowdDelta}
               </Badge>
             )}
-            {recommendation.reasons.map((reason) => (
-              <Badge key={reason} variant="outline" className="rounded-md text-[11px]">
-                {reason}
-              </Badge>
-            ))}
+            <span className="ml-auto text-[11px] text-muted-foreground/70">
+              {showtimeSummary(recommendation)}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="mt-3 space-y-2">
-        {recommendation.options.map((option) => (
-          <RecommendationOptionRow key={option.show.showKey} option={option} />
-        ))}
-      </div>
+      {expanded && (
+        <div className="space-y-2 px-3.5 pb-3.5">
+          {recommendation.reasons.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {recommendation.reasons.slice(1).map((reason) => (
+                <Badge key={reason} variant="outline" className="rounded-md text-[11px]">
+                  {reason}
+                </Badge>
+              ))}
+            </div>
+          )}
+          {recommendation.options.map((option) => (
+            <RecommendationOptionRow key={option.show.showKey} option={option} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -483,6 +587,7 @@ export default function RecommendationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [dismissTarget, setDismissTarget] = useState<MovieRecommendation | null>(null);
 
@@ -523,6 +628,20 @@ export default function RecommendationsPage() {
     return () => controller.abort();
   }, [requestUrl, refreshKey]);
 
+  // Open the top pick by default whenever a fresh result arrives.
+  useEffect(() => {
+    if (!data) {
+      setExpandedId(null);
+      return;
+    }
+    const firstWatchlist = data.recommendations.find((rec) => rec.onWatchlist);
+    const firstForYou = data.recommendations.find((rec) => !rec.onWatchlist);
+    setExpandedId((firstForYou || firstWatchlist)?.movie.id ?? null);
+  }, [data]);
+
+  const toggleCard = (id: string) =>
+    setExpandedId((current) => (current === id ? null : id));
+
   const handleOpenDismiss = useCallback((movieId: string, _movieTitle: string) => {
     const rec = data?.recommendations.find((r) => r.movie.id === movieId);
     if (rec) setDismissTarget(rec);
@@ -559,6 +678,20 @@ export default function RecommendationsPage() {
     () => (data?.recommendations || []).filter((r) => !dismissedIds.has(r.movie.id)),
     [data, dismissedIds]
   );
+  const watchlistPlaying = useMemo(
+    () => visibleRecommendations.filter((rec) => rec.onWatchlist),
+    [visibleRecommendations]
+  );
+  const watchlistUpcoming = useMemo(
+    () => (data?.upcoming || []).filter((movie) => movie.onWatchlist),
+    [data]
+  );
+  const nonWatchlist = useMemo(
+    () => visibleRecommendations.filter((rec) => !rec.onWatchlist),
+    [visibleRecommendations]
+  );
+  const forYou = useMemo(() => nonWatchlist.slice(0, FOR_YOU_LIMIT), [nonWatchlist]);
+  const alsoPlaying = useMemo(() => nonWatchlist.slice(FOR_YOU_LIMIT), [nonWatchlist]);
 
   return (
     <div className="min-h-screen">
@@ -644,7 +777,7 @@ export default function RecommendationsPage() {
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
                 <p className="text-base font-bold text-foreground">
-                  {data.recommendations.length}
+                  {visibleRecommendations.length}
                 </p>
                 <p>movies</p>
               </div>
@@ -692,15 +825,83 @@ export default function RecommendationsPage() {
               Check the PVR endpoint availability, then refresh.
             </p>
           </div>
-        ) : data && visibleRecommendations.length > 0 ? (
-          <div className="space-y-4">
-            {visibleRecommendations.map((recommendation) => (
-              <RecommendationCard
-                key={recommendation.movie.id}
-                recommendation={recommendation}
-                onDismiss={handleOpenDismiss}
-              />
-            ))}
+        ) : data && (nonWatchlist.length > 0 || watchlistPlaying.length > 0 || watchlistUpcoming.length > 0) ? (
+          <div className="space-y-6">
+            {(watchlistPlaying.length > 0 || watchlistUpcoming.length > 0) && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Bookmark className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">From your watchlist</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {watchlistPlaying.length + watchlistUpcoming.length} titles
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {watchlistPlaying.map((recommendation) => (
+                    <RecommendationCard
+                      key={recommendation.movie.id}
+                      recommendation={recommendation}
+                      expanded={expandedId === recommendation.movie.id}
+                      onToggle={() => toggleCard(recommendation.movie.id)}
+                      onDismiss={handleOpenDismiss}
+                    />
+                  ))}
+                </div>
+                {watchlistUpcoming.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {watchlistUpcoming.map((movie) => (
+                      <UpcomingWatchlistCard key={movie.id} movie={movie} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {forYou.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Star className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">For you</h2>
+                  <span className="text-xs text-muted-foreground">
+                    Ranked by how much you&apos;re likely to enjoy them
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {forYou.map((recommendation) => (
+                    <RecommendationCard
+                      key={recommendation.movie.id}
+                      recommendation={recommendation}
+                      expanded={expandedId === recommendation.movie.id}
+                      onToggle={() => toggleCard(recommendation.movie.id)}
+                      onDismiss={handleOpenDismiss}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {alsoPlaying.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Ticket className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="text-sm font-semibold">Also playing</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {alsoPlaying.length} more in {data.city}, with showtimes &amp; predicted ratings
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {alsoPlaying.map((recommendation) => (
+                    <RecommendationCard
+                      key={recommendation.movie.id}
+                      recommendation={recommendation}
+                      expanded={expandedId === recommendation.movie.id}
+                      onToggle={() => toggleCard(recommendation.movie.id)}
+                      onDismiss={handleOpenDismiss}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         ) : (
           <div className="rounded-xl border border-dashed p-8 text-center">
@@ -716,9 +917,9 @@ export default function RecommendationsPage() {
           <details className="group rounded-xl bg-card/35 p-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold">Also playing</h2>
+                <h2 className="text-sm font-semibold">Other titles in {data.city}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {data.otherPlaying.length} more movies in {data.city} you haven&apos;t watched
+                  {data.otherPlaying.length} without showtimes for these filters
                 </p>
               </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
