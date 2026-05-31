@@ -224,6 +224,8 @@ export interface MovieRecommendation {
   crowdDelta: number | null;
   reasons: string[];
   options: RecommendationOption[];
+  /** Every showtime for this movie (current filters), for the "show all" toggle. */
+  allOptions: RecommendationOption[];
   bestOption: RecommendationOption;
   /** Taste-forward ranking score: dominated by predicted personal rating. */
   personalScore: number;

@@ -375,6 +375,8 @@ function RecommendationCard({
   onAddToWatchlist,
   watchlistState = "none",
   onViewSeats,
+  showAll = false,
+  onToggleShowAll,
 }: {
   recommendation: MovieRecommendation;
   expanded: boolean;
@@ -385,10 +387,15 @@ function RecommendationCard({
   onAddToWatchlist?: (movie: PvrMovie) => void;
   watchlistState?: "none" | "adding" | "added";
   onViewSeats?: (show: PvrShow) => void;
+  showAll?: boolean;
+  onToggleShowAll?: (movieId: string) => void;
 }) {
   const crowdDelta = crowdDeltaLabel(recommendation.crowdDelta);
   const topReason = recommendation.reasons[0];
-  const needsExactPrice = recommendation.options.some((option) => !option.exactPrice);
+  const allOptions = recommendation.allOptions ?? recommendation.options;
+  const hasMore = allOptions.length > recommendation.options.length;
+  const displayedOptions = showAll ? allOptions : recommendation.options;
+  const needsExactPrice = displayedOptions.some((option) => !option.exactPrice);
   const showWatchlistAdd = Boolean(onAddToWatchlist) && !recommendation.onWatchlist;
 
   return (
@@ -533,13 +540,27 @@ function RecommendationCard({
               {repricing ? "Checking prices" : "Get exact prices"}
             </Button>
           )}
-          {recommendation.options.map((option) => (
+          {displayedOptions.map((option) => (
             <RecommendationOptionRow
               key={option.show.showKey}
               option={option}
               onViewSeats={onViewSeats}
             />
           ))}
+          {hasMore && onToggleShowAll && (
+            <button
+              type="button"
+              onClick={() => onToggleShowAll(recommendation.movie.id)}
+              className="flex w-full items-center justify-center gap-1 rounded-lg border border-white/[0.06] bg-background/35 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+            >
+              {showAll ? (
+                <>Show fewer showtimes</>
+              ) : (
+                <>Show all {allOptions.length} showtimes</>
+              )}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAll ? "rotate-180" : ""}`} />
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -726,10 +747,25 @@ function DismissalModal({
   );
 }
 
-function seatCellClass(status: "available" | "taken" | "gap"): string {
-  if (status === "gap") return "bg-transparent";
-  if (status === "available") return "bg-emerald-500/25 ring-1 ring-emerald-500/40";
-  return "bg-muted-foreground/25";
+// Static class strings so Tailwind keeps them; one colour per seat class.
+const SEAT_PALETTE = [
+  { dot: "bg-emerald-500", seat: "bg-emerald-500/30 ring-emerald-500/50" },
+  { dot: "bg-sky-500", seat: "bg-sky-500/30 ring-sky-500/50" },
+  { dot: "bg-violet-500", seat: "bg-violet-500/30 ring-violet-500/50" },
+  { dot: "bg-amber-500", seat: "bg-amber-500/30 ring-amber-500/50" },
+  { dot: "bg-pink-500", seat: "bg-pink-500/30 ring-pink-500/50" },
+  { dot: "bg-teal-500", seat: "bg-teal-500/30 ring-teal-500/50" },
+];
+
+function rowLabelFor(index: number): string {
+  let n = index + 1;
+  let label = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
 }
 
 function SeatLayoutModal({
@@ -746,6 +782,18 @@ function SeatLayoutModal({
   onClose: () => void;
 }) {
   const pricedCategories = (quote?.categories || []).filter((category) => category.price > 0);
+  // Assign each seat class a colour from the palette (in price order).
+  const colorIndexByCategory = new Map<string, number>();
+  (quote?.categories || []).forEach((category, index) => {
+    colorIndexByCategory.set(category.code, index % SEAT_PALETTE.length);
+  });
+  const seatClass = (seat: { status: string; categoryCode: string | null }): string => {
+    if (seat.status === "gap") return "bg-transparent";
+    if (seat.status === "taken") return "bg-muted-foreground/15";
+    const idx = seat.categoryCode ? colorIndexByCategory.get(seat.categoryCode) : undefined;
+    const palette = idx === undefined ? SEAT_PALETTE[0] : SEAT_PALETTE[idx];
+    return `${palette.seat} ring-1`;
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" onClick={onClose}>
@@ -792,10 +840,15 @@ function SeatLayoutModal({
                         : "bg-secondary/30"
                     }`}
                   >
-                    <span className="font-medium">
+                    <span className="flex items-center gap-2 font-medium">
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                          SEAT_PALETTE[(colorIndexByCategory.get(category.code) ?? 0)].dot
+                        }`}
+                      />
                       {category.description}
                       {quote.recommendedCategory?.code === category.code && (
-                        <span className="ml-1 text-[11px] font-normal">· best value</span>
+                        <span className="text-[11px] font-normal">· best value</span>
                       )}
                     </span>
                     <span className="flex items-center gap-3 tabular-nums">
@@ -811,21 +864,23 @@ function SeatLayoutModal({
 
             {quote.rows.length > 0 ? (
               <div>
-                <div className="mb-2 rounded-md bg-secondary/30 py-1 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Screen this way
-                </div>
-                <div className="overflow-x-auto">
-                  <div className="inline-block min-w-full space-y-1">
+                <div className="mx-auto mb-3 h-1 w-3/4 rounded-full bg-gradient-to-b from-foreground/30 to-transparent" />
+                <p className="mb-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                  Screen
+                </p>
+                <div className="overflow-x-auto pb-1">
+                  <div className="mx-auto w-fit space-y-1">
                     {quote.rows.map((row, rowIndex) => (
-                      <div key={`${row.label ?? rowIndex}`} className="flex items-center gap-1">
-                        <span className="w-4 shrink-0 text-right text-[9px] text-muted-foreground/60">
-                          {row.label ?? ""}
+                      <div key={`${row.label ?? rowIndex}`} className="flex items-center gap-1.5">
+                        <span className="w-5 shrink-0 text-right text-[9px] tabular-nums text-muted-foreground/50">
+                          {row.label ?? rowLabelFor(rowIndex)}
                         </span>
                         <div className="flex gap-0.5">
                           {row.seats.map((seat, seatIndex) => (
                             <span
                               key={seatIndex}
-                              className={`h-3 w-3 rounded-[2px] ${seatCellClass(seat.status)}`}
+                              title={seat.id ?? undefined}
+                              className={`h-3.5 w-3.5 rounded-[3px] ${seatClass(seat)}`}
                             />
                           ))}
                         </div>
@@ -833,14 +888,21 @@ function SeatLayoutModal({
                     ))}
                   </div>
                 </div>
-                <div className="mt-3 flex items-center gap-4 text-[11px] text-muted-foreground">
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+                  {pricedCategories.map((category) => (
+                    <span key={category.code} className="flex items-center gap-1">
+                      <span
+                        className={`h-3 w-3 rounded-[3px] ${SEAT_PALETTE[(colorIndexByCategory.get(category.code) ?? 0)].seat} ring-1`}
+                      />
+                      {category.description}
+                    </span>
+                  ))}
                   <span className="flex items-center gap-1">
-                    <span className="h-3 w-3 rounded-[2px] bg-emerald-500/25 ring-1 ring-emerald-500/40" /> free
+                    <span className="h-3 w-3 rounded-[3px] bg-muted-foreground/15" /> taken
                   </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-3 w-3 rounded-[2px] bg-muted-foreground/25" /> taken
+                  <span className="ml-auto font-medium text-foreground">
+                    {quote.availableSeatCount} free
                   </span>
-                  <span className="ml-auto">{quote.availableSeatCount} seats available</span>
                 </div>
               </div>
             ) : (
@@ -880,6 +942,7 @@ export default function RecommendationsPage() {
   const [seatQuote, setSeatQuote] = useState<PvrSeatQuote | null>(null);
   const [seatLoading, setSeatLoading] = useState(false);
   const [seatError, setSeatError] = useState<string | null>(null);
+  const [showAllById, setShowAllById] = useState<Record<string, boolean>>({});
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -935,6 +998,9 @@ export default function RecommendationsPage() {
 
   const toggleCard = (id: string) =>
     setExpandedId((current) => (current === id ? null : id));
+
+  const toggleShowAll = (id: string) =>
+    setShowAllById((current) => ({ ...current, [id]: !current[id] }));
 
   const findRec = useCallback(
     (movieId: string) =>
@@ -1334,6 +1400,8 @@ export default function RecommendationsPage() {
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
                       onViewSeats={handleViewSeats}
+                      showAll={Boolean(showAllById[recommendation.movie.id])}
+                      onToggleShowAll={toggleShowAll}
                     />
                   ))}
                 </div>
@@ -1369,6 +1437,8 @@ export default function RecommendationsPage() {
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
                       onViewSeats={handleViewSeats}
+                      showAll={Boolean(showAllById[recommendation.movie.id])}
+                      onToggleShowAll={toggleShowAll}
                     />
                   ))}
                   {forYou.map((recommendation) => (
@@ -1383,6 +1453,8 @@ export default function RecommendationsPage() {
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
                       onViewSeats={handleViewSeats}
+                      showAll={Boolean(showAllById[recommendation.movie.id])}
+                      onToggleShowAll={toggleShowAll}
                     />
                   ))}
                 </div>
@@ -1411,6 +1483,8 @@ export default function RecommendationsPage() {
                       onAddToWatchlist={handleAddToWatchlist}
                       watchlistState={watchlistStateFor(recommendation.movie.id)}
                       onViewSeats={handleViewSeats}
+                      showAll={Boolean(showAllById[recommendation.movie.id])}
+                      onToggleShowAll={toggleShowAll}
                     />
                   ))}
                 </div>

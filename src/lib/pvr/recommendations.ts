@@ -636,6 +636,7 @@ export function buildRecommendations(
       crowdDelta: bestOption.crowdDelta,
       reasons: candidate.fit.reasons,
       options: selectedOptions,
+      allOptions: options.slice(0, 40),
       bestOption,
       personalScore,
       onWatchlist,
