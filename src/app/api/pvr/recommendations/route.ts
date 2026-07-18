@@ -7,6 +7,7 @@ import {
 } from "@/lib/pvr/client";
 import { findPvrCity, todayInIndia } from "@/lib/pvr/cities";
 import { settledWithConcurrency } from "@/lib/pvr/concurrency";
+import { titleMatches } from "@/lib/pvr/personal-predictor";
 import {
   buildRecommendations,
   getShowsForExactPricing,
@@ -80,8 +81,12 @@ export async function GET(request: NextRequest) {
     const enrichedComingSoonMovies = comingSoon.data.map(
       (movie) => enrichedById.get(movie.id) || movie
     );
+    // Rank candidates from now-showing movies only — coming-soon titles have
+    // no bookable sessions and would waste candidate slots + session calls;
+    // they are surfaced separately in `upcoming`.
+    const nowShowingIds = new Set(searchMovies.data.map((movie) => movie.id));
     const candidates = rankPvrMovies(
-      enrichedMovies,
+      enrichedMovies.filter((movie) => nowShowingIds.has(movie.id)),
       userData,
       MAX_MOVIE_CANDIDATES
     );
@@ -168,23 +173,17 @@ export async function GET(request: NextRequest) {
     );
 
     const recommendedIds = new Set(recommendations.map((rec) => rec.movie.id));
-    const watchedTitleTokens = new Set(
-      userData.movies
-        .map((movie) => movie.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
-        .filter(Boolean)
-    );
-    const otherPlaying = searchMovies.data.filter((movie) => {
-      const enrichedMovie = enrichedById.get(movie.id) || movie;
-      if (recommendedIds.has(movie.id)) return false;
-      const normalized = enrichedMovie.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-      if (!normalized) return true;
-      for (const watched of watchedTitleTokens) {
-        if (watched === normalized || watched.includes(normalized) || normalized.includes(watched)) {
-          return false;
-        }
-      }
-      return true;
-    }).map((movie) => enrichedById.get(movie.id) || movie);
+    const watchedTitles = userData.movies.map((movie) => movie.title);
+    // Watched movies stay in the list with a badge instead of disappearing.
+    const otherPlaying = searchMovies.data
+      .filter((movie) => !recommendedIds.has(movie.id))
+      .map((movie) => {
+        const enrichedMovie = enrichedById.get(movie.id) || movie;
+        return {
+          ...enrichedMovie,
+          watched: watchedTitles.some((title) => titleMatches(enrichedMovie.title, title)),
+        };
+      });
 
     const normalizeTitle = (value: string) =>
       value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();

@@ -81,12 +81,28 @@ function normalizeKey(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function titleMatches(a: string, b: string): boolean {
+function isSequelToken(token: string): boolean {
+  return (
+    /^\d+$/.test(token) ||
+    /^(ii|iii|iv|v|vi|vii|viii|ix|x)$/.test(token) ||
+    /^(chapter|part|vol|volume)$/.test(token)
+  );
+}
+
+export function titleMatches(a: string, b: string): boolean {
   const left = normalizeKey(a);
   const right = normalizeKey(b);
   if (!left || !right) return false;
   if (left === right) return true;
-  return left.includes(right) || right.includes(left);
+
+  // Fuzzy fallback: one title containing the other on token boundaries covers
+  // punctuation/subtitle noise ("Spider-Man Brand New Day" vs "SPIDERMAN BRAND
+  // NEW DAY (3D)"). But leftover sequel-marker tokens mean different films in
+  // one franchise — "cocktail" must not swallow "cocktail 2".
+  const [longer, shorter] = left.length >= right.length ? [left, right] : [right, left];
+  if (!` ${longer} `.includes(` ${shorter} `)) return false;
+  const remainder = ` ${longer} `.replace(` ${shorter} `, " ").split(" ").filter(Boolean);
+  return !remainder.some(isSequelToken);
 }
 
 function addStat(map: Map<string, AverageStat>, rawKey: string | null | undefined, value: number, weight = 1): void {

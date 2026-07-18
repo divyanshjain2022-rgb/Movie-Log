@@ -279,6 +279,11 @@ function OtherPlayingCard({
           </a>
         </div>
         <div className="mt-1 flex flex-wrap gap-1">
+          {movie.watched && (
+            <Badge className="rounded-md bg-primary/15 text-[10px] text-primary hover:bg-primary/15">
+              Watched
+            </Badge>
+          )}
           {movie.languages.slice(0, 2).map((lang) => (
             <Badge key={lang} variant="outline" className="rounded-md text-[10px]">
               {lang}

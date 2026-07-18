@@ -36,6 +36,7 @@ export interface PvrMovie {
   source: PvrSource;
   onWatchlist?: boolean;
   watchlistPriority?: number | null;
+  watched?: boolean;
 }
 
 export interface PvrShow {

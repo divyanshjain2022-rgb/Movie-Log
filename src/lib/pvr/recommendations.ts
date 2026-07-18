@@ -8,6 +8,7 @@ import {
   getPredictionConfidenceLabel,
   predictMoviePersonalFit,
   predictShowAdjustment,
+  titleMatches,
 } from "@/lib/pvr/personal-predictor";
 import type {
   MovieFitResult,
@@ -86,14 +87,6 @@ function normalizeKey(value: string): string {
 
 function tokens(value: string): string[] {
   return normalizeKey(value).split(" ").filter(Boolean);
-}
-
-function titleMatches(a: string, b: string): boolean {
-  const left = normalizeKey(a);
-  const right = normalizeKey(b);
-  if (!left || !right) return false;
-  if (left === right) return true;
-  return left.includes(right) || right.includes(left);
 }
 
 function median(values: number[]): number | null {
