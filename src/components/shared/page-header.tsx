@@ -22,7 +22,7 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex h-14 items-center justify-between bg-background/80 backdrop-blur-2xl px-4 border-b border-white/[0.04]",
+        "sticky top-0 z-40 flex h-14 items-center justify-between bg-background/60 backdrop-blur-2xl px-4 border-b border-white/[0.06]",
         className
       )}
     >

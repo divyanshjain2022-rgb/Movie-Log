@@ -64,8 +64,8 @@
   --card: #18181b;
   --card-foreground: #fafafa;
 
-  /* Popover */
-  --popover: #18181b;
+  /* Popover — translucent so the glass blur rule reads through it */
+  --popover: rgba(24, 24, 27, 0.88);
   --popover-foreground: #fafafa;
 
   /* Primary - Warm amber accent */
@@ -147,6 +147,41 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Ambient cinematic backdrop — layered glows that translucent surfaces
+     refract, which is what makes the glass treatment actually read as glass. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(55rem 38rem at 12% -8%, rgba(245, 158, 11, 0.13), transparent 62%),
+      radial-gradient(48rem 34rem at 108% 12%, rgba(168, 85, 247, 0.09), transparent 65%),
+      radial-gradient(46rem 46rem at 50% 118%, rgba(59, 130, 246, 0.07), transparent 62%);
+  }
+
+  .light body::before {
+    background:
+      radial-gradient(55rem 38rem at 12% -8%, rgba(245, 158, 11, 0.10), transparent 62%),
+      radial-gradient(48rem 34rem at 108% 12%, rgba(168, 85, 247, 0.06), transparent 65%),
+      radial-gradient(46rem 46rem at 50% 118%, rgba(59, 130, 246, 0.05), transparent 62%);
+  }
+}
+
+/* Glass blur for shadcn floating surfaces + cards. Unlayered on purpose so it
+   wins over layered utilities without touching each component's classes. Only
+   backdrop-filter lives here — backgrounds stay with the components. */
+[data-slot="card"],
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="sheet-content"],
+[data-slot="select-content"],
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"] {
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 /* Custom utility classes */
@@ -157,10 +192,30 @@
 
   /* Glass morphism card */
   .glass {
-    background: rgba(24, 24, 27, 0.6);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(24, 24, 27, 0.55);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .light .glass {
+    background: rgba(255, 255, 255, 0.62);
+    border-color: rgba(0, 0, 0, 0.06);
+  }
+
+  /* Heavier glass for floating chrome (nav pill, sheets) */
+  .glass-strong {
+    background: rgba(18, 18, 21, 0.7);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow:
+      0 16px 48px -16px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .light .glass-strong {
+    background: rgba(255, 255, 255, 0.72);
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: 0 16px 48px -16px rgba(0, 0, 0, 0.2);
   }
 
   /* Subtle glow effects */
