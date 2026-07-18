@@ -21,6 +21,19 @@ CRITICAL: The showtime is the large colored time in the RIGHT panel (e.g. "04:20
 - The showtime is the START time (e.g. "6:25 PM")
 - Shows AUDI number, seat, Booking ID, pricing breakdown
 
+=== FORMAT 3: SMS / RCS CONFIRMATION SCREENSHOT (PVRINOX Cinemas chat message) ===
+A screenshot of a phone messaging app showing a text from "PVRINOX Cinemas" like:
+"Dear Patron, your ticket has been generated for MINIONS AND MONSTERS (3D ENGLISH IMAX WITH ENGLISH SUBTITLE) (UA 7) on Tuesday,21:20, (24 Hours Format), at POS:LUCKNOW PHOENIX PALASSIO (AUDI -AUDI SCREEN 4), 1 Seat(s): G:15. Total Amount-Rs 250,Transaction ID: 2858602."
+- The screenshot may contain multiple messages (feedback requests, older tickets). Use ONLY the most recent "your ticket has been generated" message.
+- MOVIE TITLE: the ALL-CAPS name after "generated for", cleaned of parenthetical tags → "Minions And Monsters"
+- SHOWTIME: given in 24-hour format after the weekday, e.g. "Tuesday,21:20" → keep as "21:20"
+- DATE: the message text only names a weekday. Use the chat's date separator bubble above the message (e.g. "7 July 2026" → "2026-07-07"). If no date separator is visible, return null — do NOT guess.
+- THEATER: after "POS:", e.g. "POS:LUCKNOW PHOENIX PALASSIO" → "Phoenix Palassio Lucknow"
+- AUDI: from "(AUDI -AUDI SCREEN 4)" → "4"
+- SEAT: "1 Seat(s): G:15" → "G-15" (colon becomes hyphen; multiple seats comma-separated)
+- PRICING: only a grand total is present: "Total Amount-Rs 250" → amount_paid = 250 (leave the breakdown fields as 0/null — there is no fee split in this format)
+- BOOKING ID: the "Transaction ID" value, e.g. "2858602"
+
 === EXTRACTION RULES ===
 
 MOVIE TITLE:
@@ -45,8 +58,10 @@ DATE: Return strictly as YYYY-MM-DD
 SHOWTIME — THIS IS THE MOST IMPORTANT FIELD:
 - On PVR INOX tax invoices: Read the LARGE COLORED TIME in the RIGHT panel. Examples: "04:20 PM", "02:45 PM", "07:55 PM", "05:25 PM", "10:35 AM"
 - IGNORE the left panel timestamp like "03:16:54" or "14:58:04" — that is the transaction time
-- On booking screenshots: Use the start time from "6:25 PM - 8:34 PM" → "06:25 PM"
-- Return as "HH:MM AM/PM". NEVER return null — there is always a showtime on a valid ticket.
+- On booking screenshots: Use the start time from "6:25 PM - 8:34 PM"
+- On SMS confirmations the time is already 24-hour: "Tuesday,21:20" → "21:20"
+- Return strictly as 24-hour "HH:MM": "04:20 PM" → "16:20", "10:35 AM" → "10:35", "6:25 PM" → "18:25"
+- NEVER return null — there is always a showtime on a valid ticket.
 
 SCREEN/AUDI: Just the number
 - "SCREEN 4" → "4", "SCREEN 7" → "7", "AUDI 09" → "9"
@@ -87,7 +102,7 @@ const responseSchema = {
     movie_title: { type: "STRING" as const, description: "Cleaned movie title without format/language/certification tags", nullable: true },
     theater_name: { type: "STRING" as const, description: "Full cinema name with location in title case", nullable: true },
     show_date: { type: "STRING" as const, description: "Date in YYYY-MM-DD format", nullable: true },
-    show_time: { type: "STRING" as const, description: "Time in HH:MM AM/PM format", nullable: true },
+    show_time: { type: "STRING" as const, description: "Showtime in 24-hour HH:MM format", nullable: true },
     audi: { type: "STRING" as const, description: "Screen/Audi number only", nullable: true },
     seat_number: { type: "STRING" as const, description: "Seat designation(s)", nullable: true },
     formats: { type: "ARRAY" as const, items: { type: "STRING" as const }, description: "Screening format tags like IMAX, 3D, 2D, 4DX" },
