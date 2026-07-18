@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared";
 import { SeatMap } from "@/components/movies/seat-map";
+import { MovieExtras } from "@/components/movies/movie-extras";
 import { PhotoGallery } from "@/components/movies/photo-gallery";
 import { ShareableCard } from "@/components/movies/shareable-card";
 import { TheaterRatingForm } from "@/components/movies/theater-rating-form";
@@ -447,6 +448,13 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
           <p className="mb-3 text-xs text-muted-foreground">
             Refreshing latest TMDB data...
           </p>
+        )}
+
+        {/* Cast photos + external ratings (IMDb / RT / Letterboxd) */}
+        {movie.tmdb_id && (
+          <div className="mb-4">
+            <MovieExtras tmdbId={movie.tmdb_id} />
+          </div>
         )}
 
         {/* Budget & Box Office */}
