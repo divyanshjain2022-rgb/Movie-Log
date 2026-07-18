@@ -262,7 +262,10 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
         seat_map: payload.seatMap,
       });
       await refetch();
-      toast.success(`Captured — hall was ${payload.occupancy}% full`);
+      const captured = payload.seatMap as { cinemaName?: string; showTime?: string } | undefined;
+      toast.success(
+        `Captured ${captured?.cinemaName || "show"} ${captured?.showTime || ""} — hall was ${payload.occupancy}% full`
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to capture occupancy");
     } finally {
