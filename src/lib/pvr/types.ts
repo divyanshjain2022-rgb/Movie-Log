@@ -37,6 +37,9 @@ export interface PvrMovie {
   onWatchlist?: boolean;
   watchlistPriority?: number | null;
   watched?: boolean;
+  // Non-film live content (PVR `showCategory`, e.g. "SPORTS" for a match
+  // screening). Null for regular movies.
+  eventCategory?: string | null;
 }
 
 export interface PvrShow {
@@ -214,6 +217,8 @@ export interface RecommendationOption {
   formatAdvice: string;
   timingAdvice: string;
   availabilityLabel: string;
+  // Hall fill from the live seat map (0-100), when an exact seat quote exists.
+  occupancyPercent: number | null;
   needsExactPrice: boolean;
 }
 

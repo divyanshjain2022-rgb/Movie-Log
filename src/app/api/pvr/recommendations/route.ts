@@ -83,10 +83,14 @@ export async function GET(request: NextRequest) {
     );
     // Rank candidates from now-showing movies only — coming-soon titles have
     // no bookable sessions and would waste candidate slots + session calls;
-    // they are surfaced separately in `upcoming`.
+    // they are surfaced separately in `upcoming`. Live events (sports/concert
+    // screenings) can't be taste-ranked against film history, so they stay in
+    // "More now playing" with an event badge.
     const nowShowingIds = new Set(searchMovies.data.map((movie) => movie.id));
     const candidates = rankPvrMovies(
-      enrichedMovies.filter((movie) => nowShowingIds.has(movie.id)),
+      enrichedMovies.filter(
+        (movie) => nowShowingIds.has(movie.id) && !movie.eventCategory
+      ),
       userData,
       MAX_MOVIE_CANDIDATES
     );
@@ -185,22 +189,12 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    const normalizeTitle = (value: string) =>
-      value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const watchlistTitles = userData.watchlist
       .filter((item) => !item.watchedMovieId)
-      .map((item) => ({ key: normalizeTitle(item.title), priority: item.priority }));
+      .map((item) => ({ title: item.title, priority: item.priority }));
     const matchWatchlist = (title: string) => {
-      const normalized = normalizeTitle(title);
-      if (!normalized) return null;
       for (const entry of watchlistTitles) {
-        if (
-          entry.key === normalized ||
-          entry.key.includes(normalized) ||
-          normalized.includes(entry.key)
-        ) {
-          return entry;
-        }
+        if (titleMatches(title, entry.title)) return entry;
       }
       return null;
     };

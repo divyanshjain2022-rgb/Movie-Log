@@ -396,9 +396,24 @@ function getTheaterScore(show: PvrShow, profile: PreferenceProfile): number {
   return bestScore;
 }
 
+function quoteTotalSeats(quote?: PvrSeatQuote): number | null {
+  if (!quote) return null;
+  const total = quote.categories.reduce((sum, category) => sum + category.totalSeats, 0);
+  return total > 0 ? total : null;
+}
+
+export function getOccupancyPercent(quote?: PvrSeatQuote): number | null {
+  const total = quoteTotalSeats(quote);
+  if (!total || !quote) return null;
+  const occupied = total - quote.availableSeatCount;
+  return Math.round(clamp((occupied / total) * 100, 0, 100));
+}
+
 function getAvailability(show: PvrShow, quote?: PvrSeatQuote): { score: number; label: string } {
   const available = quote?.availableSeatCount ?? show.availableSeats;
-  const total = show.totalSeats;
+  // msessions stopped returning seat totals (Mar 2026); the live seat map is
+  // the reliable source when we have it.
+  const total = quoteTotalSeats(quote) ?? show.totalSeats;
 
   if (available === null || available === undefined) {
     return { score: 55, label: "Availability not confirmed" };
@@ -588,6 +603,7 @@ export function buildRecommendations(
       formatAdvice: showAdjustment.reason || getFormatAdvice(show, formatWeight),
       timingAdvice: time.advice,
       availabilityLabel: availability.label,
+      occupancyPercent: getOccupancyPercent(quote),
       needsExactPrice: !quote && Boolean(show.encrypted),
     };
 

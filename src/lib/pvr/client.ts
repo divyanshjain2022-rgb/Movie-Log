@@ -345,15 +345,22 @@ export function normalizePvrMovies(payload: unknown, city: string): PvrMovie[] {
       posterUrl,
       redirectUrl: buildPvrRedirectUrl(city, title, id),
       source: "pvr",
+      eventCategory: pickString(candidate, ["showCategory"]),
     };
 
     movies.set(`${id}:${normalizeToken(title)}`, movie);
   }
 
+  // PVR release dates are strings like "Jul 02, 2026" — parse before sorting,
+  // otherwise December sorts before July alphabetically.
+  const releaseTime = (movie: PvrMovie): number => {
+    const parsed = movie.releaseDate ? Date.parse(movie.releaseDate) : NaN;
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  };
+
   return Array.from(movies.values()).sort((a, b) => {
-    const aDate = a.releaseDate || "";
-    const bDate = b.releaseDate || "";
-    if (aDate && bDate && aDate !== bDate) return aDate.localeCompare(bDate);
+    const timeDiff = releaseTime(a) - releaseTime(b);
+    if (timeDiff !== 0) return timeDiff;
     return a.title.localeCompare(b.title);
   });
 }

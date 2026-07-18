@@ -15,6 +15,7 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   Ticket,
   ThumbsDown,
@@ -66,6 +67,35 @@ const TIME_OPTIONS = [
 const FOR_YOU_LIMIT = 6;
 
 const DEFAULT_TIME = "08:00-24:00";
+// PVR only sells tickets about a week out.
+const MAX_BOOKING_DAYS_AHEAD = 7;
+const FILTER_STORAGE_KEY = "pvr-recs-filters";
+
+interface PersistedDismissal {
+  id: string;
+  movie_title: string;
+  pvr_movie_id: string;
+  reason: string;
+  reason_detail: string | null;
+}
+
+const DISMISS_REASON_LABELS: Record<string, string> = {
+  language: "language",
+  genre: "genre",
+  director: "director",
+  cast: "cast",
+  story: "story",
+  seen_it: "seen it",
+  bad_reviews: "bad reviews",
+};
+
+function dismissalReasonSummary(rows: PersistedDismissal[]): string {
+  const parts = rows.map((row) => {
+    const label = DISMISS_REASON_LABELS[row.reason] || row.reason;
+    return row.reason_detail ? `${label}: ${row.reason_detail}` : label;
+  });
+  return Array.from(new Set(parts)).join(" · ");
+}
 
 function addDays(iso: string, days: number): string {
   const date = new Date(`${iso}T00:00:00`);
@@ -193,7 +223,14 @@ function RecommendationOptionRow({
           <span>{option.timingAdvice}</span>
         </div>
         <div>{option.formatAdvice}</div>
-        <div>{option.availabilityLabel}</div>
+        <div>
+          {option.availabilityLabel}
+          {option.occupancyPercent !== null && (
+            <span className="ml-1 text-foreground/80">
+              · hall {option.occupancyPercent}% full
+            </span>
+          )}
+        </div>
         {option.priceAdvice.upgradeAdvice && (
           <div className="sm:col-span-2">{option.priceAdvice.upgradeAdvice}</div>
         )}
@@ -282,6 +319,11 @@ function OtherPlayingCard({
           {movie.watched && (
             <Badge className="rounded-md bg-primary/15 text-[10px] text-primary hover:bg-primary/15">
               Watched
+            </Badge>
+          )}
+          {movie.eventCategory && (
+            <Badge className="rounded-md bg-amber-500/15 text-[10px] text-amber-400 hover:bg-amber-500/15">
+              {movie.eventCategory.charAt(0) + movie.eventCategory.slice(1).toLowerCase()} event
             </Badge>
           )}
           {movie.languages.slice(0, 2).map((lang) => (
@@ -837,6 +879,68 @@ export default function RecommendationsPage() {
   const [seatLoading, setSeatLoading] = useState(false);
   const [seatError, setSeatError] = useState<string | null>(null);
   const [showAllById, setShowAllById] = useState<Record<string, boolean>>({});
+  const [persistedDismissals, setPersistedDismissals] = useState<PersistedDismissal[]>([]);
+  // Filters restore from localStorage after mount; hold the first fetch until then.
+  const [filtersReady, setFiltersReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as Record<string, unknown>;
+        if (typeof saved.city === "string" && PVR_CITIES.some((item) => item.name === saved.city)) {
+          setCity(saved.city);
+        }
+        if (typeof saved.language === "string" && LANGUAGE_OPTIONS.includes(saved.language)) {
+          setLanguage(saved.language);
+        }
+        if (typeof saved.format === "string" && FORMAT_OPTIONS.includes(saved.format)) {
+          setFormat(saved.format);
+        }
+        if (typeof saved.time === "string" && TIME_OPTIONS.some((item) => item.value === saved.time)) {
+          setTime(saved.time);
+        }
+      }
+    } catch {
+      // Corrupted saved filters — defaults are fine.
+    }
+    setFiltersReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!filtersReady) return;
+    try {
+      localStorage.setItem(
+        FILTER_STORAGE_KEY,
+        JSON.stringify({ city, language, format, time })
+      );
+    } catch {
+      // Storage unavailable (private mode) — filters just won't persist.
+    }
+  }, [filtersReady, city, language, format, time]);
+
+  // Persisted "not interested" dismissals keep movies hidden across sessions.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/pvr/dismissals")
+      .then((response) => (response.ok ? response.json() : { dismissals: [] }))
+      .then((payload) => {
+        if (cancelled) return;
+        const rows = (payload.dismissals || []) as PersistedDismissal[];
+        setPersistedDismissals(rows);
+        setDismissedIds((prev) => {
+          const next = new Set(prev);
+          for (const row of rows) next.add(row.pvr_movie_id);
+          return next;
+        });
+      })
+      .catch(() => {
+        // Not signed in / endpoint unavailable — session-only dismissals still work.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const requestUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -850,6 +954,7 @@ export default function RecommendationsPage() {
   }, [city, date, language, format, time]);
 
   useEffect(() => {
+    if (!filtersReady) return;
     const controller = new AbortController();
 
     async function fetchRecommendations() {
@@ -877,7 +982,7 @@ export default function RecommendationsPage() {
 
     fetchRecommendations();
     return () => controller.abort();
-  }, [requestUrl, refreshKey]);
+  }, [requestUrl, refreshKey, filtersReady]);
 
   // Open the top pick by default whenever a fresh result arrives.
   useEffect(() => {
@@ -926,7 +1031,7 @@ export default function RecommendationsPage() {
 
     // Persist to API
     try {
-      await fetch("/api/pvr/dismissals", {
+      const response = await fetch("/api/pvr/dismissals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -935,10 +1040,33 @@ export default function RecommendationsPage() {
           reasons,
         }),
       });
+      if (response.ok) {
+        const payload = await response.json();
+        const rows = (payload.dismissals || []) as PersistedDismissal[];
+        if (rows.length > 0) {
+          setPersistedDismissals((prev) => [...rows, ...prev]);
+        }
+      }
     } catch {
       // Silently fail — movie is already hidden in UI
     }
   }, [findRec]);
+
+  const handleUndoDismiss = useCallback(async (pvrMovieId: string) => {
+    setPersistedDismissals((prev) => prev.filter((row) => row.pvr_movie_id !== pvrMovieId));
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(pvrMovieId);
+      return next;
+    });
+    try {
+      await fetch(`/api/pvr/dismissals?pvrMovieId=${encodeURIComponent(pvrMovieId)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Already un-hidden locally; the server row will be retried on next dismiss/undo.
+    }
+  }, []);
 
   const handlePull = useCallback(async (movie: PvrMovie) => {
     setPullingId(movie.id);
@@ -1076,6 +1204,15 @@ export default function RecommendationsPage() {
       ),
     [data, pulledById, dismissedIds]
   );
+  const dismissalGroups = useMemo(() => {
+    const groups = new Map<string, PersistedDismissal[]>();
+    for (const row of persistedDismissals) {
+      const current = groups.get(row.pvr_movie_id) || [];
+      current.push(row);
+      groups.set(row.pvr_movie_id, current);
+    }
+    return Array.from(groups.values());
+  }, [persistedDismissals]);
 
   // Prefer the freshly-repriced version of a card when the user has fetched exact prices.
   const withReprice = (rec: MovieRecommendation): MovieRecommendation =>
@@ -1134,6 +1271,8 @@ export default function RecommendationsPage() {
           <input
             type="date"
             value={date}
+            min={todayStr}
+            max={addDays(todayStr, MAX_BOOKING_DAYS_AHEAD)}
             onChange={(event) => setDate(event.target.value)}
             className="h-9 rounded-lg border border-input bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30"
           />
@@ -1237,9 +1376,18 @@ export default function RecommendationsPage() {
               </p>
             )}
             {data.diagnostics.errors.length > 0 && (
-              <p className="mt-2 text-muted-foreground/70">
-                Some PVR checks failed, so the list uses the available results.
-              </p>
+              <details className="mt-2 text-muted-foreground/70">
+                <summary className="cursor-pointer list-none">
+                  {data.diagnostics.errors.length} PVR{" "}
+                  {data.diagnostics.errors.length === 1 ? "check" : "checks"} failed — the list
+                  uses the available results. Tap for details.
+                </summary>
+                <ul className="mt-1 space-y-0.5 pl-3">
+                  {data.diagnostics.errors.map((item) => (
+                    <li key={item} className="list-disc">{item}</li>
+                  ))}
+                </ul>
+              </details>
             )}
           </section>
         )}
@@ -1257,7 +1405,16 @@ export default function RecommendationsPage() {
           </details>
         )}
 
-        {isLoading ? (
+        {/* Keep the previous results visible (dimmed) while a refetch runs —
+            skeletons only on the very first load. */}
+        <div
+          className={
+            isLoading && data
+              ? "pointer-events-none space-y-4 opacity-50 transition-opacity"
+              : "space-y-4 transition-opacity"
+          }
+        >
+        {isLoading && !data ? (
           <div className="space-y-3">
             <Skeleton className="h-44 rounded-xl" />
             <Skeleton className="h-44 rounded-xl" />
@@ -1455,6 +1612,45 @@ export default function RecommendationsPage() {
             </div>
           </details>
         )}
+
+        {dismissalGroups.length > 0 && (
+          <details className="group rounded-xl bg-card/35 p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold">Not interested</h2>
+                <p className="text-xs text-muted-foreground">
+                  {dismissalGroups.length} hidden{" "}
+                  {dismissalGroups.length === 1 ? "title" : "titles"} — undo to see them again
+                </p>
+              </div>
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 space-y-2">
+              {dismissalGroups.map((rows) => (
+                <div
+                  key={rows[0].pvr_movie_id}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-card/40 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="line-clamp-1 text-sm font-medium">{rows[0].movie_title}</p>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">
+                      {dismissalReasonSummary(rows)}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    onClick={() => handleUndoDismiss(rows[0].pvr_movie_id)}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Undo
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+        </div>
       </div>
 
       {dismissTarget && (
