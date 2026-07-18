@@ -91,7 +91,7 @@ export function MovieCard({ movie, variant = "default", costComponents }: MovieC
 
   return (
     <Link href={`/movies/${movie.id}`} className="block">
-      <div className="group flex gap-3.5 rounded-2xl bg-card/40 p-3.5 transition-all duration-200 active:scale-[0.98] hover:bg-card/60">
+      <div className="glass group flex gap-3.5 rounded-2xl p-3.5 transition-all duration-200 active:scale-[0.98] hover:bg-card/60">
         {/* Poster */}
         {movie.poster_url ? (
           <div className="relative h-[110px] w-[73px] flex-shrink-0 overflow-hidden rounded-xl">
@@ -111,7 +111,7 @@ export function MovieCard({ movie, variant = "default", costComponents }: MovieC
         <div className="min-w-0 flex-1 flex flex-col justify-between py-0.5">
           <div>
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-[15px] font-semibold leading-tight tracking-tight line-clamp-2">
+              <h3 className="marquee text-[18px] uppercase leading-[1.05] line-clamp-2 text-foreground/95">
                 {movie.title}
               </h3>
               {movie.rating && (

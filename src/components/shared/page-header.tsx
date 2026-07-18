@@ -35,7 +35,7 @@ export function PageHeader({
             <ArrowLeft className="h-5 w-5" strokeWidth={1.75} />
           </button>
         )}
-        <h1 className="text-[17px] font-semibold tracking-tight">{title}</h1>
+        <h1 className="marquee text-[21px] uppercase leading-none text-foreground/95">{title}</h1>
       </div>
       {action && <div>{action}</div>}
     </header>

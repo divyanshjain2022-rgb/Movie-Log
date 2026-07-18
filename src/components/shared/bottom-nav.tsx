@@ -40,7 +40,7 @@ export function BottomNav() {
             >
               <div className={cn(
                 "flex h-8 w-8 items-center justify-center rounded-2xl transition-all duration-300",
-                isActive && "bg-primary/15 scale-105 shadow-[0_0_16px_-4px_rgba(245,158,11,0.5)]"
+                isActive && "bg-gradient-to-b from-amber-400/25 to-amber-600/10 ring-1 ring-primary/30 scale-105 shadow-[0_0_16px_-4px_rgba(245,158,11,0.5)]"
               )}>
                 <item.icon
                   className="h-[22px] w-[22px] transition-all duration-300"

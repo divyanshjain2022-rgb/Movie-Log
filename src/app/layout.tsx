@@ -1,6 +1,20 @@
 import type { Metadata, Viewport } from "next";
+import { Bebas_Neue, Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const bebas = Bebas_Neue({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-bebas",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "CinemaLog",
@@ -27,7 +41,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="font-sans antialiased">
+      <body className={`${inter.variable} ${bebas.variable} font-sans antialiased`}>
         {children}
         <Toaster position="top-center" />
       </body>

@@ -200,11 +200,11 @@ function RecommendationOptionRow({
         </div>
 
         <div className="space-y-1 text-right">
-          <div className="rounded-lg bg-primary/12 px-2 py-1">
-            <p className="text-sm font-bold text-primary">
+          <div className="rounded-lg bg-gradient-to-b from-amber-400/20 to-amber-600/10 px-2 py-1 ring-1 ring-primary/20">
+            <p className="marquee text-lg leading-none text-primary">
               {option.predictedPersonalRating.toFixed(1)}
             </p>
-            <p className="text-[10px] text-primary/70">predicted</p>
+            <p className="text-[9px] uppercase tracking-[0.12em] text-primary/70">predicted</p>
           </div>
           <p className="text-sm font-bold tabular-nums">{formatPrice(option)}</p>
           <p className="text-[11px] text-muted-foreground/60">
@@ -476,7 +476,7 @@ function RecommendationCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <h2 className="line-clamp-2 text-base font-semibold leading-tight">
+              <h2 className="marquee line-clamp-2 text-[19px] uppercase leading-[1.05] text-foreground/95">
                 {recommendation.movie.title}
               </h2>
               {recommendation.movie.releaseDate && (
@@ -518,11 +518,11 @@ function RecommendationCard({
               >
                 <ThumbsDown className="h-4 w-4" />
               </button>
-              <div className="rounded-lg bg-primary/12 px-2 py-1 text-right">
-                <p className="text-sm font-bold text-primary">
+              <div className="rounded-lg bg-gradient-to-b from-amber-400/20 to-amber-600/10 px-2 py-1 text-right ring-1 ring-primary/20">
+                <p className="marquee text-lg leading-none text-primary">
                   {recommendation.predictedRating.toFixed(1)}
                 </p>
-                <p className="text-[10px] text-primary/70">predicted</p>
+                <p className="text-[9px] uppercase tracking-[0.12em] text-primary/70">predicted</p>
               </div>
               <ChevronDown
                 className={`mt-1 h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -1433,7 +1433,7 @@ export default function RecommendationsPage() {
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Bookmark className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold">From your watchlist</h2>
+                  <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">From your watchlist</h2>
                   <span className="text-xs text-muted-foreground">
                     {watchlistPlaying.length + watchlistUpcoming.length} titles
                   </span>
@@ -1470,7 +1470,7 @@ export default function RecommendationsPage() {
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Star className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold">For you</h2>
+                  <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">For you</h2>
                   <span className="text-xs text-muted-foreground">
                     Ranked by how much you&apos;re likely to enjoy them
                   </span>
@@ -1516,7 +1516,7 @@ export default function RecommendationsPage() {
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Ticket className="h-4 w-4 text-muted-foreground" />
-                  <h2 className="text-sm font-semibold">Also playing</h2>
+                  <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">Also playing</h2>
                   <span className="text-xs text-muted-foreground">
                     {alsoPlaying.length} more in {data.city}, with showtimes &amp; predicted ratings
                   </span>
@@ -1590,7 +1590,7 @@ export default function RecommendationsPage() {
           <details className="group rounded-xl bg-card/35 p-3" open>
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold">More now playing in {data.city}</h2>
+                <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">More now playing in {data.city}</h2>
                 <p className="text-xs text-muted-foreground">
                   {nowPlaying.length} more — tap “Get showtimes” to add one to For you
                 </p>
@@ -1617,7 +1617,7 @@ export default function RecommendationsPage() {
           <details className="group rounded-xl bg-card/35 p-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold">Not interested</h2>
+                <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">Not interested</h2>
                 <p className="text-xs text-muted-foreground">
                   {dismissalGroups.length} hidden{" "}
                   {dismissalGroups.length === 1 ? "title" : "titles"} — undo to see them again

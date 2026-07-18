@@ -53,16 +53,16 @@ export function QuickStats({ saved, greatCount, mehCount, passportSavings }: Qui
       {stats.map((stat) => (
         <div
           key={stat.label}
-          className="rounded-2xl bg-card/50 p-3.5 space-y-2.5"
+          className="glass rounded-2xl p-3.5 space-y-2.5"
         >
           <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", stat.bg)}>
             <stat.icon className={cn("h-[18px] w-[18px]", stat.color)} strokeWidth={1.75} />
           </div>
           <div>
-            <div className={cn("text-xl font-bold tracking-tight", stat.color)}>
+            <div className={cn("marquee text-[26px] leading-none", stat.color)}>
               {stat.value}
             </div>
-            <div className="text-[11px] text-muted-foreground/70 font-medium">{stat.label}</div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">{stat.label}</div>
           </div>
         </div>
       ))}

@@ -107,13 +107,13 @@ export default function DashboardPage() {
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-2xl border-b border-white/[0.04]">
         <div className="flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/12">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400/25 to-amber-600/15 ring-1 ring-primary/25">
               <Film className="h-4 w-4 text-primary" strokeWidth={2} />
             </div>
-            <span className="text-[17px] font-bold tracking-tight">CinemaLog</span>
+            <span className="marquee text-gradient-gold text-[22px] leading-none">CINEMALOG</span>
           </div>
           <Link href="/movies/new">
-            <button className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all active:scale-95">
+            <button className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 text-black shadow-[0_4px_18px_-6px_rgba(245,158,11,0.55)] transition-all active:scale-95">
               <Plus className="h-4.5 w-4.5" strokeWidth={2.25} />
             </button>
           </Link>
@@ -252,7 +252,7 @@ export default function DashboardPage() {
         {/* Recent Movies */}
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold">Recent</h2>
+            <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">Recent</h2>
             <Link
               href="/movies"
               className="text-xs font-medium text-primary/70 hover:text-primary transition-colors"
@@ -273,7 +273,7 @@ export default function DashboardPage() {
         {/* Gift Cards */}
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold">Gift Cards</h2>
+            <h2 className="marquee text-[17px] uppercase leading-none text-foreground/90">Gift Cards</h2>
             <Link
               href="/gift-cards"
               className="text-xs font-medium text-primary/70 hover:text-primary transition-colors"

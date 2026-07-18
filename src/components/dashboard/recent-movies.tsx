@@ -79,7 +79,7 @@ export function RecentMovies({ movies, costMode = "all" }: RecentMoviesProps) {
             {/* Content */}
             <div className="min-w-0 flex-1 flex flex-col justify-center">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="truncate text-[15px] font-semibold leading-tight">
+                <h3 className="marquee truncate text-[17px] uppercase leading-tight text-foreground/95">
                   {movie.title}
                 </h3>
                 {movie.rating && (
