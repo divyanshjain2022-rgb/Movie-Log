@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
@@ -113,11 +113,12 @@ export async function POST(request: NextRequest) {
     const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.5-flash",
       config: {
         systemInstruction: EXTRACTION_PROMPT,
         responseMimeType: "application/json",
         responseSchema: responseSchema,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
       contents: [
         {

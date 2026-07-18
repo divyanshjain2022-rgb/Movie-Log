@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
@@ -156,6 +156,7 @@ function stripDataUri(data: string): string {
 export const runtime = "edge";
 
 const MODEL_PRIORITY = [
+  "gemini-3.5-flash",
   "gemini-3-flash-preview",
 ];
 
@@ -194,6 +195,9 @@ export async function POST(request: NextRequest) {
             systemInstruction: EXTRACTION_PROMPT,
             responseMimeType: "application/json",
             responseSchema: responseSchema,
+            // OCR extraction doesn't need deep reasoning; LOW keeps latency
+            // well under the 28s client abort / 30s Edge limit
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           },
           contents: [
             {
