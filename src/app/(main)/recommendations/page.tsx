@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PVR_CITIES, todayInIndia } from "@/lib/pvr/cities";
-import { formatCurrency, formatDate, formatTime } from "@/lib/formula";
+import { formatCurrency, formatDate, formatTime, getValueTier } from "@/lib/formula";
 import type {
   MovieRecommendation,
   PredictionConfidenceLabel,
@@ -209,6 +209,11 @@ function RecommendationOptionRow({
           <p className="text-sm font-bold tabular-nums">{formatPrice(option)}</p>
           <p className="text-[11px] text-muted-foreground/60">
             Value {option.valueScore.toFixed(1)}
+            {option.valueScore > 0 && (
+              <span className={`ml-1 ${getValueTier(option.valueScore).className}`}>
+                {getValueTier(option.valueScore).label}
+              </span>
+            )}
           </p>
         </div>
       </div>

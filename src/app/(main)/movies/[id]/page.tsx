@@ -34,6 +34,7 @@ import {
   formatTime,
   getRatingColor,
   getRatingLabel,
+  getValueTier,
 } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { MovieUpdate, MovieWithRelations } from "@/types";
@@ -529,7 +530,12 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                 {movie.value_score && (
                   <div>
                     <p className="text-xs text-muted-foreground">Value Score</p>
-                    <p className="text-sm font-bold">{movie.value_score.toFixed(1)}</p>
+                    <p className="text-sm font-bold">
+                      {movie.value_score.toFixed(1)}
+                      <span className={cn("ml-1.5 text-xs font-medium", getValueTier(movie.value_score).className)}>
+                        {getValueTier(movie.value_score).label}
+                      </span>
+                    </p>
                   </div>
                 )}
               </div>

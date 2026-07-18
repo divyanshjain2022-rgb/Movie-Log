@@ -310,11 +310,42 @@ export function useUpdateMovie() {
       setIsLoading(true);
       setError(null);
 
-      // Recompute value score if rating or cost fields changed
+      // Replace gift card associations FIRST — the value score reads GC
+      // discounts from the junction table, so writing the score before the
+      // rows exist bakes in stale savings.
+      if (giftCardUsage !== undefined) {
+        const { error: deleteError } = await supabase
+          .from("movie_gift_cards")
+          .delete()
+          .eq("movie_id", id);
+
+        if (deleteError) {
+          console.error("Failed to delete existing gift card usage:", deleteError);
+        }
+
+        if (giftCardUsage.length > 0) {
+          const movieGiftCards = giftCardUsage.map(gc => ({
+            movie_id: id,
+            gift_card_id: gc.gift_card_id,
+            amount_used: gc.amount_used,
+            purpose: gc.purpose || "ticket",
+          }));
+
+          const { error: gcError } = await supabase
+            .from("movie_gift_cards")
+            .insert(movieGiftCards as never);
+
+          if (gcError) {
+            console.error("Failed to save gift card usage:", gcError);
+          }
+        }
+      }
+
+      // Recompute value score if rating, cost fields, or gift cards changed
       const hasScoreFields = updates.rating !== undefined || updates.ticket_cost !== undefined ||
         updates.convenience_fee !== undefined || updates.fnb_cost !== undefined ||
         updates.other_expenses !== undefined || updates.format_id !== undefined ||
-        updates.passport_savings !== undefined;
+        updates.passport_savings !== undefined || giftCardUsage !== undefined;
 
       const updatesWithScore = { ...updates };
       if (hasScoreFields) {
@@ -335,37 +366,6 @@ export function useUpdateMovie() {
         .single();
 
       if (updateError) throw updateError;
-
-      // If gift cards were provided, update them
-      if (giftCardUsage !== undefined) {
-        // Delete existing gift card associations
-        const { error: deleteError } = await supabase
-          .from("movie_gift_cards")
-          .delete()
-          .eq("movie_id", id);
-
-        if (deleteError) {
-          console.error("Failed to delete existing gift card usage:", deleteError);
-        }
-
-        // Create new associations
-        if (giftCardUsage.length > 0) {
-          const movieGiftCards = giftCardUsage.map(gc => ({
-            movie_id: id,
-            gift_card_id: gc.gift_card_id,
-            amount_used: gc.amount_used,
-            purpose: gc.purpose || "ticket",
-          }));
-
-          const { error: gcError } = await supabase
-            .from("movie_gift_cards")
-            .insert(movieGiftCards as never);
-
-          if (gcError) {
-            console.error("Failed to save gift card usage:", gcError);
-          }
-        }
-      }
 
       return data;
     } catch (err) {

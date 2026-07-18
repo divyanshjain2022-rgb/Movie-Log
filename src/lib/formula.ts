@@ -10,19 +10,34 @@ export const DEFAULT_FORMULA_PARAMS: FormulaParams = {
   },
   cost_floor: 100,
   use_true_cost: true,
+  cost_exponent: 1,
 };
 
-function getExponentForRating(
-  rating: number,
-  params: FormulaParams
-): number {
-  const { tier1, tier2, tier3, tier4, tier5 } = params.rating_exponents;
+// The tiers act as anchor points and the exponent is interpolated linearly
+// between them. The old stair-step version had cliffs: an 8.0 used exponent
+// 1.5 (8^1.5 = 22.6) while an 8.1 jumped to 1.8 (8.1^1.8 = 43.2) — the value
+// score nearly doubled across a 0.1 rating step.
+function getExponentForRating(rating: number, params: FormulaParams): number {
+  const tiers = [
+    params.rating_exponents.tier1,
+    params.rating_exponents.tier2,
+    params.rating_exponents.tier3,
+    params.rating_exponents.tier4,
+    params.rating_exponents.tier5,
+  ];
 
-  if (rating <= tier1.max_rating) return tier1.exponent;
-  if (rating <= tier2.max_rating) return tier2.exponent;
-  if (rating <= tier3.max_rating) return tier3.exponent;
-  if (rating <= tier4.max_rating) return tier4.exponent;
-  return tier5.exponent;
+  if (rating <= tiers[0].max_rating) return tiers[0].exponent;
+  for (let i = 1; i < tiers.length; i += 1) {
+    const prev = tiers[i - 1];
+    const next = tiers[i];
+    if (rating <= next.max_rating) {
+      const span = next.max_rating - prev.max_rating;
+      if (span <= 0) return next.exponent;
+      const t = (rating - prev.max_rating) / span;
+      return prev.exponent + (next.exponent - prev.exponent) * t;
+    }
+  }
+  return tiers[tiers.length - 1].exponent;
 }
 
 export function calculateValueScore(
@@ -35,11 +50,31 @@ export function calculateValueScore(
 
   const exponent = getExponentForRating(rating, params);
   const effectiveCost = Math.max(cost, params.cost_floor);
+  const costExponent = params.cost_exponent ?? 1;
 
-  // Formula: (rating^exponent * format_weight) / cost * 100
-  const score = (Math.pow(rating, exponent) * formatWeight) / effectiveCost * 100;
+  // (rating^exponent * format_weight) / cost^cost_exponent, scaled to a
+  // readable magnitude (matches the old scale at cost_exponent 1).
+  const score =
+    (Math.pow(rating, exponent) * formatWeight) /
+    Math.pow(effectiveCost, costExponent) *
+    100;
 
   return Math.round(score * 10) / 10; // Round to 1 decimal place
+}
+
+export type ValueTier = {
+  label: "Bargain" | "Great value" | "Fair" | "Stretch" | "Splurge";
+  className: string;
+};
+
+// Interpret a value score for humans. Thresholds sit on the default formula's
+// scale (an 8/10 at the ₹100 floor scores ~23; at ₹400 it scores ~5.7).
+export function getValueTier(score: number): ValueTier {
+  if (score >= 18) return { label: "Bargain", className: "text-positive" };
+  if (score >= 11) return { label: "Great value", className: "text-positive" };
+  if (score >= 6.5) return { label: "Fair", className: "text-gold" };
+  if (score >= 3.5) return { label: "Stretch", className: "text-muted-foreground" };
+  return { label: "Splurge", className: "text-negative" };
 }
 
 export function calculateTrueCost(

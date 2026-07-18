@@ -150,4 +150,8 @@ export interface FormulaParams {
   };
   cost_floor: number;
   use_true_cost: boolean;
+  // Sub-linear cost penalty (1 = strictly per-rupee; 0.9 = doubling the price
+  // costs a bit less than half the value). Optional for stored configs that
+  // predate the knob.
+  cost_exponent?: number;
 }

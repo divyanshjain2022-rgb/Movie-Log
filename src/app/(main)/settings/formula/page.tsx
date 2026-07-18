@@ -114,16 +114,23 @@ export default function FormulaPage() {
         if (!config) return;
         setIsRecalculating(true);
         try {
-            // Fetch all movies with their format weights
+            // Fetch all movies with format weights AND the savings the normal
+            // per-movie score path uses (passport + GC discounts) — omitting
+            // them here used to overwrite correct scores with inflated-cost ones.
             const { data: moviesRaw, error: moviesError } = await supabase
                 .from("movies")
-                .select("id, rating, ticket_cost, convenience_fee, fnb_cost, other_expenses, format:formats(weight)");
+                .select("id, rating, ticket_cost, convenience_fee, fnb_cost, other_expenses, passport_savings, format:formats(weight), movie_gift_cards(amount_used, gift_card:gift_cards(discount_percent))");
             if (moviesError) throw moviesError;
 
             const movies = (moviesRaw || []) as Array<{
                 id: string; rating: number | null; ticket_cost: number;
                 convenience_fee: number; fnb_cost: number | null;
-                other_expenses: number | null; format: { weight: number } | null;
+                other_expenses: number | null; passport_savings: number | null;
+                format: { weight: number } | null;
+                movie_gift_cards: Array<{
+                    amount_used: number;
+                    gift_card: { discount_percent: number | null } | null;
+                }> | null;
             }>;
 
             let updated = 0;
@@ -131,10 +138,16 @@ export default function FormulaPage() {
                 const rating = movie.rating;
                 if (!rating || rating <= 0) continue;
 
-                let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0);
+                let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0)
+                    - (movie.passport_savings || 0);
                 if (config.params.use_true_cost) {
                     cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
                 }
+                const gcSavings = (movie.movie_gift_cards || []).reduce((sum, mgc) => {
+                    const discount = mgc.gift_card?.discount_percent || 0;
+                    return sum + mgc.amount_used * (discount / 100);
+                }, 0);
+                cost -= gcSavings;
                 if (cost <= 0) continue;
 
                 const formatWeight = movie.format?.weight || 1.0;
@@ -288,6 +301,28 @@ export default function FormulaPage() {
                                 checked={config.params.use_true_cost}
                                 onCheckedChange={(v) => updateParams({ use_true_cost: v })}
                             />
+                        </div>
+
+                        <div>
+                            <Label>Cost Curve</Label>
+                            <p className="text-xs text-muted-foreground">
+                                1.0 = strictly per-rupee; below 1.0 softens the penalty on
+                                pricier tickets (a ₹600 IMAX isn&apos;t judged twice as harshly
+                                as ₹300)
+                            </p>
+                            <div className="mt-2 flex items-center gap-4">
+                                <Slider
+                                    value={[config.params.cost_exponent ?? 1]}
+                                    onValueChange={([v]) => updateParams({ cost_exponent: v })}
+                                    min={0.7}
+                                    max={1.2}
+                                    step={0.05}
+                                    className="flex-1"
+                                />
+                                <span className="w-12 text-right text-sm tabular-nums">
+                                    {(config.params.cost_exponent ?? 1).toFixed(2)}
+                                </span>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
