@@ -165,7 +165,7 @@ export function languageMatches(showLanguage: string | null, selectedLanguage: s
   return showLanguage.toLowerCase().includes(selectedLanguage.toLowerCase());
 }
 
-export async function loadRecommendationUserData(): Promise<{
+export async function loadRecommendationUserData(botUserId?: string): Promise<{
   userData: RecommendationUserData;
   localMode: boolean;
   errorResponse: NextResponse | null;
@@ -189,19 +189,35 @@ export async function loadRecommendationUserData(): Promise<{
     };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  // Bot path (Telegram cron/webhook): the caller has already verified the bot
+  // secret and resolved the single user's id; use a service-role client.
+  let supabase: Awaited<ReturnType<typeof createClient>>;
+  let resolvedUserId: string;
+  if (botUserId && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const { createClient: createServiceClient } = await import("@supabase/supabase-js");
+    supabase = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false, autoRefreshToken: false } }
+    ) as unknown as Awaited<ReturnType<typeof createClient>>;
+    resolvedUserId = botUserId;
+  } else {
+    supabase = await createClient();
+    const {
+      data: { user: authedUser },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  if (authError || !user) {
-    return {
-      userData: LOCAL_RECOMMENDATION_USER_DATA,
-      localMode: false,
-      errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
-    };
+    if (authError || !authedUser) {
+      return {
+        userData: LOCAL_RECOMMENDATION_USER_DATA,
+        localMode: false,
+        errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      };
+    }
+    resolvedUserId = authedUser.id;
   }
+  const user = { id: resolvedUserId };
 
   const [
     moviesResult,

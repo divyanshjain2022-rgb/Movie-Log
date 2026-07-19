@@ -1,13 +1,19 @@
 {
-    "headers": [
+  "headers": [
+    {
+      "source": "/manifest.json",
+      "headers": [
         {
-            "source": "/manifest.json",
-            "headers": [
-                {
-                    "key": "Content-Type",
-                    "value": "application/manifest+json"
-                }
-            ]
+          "key": "Content-Type",
+          "value": "application/manifest+json"
         }
-    ]
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/telegram/cron",
+      "schedule": "30 3 * * *"
+    }
+  ]
 }

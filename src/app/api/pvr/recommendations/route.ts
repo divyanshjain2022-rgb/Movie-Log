@@ -62,7 +62,14 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [];
 
   try {
-    const userDataResult = await loadRecommendationUserData();
+    // Telegram bot access: verified shared secret instead of a session.
+    let botUserId: string | undefined;
+    const botSecret = request.headers.get("x-bot-secret");
+    if (botSecret && process.env.CRON_SECRET && botSecret === process.env.CRON_SECRET) {
+      const { resolveBotUserId } = await import("@/lib/telegram");
+      botUserId = (await resolveBotUserId()) || undefined;
+    }
+    const userDataResult = await loadRecommendationUserData(botUserId);
     if (userDataResult.errorResponse) return userDataResult.errorResponse;
     const { userData, localMode } = userDataResult;
 
