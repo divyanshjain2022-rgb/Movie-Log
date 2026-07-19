@@ -357,6 +357,181 @@ async function toolStats(args: { year?: number }): Promise<unknown> {
   };
 }
 
+async function toolLogMovie(args: {
+  title?: string;
+  date?: string;
+  showtime?: string;
+  theater?: string;
+  format?: string;
+  ticket_cost?: number;
+  convenience_fee?: number;
+  fnb_cost?: number;
+  fnb_items?: string;
+  other_expenses?: number;
+  seat?: string;
+  audi?: string;
+  rating?: number;
+  review?: string;
+  gc_amount_used?: number;
+  gc_purpose?: string;
+  gc_face_value?: number;
+}): Promise<unknown> {
+  const supabase = serviceClient();
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return { error: "no database access" };
+  if (!args.title) return { error: "need at least a title" };
+
+  const existing = await findMovieByTitle(args.title);
+  if (existing && norm(existing.title) === norm(args.title)) {
+    return { error: `"${existing.title}" is already logged — use update_movie to change it` };
+  }
+
+  // Match theater + format against the user's tables.
+  const [{ data: theaters }, { data: formats }] = await Promise.all([
+    supabase.from("theaters").select("id,name").eq("user_id", userId),
+    supabase.from("formats").select("id,name").eq("user_id", userId),
+  ]);
+  const theaterTokens = (value: string) => norm(value).split(" ").filter(Boolean);
+  const theater = args.theater
+    ? ((theaters || []) as Array<{ id: string; name: string }>)
+        .map((t) => {
+          const wanted = theaterTokens(args.theater!);
+          const have = new Set(theaterTokens(t.name));
+          return { t, score: wanted.filter((x) => have.has(x)).length / Math.max(wanted.length, 1) };
+        })
+        .sort((a, b) => b.score - a.score)
+        .find((x) => x.score >= 0.4)?.t || null
+    : null;
+  const wantedFormat = norm(args.format || "2d");
+  const format = ((formats || []) as Array<{ id: string; name: string }>)
+    .map((f) => {
+      const tokens = norm(f.name).split(" ").filter(Boolean);
+      return { f, score: tokens.every((t) => wantedFormat.includes(t)) ? tokens.length : 0 };
+    })
+    .sort((a, b) => b.score - a.score)
+    .find((x) => x.score > 0)?.f || null;
+
+  // TMDB enrichment, same as ticket-photo logging.
+  let tmdbFields: Record<string, unknown> = {};
+  try {
+    const searchResponse = await fetch(`${SITE_URL}/api/tmdb?query=${encodeURIComponent(args.title)}`);
+    const search = (await searchResponse.json()) as { results?: Array<{ tmdb_id: number }> };
+    if (search.results?.[0]?.tmdb_id) {
+      const detailResponse = await fetch(`${SITE_URL}/api/tmdb?id=${search.results[0].tmdb_id}`);
+      if (detailResponse.ok) {
+        const d = (await detailResponse.json()) as Record<string, unknown>;
+        tmdbFields = {
+          tmdb_id: d.tmdb_id ?? null,
+          runtime_minutes: d.runtime_minutes ?? null,
+          genres: Array.isArray(d.genres) && d.genres.length > 0 ? d.genres : null,
+          language: d.language ?? null,
+          director: d.director ?? null,
+          poster_url: d.poster_url ?? null,
+          release_date: d.release_date ?? null,
+          overview: d.overview ?? null,
+          cast_members: Array.isArray(d.cast_members) && d.cast_members.length > 0 ? d.cast_members : null,
+          composer: d.composer ?? null,
+          cinematographer: d.cinematographer ?? null,
+          budget: d.budget ?? null,
+          box_office: d.box_office ?? null,
+          tmdb_rating: d.tmdb_rating ?? null,
+          tmdb_vote_count: d.tmdb_vote_count ?? null,
+          certification: d.certification ?? null,
+          trailer_url: d.trailer_url ?? null,
+          keywords: Array.isArray(d.keywords) && d.keywords.length > 0 ? d.keywords : null,
+        };
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
+  const row = {
+    user_id: userId,
+    title: args.title,
+    date: args.date || istDateString(),
+    showtime: args.showtime || null,
+    theater_id: theater?.id || null,
+    format_id: format?.id || null,
+    seat: args.seat || null,
+    audi: args.audi || null,
+    ticket_cost: args.ticket_cost || 0,
+    convenience_fee: args.convenience_fee || 0,
+    fnb_cost: args.fnb_cost || null,
+    fnb_items: args.fnb_items || null,
+    other_expenses: args.other_expenses || null,
+    review: args.review || null,
+    status: "watched",
+    ...tmdbFields,
+  };
+  const { data: created, error } = await supabase
+    .from("movies")
+    .insert(row as never)
+    .select("id")
+    .single();
+  if (error || !created) return { error: error?.message || "insert failed" };
+  const movieId = (created as { id: string }).id;
+
+  // Optional gift-card usage: match a card with enough remaining balance.
+  let gcNote: string | null = null;
+  if (args.gc_amount_used && args.gc_amount_used > 0) {
+    const { data: cards } = await supabase
+      .from("gift_cards")
+      .select("id,face_value,platform:platforms(name),movie_gift_cards(amount_used)")
+      .eq("user_id", userId);
+    const usable = ((cards || []) as unknown as Array<{
+      id: string;
+      face_value: number;
+      platform: { name: string } | null;
+      movie_gift_cards: Array<{ amount_used: number }> | null;
+    }>)
+      .map((c) => ({
+        ...c,
+        remaining: Math.max(c.face_value - (c.movie_gift_cards || []).reduce((x, u) => x + u.amount_used, 0), 0),
+      }))
+      .filter((c) => c.remaining >= args.gc_amount_used! - 0.5)
+      .sort((a, b) =>
+        args.gc_face_value
+          ? Math.abs(a.face_value - args.gc_face_value) - Math.abs(b.face_value - args.gc_face_value)
+          : a.remaining - b.remaining
+      );
+    const card = usable[0];
+    if (card) {
+      await supabase.from("movie_gift_cards").insert({
+        movie_id: movieId,
+        gift_card_id: card.id,
+        amount_used: args.gc_amount_used,
+        purpose: args.gc_purpose === "fnb" ? "fnb" : "ticket",
+      } as never);
+      gcNote = `${card.platform?.name || "GC"} \u20b9${args.gc_amount_used} linked (${args.gc_purpose === "fnb" ? "F&B" : "ticket"})`;
+    } else {
+      gcNote = "no gift card with enough balance found — link it in the app";
+    }
+  }
+
+  // Rating last so the value score sees the GC usage.
+  let ratingResult: { valueScore: number | null; tierLabel: string | null } | null = null;
+  if (args.rating && args.rating >= 1 && args.rating <= 10) {
+    ratingResult = await applyRatingInternal(movieId, args.rating);
+  }
+
+  await logBotEdit("movies", movieId, {
+    __created__: { old: null, new: { title: args.title, date: row.date } },
+  });
+
+  return {
+    logged: args.title,
+    date: row.date,
+    theater: theater?.name || args.theater || null,
+    format: format?.name || args.format || "2D",
+    tmdbMatched: Boolean(tmdbFields.poster_url),
+    giftCard: gcNote,
+    rating: args.rating || null,
+    valueScore: ratingResult?.valueScore ?? null,
+    valueTier: ratingResult?.tierLabel ?? null,
+  };
+}
+
 async function toolMovieDetails(args: { title: string }): Promise<unknown> {
   const match = await findMovieByTitle(args.title || "");
   if (!match) return { error: `no logged movie matching "${args.title}"` };
@@ -448,6 +623,9 @@ async function toolUndoLastEdit(): Promise<unknown> {
     id: string; table_name: string; record_id: string;
     changes: Record<string, { old: unknown; new: unknown }>; created_at: string;
   };
+  if (edit.changes.__created__) {
+    return { error: "the last edit was a movie creation — deletions aren't allowed from the bot; remove it in the app if needed" };
+  }
   const restore: Record<string, unknown> = {};
   for (const [field, change] of Object.entries(edit.changes)) restore[field] = change.old;
   const { error } = await supabase.from(edit.table_name).update(restore as never).eq("id", edit.record_id);
@@ -525,6 +703,34 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
     parameters: {
       type: Type.OBJECT,
       properties: { year: { type: Type.NUMBER, description: "Calendar year, omit for all-time" } },
+    },
+  },
+  {
+    name: "log_movie",
+    description:
+      "Log a WATCHED movie from conversation with everything known: title (required), date (YYYY-MM-DD), showtime (HH:MM 24h), theater name, format (2D/IMAX 2D/...), ticket_cost, convenience_fee, fnb_cost + fnb_items, other_expenses, seat, audi, rating, review. Optionally link a gift card: gc_amount_used + gc_purpose ('ticket'|'fnb') + gc_face_value to pick the card. Enriches from TMDB automatically.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        date: { type: Type.STRING },
+        showtime: { type: Type.STRING },
+        theater: { type: Type.STRING },
+        format: { type: Type.STRING },
+        ticket_cost: { type: Type.NUMBER },
+        convenience_fee: { type: Type.NUMBER },
+        fnb_cost: { type: Type.NUMBER },
+        fnb_items: { type: Type.STRING },
+        other_expenses: { type: Type.NUMBER },
+        seat: { type: Type.STRING },
+        audi: { type: Type.STRING },
+        rating: { type: Type.NUMBER },
+        review: { type: Type.STRING },
+        gc_amount_used: { type: Type.NUMBER },
+        gc_purpose: { type: Type.STRING },
+        gc_face_value: { type: Type.NUMBER },
+      },
+      required: ["title"],
     },
   },
   {
@@ -610,6 +816,7 @@ const TOOL_IMPL: Record<string, (args: never) => Promise<unknown>> = {
   get_gift_cards: toolGiftCards,
   get_recent_movies: toolRecentMovies,
   get_stats: toolStats,
+  log_movie: toolLogMovie,
   get_movie_details: toolMovieDetails,
   update_movie: toolUpdateMovie,
   get_watchlist: toolGetWatchlist,
@@ -646,7 +853,7 @@ export async function converse(userText: string): Promise<string> {
     "- get_recent_movies returns logStartsOn; anything before that date does not exist in the log.",
     "- For superlatives (worst/best/most expensive in a period) fetch that period's movies first, then compare only what came back.",
     "- If a title or card is ambiguous, ask instead of guessing. After any edit, report exactly what changed (old -> new).",
-    "EDITING: update_movie edits rating/review/remarks/costs/seat/showtime/date; update_gift_card fixes amount_paid or expiry; rate_movie is a rating shortcut; add_to_watchlist adds titles. All writes are audit-logged; undo_last_edit reverts the latest one when he says undo/revert.",
+    "LOGGING & EDITING: log_movie logs a watched movie from conversation with every detail he gives (date, costs, gift card usage, rating, review) — you CAN log movies, never claim otherwise. update_movie edits rating/review/remarks/costs/seat/showtime/date; update_gift_card fixes amount_paid or expiry; rate_movie is a rating shortcut; add_to_watchlist adds titles. All writes are audit-logged; undo_last_edit reverts the latest one when he says undo/revert.",
     "Style: plain text only (no markdown, no HTML tags). Telegram-short — a few lines, not essays.",
     "Prices are in rupees (₹). Predicted ratings are personalized to his taste; value tiers run Bargain/Great value/Fair/Stretch/Splurge.",
     "You may include a bare booking URL when recommending a specific show.",
