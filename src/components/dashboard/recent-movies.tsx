@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Star, Film } from "lucide-react";
+import { Film } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { cn } from "@/lib/utils";
-import type { MovieWithRelations } from "@/types";
+import type { HomeMovie } from "@/lib/server/home-data";
 
 type CostMode = "ticket" | "ticket_fnb" | "all";
 
 interface RecentMoviesProps {
-  movies: MovieWithRelations[];
+  movies: HomeMovie[];
   costMode?: CostMode;
 }
 
@@ -20,9 +20,8 @@ function getRatingStyle(rating: number) {
   return "bg-red-500/15 text-red-400";
 }
 
-function getMovieCostByMode(movie: MovieWithRelations, mode: CostMode): number {
-  const m = movie as any;
-  const gcSavings = (m.movie_gift_cards || []).reduce((sum: number, mgc: any) => {
+function getMovieCostByMode(m: HomeMovie, mode: CostMode): number {
+  const gcSavings = (m.movie_gift_cards || []).reduce((sum, mgc) => {
     const discount = mgc.gift_card?.discount_percent || 0;
     return sum + mgc.amount_used * (discount / 100);
   }, 0);

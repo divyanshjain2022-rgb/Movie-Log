@@ -5,7 +5,7 @@ import { Film } from "lucide-react";
 import { formatCurrency, formatDate, getRatingBadgeClasses,
   getRatingColor, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
-import type { MovieWithRelations } from "@/types";
+import type { ListMovie } from "@/lib/server/movies-data";
 
 export interface CostComponents {
   ticket: boolean;
@@ -21,7 +21,7 @@ export const DEFAULT_COST_COMPONENTS: CostComponents = {
   other: true,
 };
 
-function getCustomCost(movie: MovieWithRelations, components: CostComponents): number {
+function getCustomCost(movie: ListMovie, components: CostComponents): number {
   const m = movie as any;
   let cost = 0;
   if (components.ticket) cost += m.ticket_cost || 0;
@@ -41,7 +41,7 @@ function getCustomCost(movie: MovieWithRelations, components: CostComponents): n
 }
 
 interface MovieCardProps {
-  movie: MovieWithRelations;
+  movie: ListMovie;
   variant?: "default" | "compact";
   costComponents?: CostComponents;
 }

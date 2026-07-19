@@ -22,7 +22,8 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
-import type { MovieWithRelations, Format, Theater, Mood } from "@/types";
+import type { Format, Theater, Mood } from "@/types";
+import type { ListMovie } from "@/lib/server/movies-data";
 
 export interface MovieFilters {
   genres: string[];
@@ -49,7 +50,7 @@ const DEFAULT_FILTERS: MovieFilters = {
 };
 
 interface MovieFiltersProps {
-  movies: MovieWithRelations[];
+  movies: ListMovie[];
   formats: Format[];
   theaters: Theater[];
   moods: Mood[];
@@ -301,9 +302,9 @@ export function countActiveFilters(filters: MovieFilters): number {
 }
 
 export function applyFilters(
-  movies: MovieWithRelations[],
+  movies: ListMovie[],
   filters: MovieFilters
-): MovieWithRelations[] {
+): ListMovie[] {
   return movies.filter((movie) => {
     // Genre filter
     if (
