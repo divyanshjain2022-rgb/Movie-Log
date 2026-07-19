@@ -40,8 +40,107 @@ async function activeParams(): Promise<FormulaParams> {
   return ((data as { params?: FormulaParams } | null)?.params as FormulaParams) || DEFAULT_FORMULA_PARAMS;
 }
 
+// The chat message currently being processed — recorded as audit context.
+let currentUserMessage = "";
+
+async function logBotEdit(
+  tableName: string,
+  recordId: string,
+  changes: Record<string, { old: unknown; new: unknown }>
+): Promise<void> {
+  const supabase = serviceClient();
+  if (!supabase || Object.keys(changes).length === 0) return;
+  await supabase.from("bot_edits").insert({
+    table_name: tableName,
+    record_id: recordId,
+    changes,
+    context: currentUserMessage.slice(0, 500) || null,
+  } as never);
+}
+
+// Whitelisted, audited movie editor. Recomputes value_score when a field it
+// depends on changes. Never deletes anything.
+const EDITABLE_MOVIE_FIELDS = [
+  "rating", "review", "remarks", "fnb_cost", "other_expenses",
+  "ticket_cost", "convenience_fee", "seat", "audi", "showtime", "date",
+] as const;
+const SCORE_FIELDS = new Set([
+  "rating", "fnb_cost", "other_expenses", "ticket_cost", "convenience_fee",
+]);
+
+async function updateMovieFields(
+  movieId: string,
+  updates: Record<string, unknown>
+): Promise<{ title: string; changes: Record<string, { old: unknown; new: unknown }>; valueScore: number | null } | { error: string }> {
+  const supabase = serviceClient();
+  if (!supabase) return { error: "no database access" };
+
+  const filtered: Record<string, unknown> = {};
+  for (const field of EDITABLE_MOVIE_FIELDS) {
+    if (updates[field] !== undefined && updates[field] !== null) filtered[field] = updates[field];
+  }
+  if (Object.keys(filtered).length === 0) return { error: "no editable fields provided" };
+  if (typeof filtered.rating === "number" && (filtered.rating < 1 || filtered.rating > 10)) {
+    return { error: "rating must be between 1 and 10" };
+  }
+
+  const { data: before } = await supabase
+    .from("movies")
+    .select("title,rating,review,remarks,fnb_cost,other_expenses,ticket_cost,convenience_fee,seat,audi,showtime,date,value_score")
+    .eq("id", movieId)
+    .maybeSingle();
+  if (!before) return { error: "movie not found" };
+  const beforeRow = before as Record<string, unknown> & { title: string; value_score: number | null };
+
+  const changes: Record<string, { old: unknown; new: unknown }> = {};
+  for (const [field, value] of Object.entries(filtered)) {
+    if (beforeRow[field] !== value) changes[field] = { old: beforeRow[field] ?? null, new: value };
+  }
+  if (Object.keys(changes).length === 0) {
+    return { title: beforeRow.title, changes, valueScore: beforeRow.value_score };
+  }
+
+  const { error } = await supabase.from("movies").update(filtered as never).eq("id", movieId);
+  if (error) return { error: error.message };
+
+  // Recompute the value score when its inputs moved.
+  let valueScore: number | null = beforeRow.value_score;
+  const touchesScore = Object.keys(changes).some((field) => SCORE_FIELDS.has(field));
+  const effectiveRating = (filtered.rating ?? beforeRow.rating) as number | null;
+  if (touchesScore && effectiveRating && effectiveRating > 0) {
+    const rated = await applyRatingInternal(movieId, effectiveRating);
+    if (rated) {
+      valueScore = rated.valueScore;
+      if (beforeRow.value_score !== valueScore) {
+        changes.value_score = { old: beforeRow.value_score, new: valueScore };
+      }
+    }
+  }
+
+  await logBotEdit("movies", movieId, changes);
+  return { title: beforeRow.title, changes, valueScore };
+}
+
+async function findMovieByTitle(title: string): Promise<{ id: string; title: string } | null> {
+  const supabase = serviceClient();
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId || !title) return null;
+  const { data } = await supabase
+    .from("movies")
+    .select("id,title,date")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(80);
+  const wanted = norm(title);
+  return (
+    ((data || []) as Array<{ id: string; title: string }>).find(
+      (m) => norm(m.title) === wanted || norm(m.title).includes(wanted) || wanted.includes(norm(m.title))
+    ) || null
+  );
+}
+
 // Shared by the inline rating buttons and the conversational rate_movie tool.
-export async function applyRating(
+async function applyRatingInternal(
   movieId: string,
   rating: number
 ): Promise<{ title: string; valueScore: number | null; tierLabel: string | null } | null> {
@@ -84,6 +183,29 @@ export async function applyRating(
     valueScore,
     tierLabel: valueScore ? getValueTier(valueScore, params).label : null,
   };
+}
+
+// Public entry (rating buttons): audited like every other bot write.
+export async function applyRating(
+  movieId: string,
+  rating: number
+): Promise<{ title: string; valueScore: number | null; tierLabel: string | null } | null> {
+  const supabase = serviceClient();
+  if (!supabase) return null;
+  const { data: before } = await supabase
+    .from("movies")
+    .select("rating,value_score")
+    .eq("id", movieId)
+    .maybeSingle();
+  const result = await applyRatingInternal(movieId, rating);
+  if (result && before) {
+    const b = before as { rating: number | null; value_score: number | null };
+    await logBotEdit("movies", movieId, {
+      rating: { old: b.rating, new: rating },
+      value_score: { old: b.value_score, new: result.valueScore },
+    });
+  }
+  return result;
 }
 
 // ---- Tools the model can call ----
@@ -161,7 +283,11 @@ async function toolGiftCards(): Promise<unknown> {
     .filter((card) => card.remaining > 0.5);
 }
 
-async function toolRecentMovies(args: { limit?: number; since?: string }): Promise<unknown> {
+async function toolRecentMovies(args: {
+  limit?: number;
+  since?: string;
+  until?: string;
+}): Promise<unknown> {
   const supabase = serviceClient();
   const userId = await resolveBotUserId();
   if (!supabase || !userId) return { error: "no database access" };
@@ -170,10 +296,25 @@ async function toolRecentMovies(args: { limit?: number; since?: string }): Promi
     .select("title,date,rating,value_score,total_cost,showtime,occupancy,theater:theaters(name),format:formats(name)")
     .eq("user_id", userId)
     .order("date", { ascending: false })
-    .limit(Math.min(args.limit || 10, 30));
+    .limit(Math.min(args.limit || 25, 100));
   if (args.since) query = query.gte("date", args.since);
-  const { data } = await query;
-  return data || [];
+  if (args.until) query = query.lte("date", args.until);
+  const { data, error } = await query;
+  if (error) return { error: error.message };
+  // Give the model the log's boundaries so "before the log started" questions
+  // can't be answered with invented movies.
+  const { data: first } = await supabase
+    .from("movies")
+    .select("date")
+    .eq("user_id", userId)
+    .order("date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return {
+    logStartsOn: (first as { date?: string } | null)?.date || null,
+    movies: data || [],
+    note: "Empty movies array means NOTHING was watched in the requested window.",
+  };
 }
 
 async function toolStats(args: { year?: number }): Promise<unknown> {
@@ -216,6 +357,105 @@ async function toolStats(args: { year?: number }): Promise<unknown> {
   };
 }
 
+async function toolMovieDetails(args: { title: string }): Promise<unknown> {
+  const match = await findMovieByTitle(args.title || "");
+  if (!match) return { error: `no logged movie matching "${args.title}"` };
+  const supabase = serviceClient();
+  if (!supabase) return { error: "no database access" };
+  const { data } = await supabase
+    .from("movies")
+    .select("title,date,showtime,rating,review,remarks,value_score,ticket_cost,convenience_fee,fnb_cost,fnb_items,other_expenses,total_cost,seat,audi,occupancy,language,genres,director,runtime_minutes,tmdb_rating,theater:theaters(name),format:formats(name),movie_gift_cards(amount_used,purpose,gift_card:gift_cards(discount_percent))")
+    .eq("id", match.id)
+    .maybeSingle();
+  return data || { error: "movie not found" };
+}
+
+async function toolUpdateMovie(args: Record<string, unknown> & { title?: string }): Promise<unknown> {
+  const match = await findMovieByTitle(String(args.title || ""));
+  if (!match) return { error: `no logged movie matching "${args.title}"` };
+  const result = await updateMovieFields(match.id, args);
+  return result;
+}
+
+async function toolGetWatchlist(): Promise<unknown> {
+  const supabase = serviceClient();
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return { error: "no database access" };
+  const { data } = await supabase
+    .from("watchlist")
+    .select("title,priority,release_date,created_at")
+    .eq("user_id", userId)
+    .is("watched_movie_id", null)
+    .order("priority", { ascending: false });
+  return data || [];
+}
+
+async function toolUpdateGiftCard(args: {
+  face_value?: number;
+  platform?: string;
+  amount_paid?: number;
+  expiry_date?: string;
+}): Promise<unknown> {
+  const supabase = serviceClient();
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return { error: "no database access" };
+  const { data } = await supabase
+    .from("gift_cards")
+    .select("id,face_value,amount_paid,expiry_date,platform:platforms(name)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(30);
+  const cards = (data || []) as unknown as Array<{
+    id: string; face_value: number; amount_paid: number; expiry_date: string;
+    platform: { name: string } | null;
+  }>;
+  const card = cards.find(
+    (c) =>
+      (!args.face_value || Math.abs(c.face_value - args.face_value) < 1) &&
+      (!args.platform || norm(c.platform?.name || "").includes(norm(args.platform)))
+  );
+  if (!card) return { error: "no matching gift card (give face value and/or platform)" };
+
+  const updates: Record<string, unknown> = {};
+  const changes: Record<string, { old: unknown; new: unknown }> = {};
+  if (typeof args.amount_paid === "number" && args.amount_paid > 0 && args.amount_paid !== card.amount_paid) {
+    updates.amount_paid = args.amount_paid;
+    changes.amount_paid = { old: card.amount_paid, new: args.amount_paid };
+  }
+  if (args.expiry_date && args.expiry_date !== card.expiry_date) {
+    updates.expiry_date = args.expiry_date;
+    changes.expiry_date = { old: card.expiry_date, new: args.expiry_date };
+  }
+  if (Object.keys(updates).length === 0) return { error: "nothing to update (amount_paid / expiry_date)" };
+  const { error } = await supabase.from("gift_cards").update(updates as never).eq("id", card.id);
+  if (error) return { error: error.message };
+  await logBotEdit("gift_cards", card.id, changes);
+  return { updated: card.platform?.name || "GC", face_value: card.face_value, changes };
+}
+
+async function toolUndoLastEdit(): Promise<unknown> {
+  const supabase = serviceClient();
+  if (!supabase) return { error: "no database access" };
+  const { data } = await supabase
+    .from("bot_edits")
+    .select("id,table_name,record_id,changes,created_at")
+    .eq("undone", false)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return { error: "no bot edits to undo" };
+  const edit = data as unknown as {
+    id: string; table_name: string; record_id: string;
+    changes: Record<string, { old: unknown; new: unknown }>; created_at: string;
+  };
+  const restore: Record<string, unknown> = {};
+  for (const [field, change] of Object.entries(edit.changes)) restore[field] = change.old;
+  const { error } = await supabase.from(edit.table_name).update(restore as never).eq("id", edit.record_id);
+  if (error) return { error: error.message };
+  await supabase.from("bot_edits").update({ undone: true } as never).eq("id", edit.id);
+  return { restored: edit.table_name, record: edit.record_id, revertedFields: Object.keys(edit.changes), editWasFrom: edit.created_at };
+}
+
 async function toolRateMovie(args: { title: string; rating: number }): Promise<unknown> {
   const supabase = serviceClient();
   const userId = await resolveBotUserId();
@@ -235,6 +475,7 @@ async function toolRateMovie(args: { title: string; rating: number }): Promise<u
   );
   if (!match) return { error: `no logged movie matching "${args.title}"` };
   const result = await applyRating(match.id, args.rating);
+  // (applyRating writes the audit row itself)
   return result
     ? { rated: result.title, rating: args.rating, valueScore: result.valueScore, valueTier: result.tierLabel }
     : { error: "failed to save rating" };
@@ -272,8 +513,9 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
     parameters: {
       type: Type.OBJECT,
       properties: {
-        limit: { type: Type.NUMBER, description: "Max rows (default 10, max 30)" },
+        limit: { type: Type.NUMBER, description: "Max rows (default 25, max 100)" },
         since: { type: Type.STRING, description: "Only movies on/after this date (YYYY-MM-DD)" },
+        until: { type: Type.STRING, description: "Only movies on/before this date (YYYY-MM-DD). Use since+until together for month/week questions." },
       },
     },
   },
@@ -284,6 +526,61 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
       type: Type.OBJECT,
       properties: { year: { type: Type.NUMBER, description: "Calendar year, omit for all-time" } },
     },
+  },
+  {
+    name: "get_movie_details",
+    description: "Full details of one logged movie by title: review, remarks, all costs, seat, occupancy, value score, gift-card usage.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { title: { type: Type.STRING } },
+      required: ["title"],
+    },
+  },
+  {
+    name: "update_movie",
+    description:
+      "Edit a logged movie (matched by title). Editable: rating, review, remarks, fnb_cost, other_expenses, ticket_cost, convenience_fee, seat, audi, showtime (HH:MM), date (YYYY-MM-DD). Value score recomputes automatically. Every change is audit-logged and reversible via undo_last_edit.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        rating: { type: Type.NUMBER },
+        review: { type: Type.STRING },
+        remarks: { type: Type.STRING },
+        fnb_cost: { type: Type.NUMBER },
+        other_expenses: { type: Type.NUMBER },
+        ticket_cost: { type: Type.NUMBER },
+        convenience_fee: { type: Type.NUMBER },
+        seat: { type: Type.STRING },
+        audi: { type: Type.STRING },
+        showtime: { type: Type.STRING },
+        date: { type: Type.STRING },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "get_watchlist",
+    description: "The user's unwatched watchlist with priorities and release dates.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "update_gift_card",
+    description: "Edit a gift card matched by face value and/or platform: set amount_paid (actual purchase price, for discount tracking) or expiry_date.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        face_value: { type: Type.NUMBER },
+        platform: { type: Type.STRING },
+        amount_paid: { type: Type.NUMBER },
+        expiry_date: { type: Type.STRING },
+      },
+    },
+  },
+  {
+    name: "undo_last_edit",
+    description: "Revert the most recent edit the bot made (any table), restoring previous values from the audit log.",
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "rate_movie",
@@ -313,6 +610,11 @@ const TOOL_IMPL: Record<string, (args: never) => Promise<unknown>> = {
   get_gift_cards: toolGiftCards,
   get_recent_movies: toolRecentMovies,
   get_stats: toolStats,
+  get_movie_details: toolMovieDetails,
+  update_movie: toolUpdateMovie,
+  get_watchlist: toolGetWatchlist,
+  update_gift_card: toolUpdateGiftCard,
+  undo_last_edit: toolUndoLastEdit,
   rate_movie: toolRateMovie,
   add_to_watchlist: toolAddToWatchlist,
 };
@@ -334,11 +636,17 @@ export async function converse(userText: string): Promise<string> {
     { role: "user", parts: [{ text: userText }] },
   ];
 
+  currentUserMessage = userText;
   const systemInstruction = [
     "You are CinemaLog, Divyansh's personal cinema assistant on Telegram.",
     `Today is ${istDateString()} (IST). He watches movies at PVR/INOX in Lucknow and pays with discounted gift cards.`,
-    "Use the tools for anything about his log, spending, gift cards, what's playing, or ratings — never invent data.",
-    "Actions: rate_movie saves a rating; add_to_watchlist saves a title. Confirm what you did.",
+    "ACCURACY RULES (non-negotiable):",
+    "- Every fact about his log, spending, gift cards, showtimes, or ratings MUST come from a tool result in THIS turn. Never answer from memory or prior turns.",
+    "- NEVER invent movies, dates, or numbers. For month/period questions call get_recent_movies with since+until covering that period; an empty result means he watched nothing then — say exactly that.",
+    "- get_recent_movies returns logStartsOn; anything before that date does not exist in the log.",
+    "- For superlatives (worst/best/most expensive in a period) fetch that period's movies first, then compare only what came back.",
+    "- If a title or card is ambiguous, ask instead of guessing. After any edit, report exactly what changed (old -> new).",
+    "EDITING: update_movie edits rating/review/remarks/costs/seat/showtime/date; update_gift_card fixes amount_paid or expiry; rate_movie is a rating shortcut; add_to_watchlist adds titles. All writes are audit-logged; undo_last_edit reverts the latest one when he says undo/revert.",
     "Style: plain text only (no markdown, no HTML tags). Telegram-short — a few lines, not essays.",
     "Prices are in rupees (₹). Predicted ratings are personalized to his taste; value tiers run Bargain/Great value/Fair/Stretch/Splurge.",
     "You may include a bare booking URL when recommending a specific show.",
@@ -355,6 +663,7 @@ export async function converse(userText: string): Promise<string> {
         model,
         config: {
           systemInstruction,
+          temperature: 0.2,
           tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
           // Gemini 2.x rejects thinkingLevel; only the 3.x models take it.
           ...(model.startsWith("gemini-3")
