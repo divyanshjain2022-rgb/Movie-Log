@@ -172,8 +172,8 @@ export const runtime = "edge";
 
 const MODEL_PRIORITY = [
   "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
   "gemini-3-flash-preview",
+  "gemini-3.1-flash-lite",
 ];
 
 export async function POST(request: NextRequest) {

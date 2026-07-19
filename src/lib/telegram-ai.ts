@@ -17,7 +17,7 @@ import type { FormulaParams } from "@/types";
 
 // Free-tier Gemini quotas are per-model per-day (3.5-flash allows only 20
 // requests/day), so exhausting one model falls through to the next.
-const MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"];
+const MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
 const HISTORY_KEY = "chat_history";
 const MAX_HISTORY_TURNS = 16;
 

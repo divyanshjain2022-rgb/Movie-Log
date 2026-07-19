@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
-    const GC_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"];
+    const GC_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite"];
     let response;
     let lastError: unknown = null;
     for (const model of GC_MODELS) {
