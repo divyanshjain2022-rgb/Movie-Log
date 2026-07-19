@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -105,31 +105,37 @@ export default function StatsPage() {
     return years.length > 0 ? years : [new Date().getFullYear()];
   }, [movies]);
 
-  useEffect(() => {
-    if (selectedYear !== "all" && !availableYears.includes(selectedYear)) {
-      setSelectedYear(availableYears[0]);
-    }
-  }, [availableYears, selectedYear]);
+  // Derived during render (no setState-in-effect, which cascades renders):
+  // a selected year that no longer exists falls back to the newest one.
+  const effectiveYear: YearFilterValue =
+    selectedYear === "all" || availableYears.includes(selectedYear as number)
+      ? selectedYear
+      : availableYears[0];
 
   // Price fluctuation data for Insights tab
   const priceFluctuation = useMemo(() => {
     if (movies.length === 0) return null;
 
-    const yearMovies = selectedYear === "all"
+    const yearMovies = effectiveYear === "all"
       ? movies
-      : movies.filter((m) => new Date(m.date).getFullYear() === selectedYear);
+      : movies.filter((m) => new Date(m.date).getFullYear() === effectiveYear);
 
     // Get unique formats and theaters
     const formats = [...new Set(yearMovies.map((m) => m.format?.name).filter(Boolean))] as string[];
     const theaters = [...new Set(yearMovies.map((m) => m.theater?.name).filter(Boolean))] as string[];
 
+    // A stale format/theater selection (e.g. after switching year) falls back
+    // to "all" here instead of via a state-resetting effect.
+    const activeFormat = formats.includes(selectedFormat) ? selectedFormat : "all";
+    const activeTheater = theaters.includes(selectedTheater) ? selectedTheater : "all";
+
     // Filter movies based on selections
     let filtered = yearMovies;
-    if (selectedFormat !== "all") {
-      filtered = filtered.filter((m) => m.format?.name === selectedFormat);
+    if (activeFormat !== "all") {
+      filtered = filtered.filter((m) => m.format?.name === activeFormat);
     }
-    if (selectedTheater !== "all") {
-      filtered = filtered.filter((m) => m.theater?.name === selectedTheater);
+    if (activeTheater !== "all") {
+      filtered = filtered.filter((m) => m.theater?.name === activeTheater);
     }
 
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -185,29 +191,17 @@ export default function StatsPage() {
       };
     });
 
-    return { formats, theaters, dayData, timeData, timeSlotData, totalFiltered: filtered.length };
-  }, [movies, selectedYear, selectedFormat, selectedTheater]);
-
-  useEffect(() => {
-    if (!priceFluctuation) return;
-
-    if (selectedFormat !== "all" && !priceFluctuation.formats.includes(selectedFormat)) {
-      setSelectedFormat("all");
-    }
-
-    if (selectedTheater !== "all" && !priceFluctuation.theaters.includes(selectedTheater)) {
-      setSelectedTheater("all");
-    }
-  }, [priceFluctuation, selectedFormat, selectedTheater]);
+    return { formats, theaters, activeFormat, activeTheater, dayData, timeData, timeSlotData, totalFiltered: filtered.length };
+  }, [movies, effectiveYear, selectedFormat, selectedTheater]);
 
   const stats = useMemo(() => {
     if (movies.length === 0) {
       return null;
     }
 
-    const yearMovies = selectedYear === "all"
+    const yearMovies = effectiveYear === "all"
       ? movies
-      : movies.filter((m) => new Date(m.date).getFullYear() === selectedYear);
+      : movies.filter((m) => new Date(m.date).getFullYear() === effectiveYear);
 
     // Basic stats
     const totalMovies = yearMovies.length;
@@ -372,6 +366,109 @@ export default function StatsPage() {
       };
     }).filter((d) => d.count > 0);
 
+    // Runtime + cadence
+    const totalRuntime = yearMovies.reduce((sum, m) => sum + (m.runtime_minutes || 0), 0);
+    const sortedTimes = yearMovies.map((m) => new Date(m.date).getTime()).sort((a, b) => a - b);
+    let gapSum = 0;
+    let longestGapDays = 0;
+    for (let i = 1; i < sortedTimes.length; i += 1) {
+      const gap = (sortedTimes[i] - sortedTimes[i - 1]) / 86_400_000;
+      gapSum += gap;
+      if (gap > longestGapDays) longestGapDays = gap;
+    }
+    const avgGapDays = sortedTimes.length > 1 ? gapSum / (sortedTimes.length - 1) : 0;
+
+    // Languages
+    const languageCounts: Record<string, number> = {};
+    yearMovies.forEach((m) => {
+      const lang = m.language || "Unknown";
+      languageCounts[lang] = (languageCounts[lang] || 0) + 1;
+    });
+
+    // Highs & lows (need enough rated movies for "worst" to be meaningful)
+    const byRating = [...ratedMovies].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    const bestMovies = byRating.slice(0, 3).map((m) => ({ title: m.title, rating: m.rating || 0 }));
+    const worstMovies = byRating.length > 5
+      ? byRating.slice(-3).reverse().map((m) => ({ title: m.title, rating: m.rating || 0 }))
+      : [];
+
+    // Average rating per genre (2+ rated movies)
+    const genreRatingMap: Record<string, { sum: number; count: number }> = {};
+    ratedMovies.forEach((m) => {
+      (m.genres || []).forEach((g) => {
+        if (!genreRatingMap[g]) genreRatingMap[g] = { sum: 0, count: 0 };
+        genreRatingMap[g].sum += m.rating || 0;
+        genreRatingMap[g].count += 1;
+      });
+    });
+    const genreRatings = Object.entries(genreRatingMap)
+      .filter(([, d]) => d.count >= 2)
+      .map(([genre, d]) => ({ genre, avg: +(d.sum / d.count).toFixed(1), count: d.count }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 6);
+
+    // Spending extremes
+    const costliest = yearMovies.reduce<typeof yearMovies[number] | null>(
+      (best, m) => (m.total_cost > (best?.total_cost ?? -1) ? m : best), null);
+    const cheapest = yearMovies
+      .filter((m) => m.total_cost > 0)
+      .reduce<typeof yearMovies[number] | null>(
+        (best, m) => (m.total_cost < (best?.total_cost ?? Infinity) ? m : best), null);
+
+    // Savings: gift-card discounts + passport
+    type GcUsage = { amount_used: number; gift_card?: { discount_percent?: number | null } | null };
+    const gcSavings = yearMovies.reduce((sum, m) => {
+      const usages = ((m as unknown as { movie_gift_cards?: GcUsage[] }).movie_gift_cards) || [];
+      return sum + usages.reduce(
+        (x, g) => x + g.amount_used * ((g.gift_card?.discount_percent || 0) / 100), 0);
+    }, 0);
+    const totalSaved = gcSavings + totalPassportSavings;
+
+    // Value scores
+    const valuedMovies = yearMovies.filter(
+      (m) => typeof m.value_score === "number" && (m.value_score || 0) > 0);
+    const avgValueScore = valuedMovies.length > 0
+      ? valuedMovies.reduce((sum, m) => sum + (m.value_score || 0), 0) / valuedMovies.length
+      : 0;
+    const bestValue = valuedMovies.reduce<typeof yearMovies[number] | null>(
+      (best, m) => ((m.value_score || 0) > (best?.value_score || 0) ? m : best), null);
+
+    // How soon after release
+    const releaseWindows = [
+      { label: "Opening (\u22643 days)", count: 0 },
+      { label: "First week", count: 0 },
+      { label: "Weeks 2-4", count: 0 },
+      { label: "A month+", count: 0 },
+    ];
+    yearMovies.forEach((m) => {
+      if (!m.release_date) return;
+      const days = Math.round(
+        (new Date(m.date).getTime() - new Date(m.release_date).getTime()) / 86_400_000);
+      if (days < 0) return;
+      const idx = days <= 3 ? 0 : days <= 7 ? 1 : days <= 28 ? 2 : 3;
+      releaseWindows[idx].count += 1;
+    });
+    const releaseWindowTotal = releaseWindows.reduce((sum, w) => sum + w.count, 0);
+
+    // Hall occupancy (captured seat-map snapshots)
+    const occupancyMovies = yearMovies.filter(
+      (m) => typeof m.occupancy === "number" && (m.occupancy || 0) > 0);
+    const avgOccupancy = occupancyMovies.length > 0
+      ? occupancyMovies.reduce((sum, m) => sum + (m.occupancy || 0), 0) / occupancyMovies.length
+      : 0;
+    const fullestShow = occupancyMovies.reduce<typeof yearMovies[number] | null>(
+      (best, m) => ((m.occupancy || 0) > (best?.occupancy || 0) ? m : best), null);
+    const emptiestShow = occupancyMovies.reduce<typeof yearMovies[number] | null>(
+      (best, m) => ((m.occupancy || 0) < (best?.occupancy ?? Infinity) ? m : best), null);
+
+    // Favorite seat row (letters before the number: "A-10" -> A)
+    const rowCounts: Record<string, number> = {};
+    yearMovies.forEach((m) => {
+      const row = (m.seat || "").trim().match(/^([A-Za-z]+)/)?.[1]?.toUpperCase();
+      if (row) rowCounts[row] = (rowCounts[row] || 0) + 1;
+    });
+    const favoriteRow = Object.entries(rowCounts).sort((a, b) => b[1] - a[1])[0] || null;
+
     return {
       totalMovies,
       totalSpend,
@@ -395,8 +492,28 @@ export default function StatsPage() {
       monthlySummaries,
       costPerMinuteByFormat,
       priceTrends,
+      totalRuntime,
+      avgGapDays,
+      longestGapDays,
+      languageCounts,
+      bestMovies,
+      worstMovies,
+      genreRatings,
+      costliest,
+      cheapest,
+      gcSavings,
+      totalSaved,
+      avgValueScore,
+      bestValue,
+      releaseWindows,
+      releaseWindowTotal,
+      occupancyMovies: occupancyMovies.length,
+      avgOccupancy,
+      fullestShow,
+      emptiestShow,
+      favoriteRow,
     };
-  }, [movies, selectedYear]);
+  }, [movies, effectiveYear]);
 
   return (
     <div className="min-h-screen">
@@ -405,7 +522,7 @@ export default function StatsPage() {
       <div className="p-4">
         <YearFilter
           years={availableYears}
-          value={selectedYear}
+          value={effectiveYear}
           onChange={setSelectedYear}
           className="mb-3"
         />
@@ -450,6 +567,36 @@ export default function StatsPage() {
                         {stats.avgRating.toFixed(1)}
                       </p>
                       <p className="text-sm text-muted-foreground">Avg Rating</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Rhythm tiles */}
+                <div className="grid grid-cols-3 gap-3">
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <p className="marquee text-xl text-foreground/90">
+                        {Math.floor(stats.totalRuntime / 60)}h
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">Watched</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <p className="marquee text-xl text-foreground/90">
+                        {stats.avgGapDays > 0 ? `${Math.round(stats.avgGapDays)}d` : "—"}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">Avg Gap</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <p className="marquee text-xl text-foreground/90">
+                        {stats.favoriteRow ? `Row ${stats.favoriteRow[0]}` : "—"}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {stats.favoriteRow ? `${stats.favoriteRow[1]}x favourite` : "Fav Row"}
+                      </p>
                     </CardContent>
                   </Card>
                 </div>
@@ -546,6 +693,37 @@ export default function StatsPage() {
                   </Card>
                 )}
 
+                {/* Languages */}
+                {Object.keys(stats.languageCounts).length > 1 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Languages</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {Object.entries(stats.languageCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([lang, count]) => (
+                            <div key={lang} className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <div className="flex justify-between text-sm">
+                                  <span>{lang}</span>
+                                  <span className="text-muted-foreground">{count}</span>
+                                </div>
+                                <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
+                                  <div
+                                    className="h-full bg-blue-400/70"
+                                    style={{ width: `${(count / stats.totalMovies) * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Day of Week */}
                 <Card>
                   <CardHeader className="pb-2">
@@ -616,6 +794,67 @@ export default function StatsPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Savings + value */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="marquee text-2xl text-positive">
+                        {formatCurrency(stats.totalSaved)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Saved (GC + Passport)</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="marquee text-2xl text-foreground/90">
+                        {stats.avgValueScore > 0 ? stats.avgValueScore.toFixed(1) : "—"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Avg Value Score</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Spending extremes */}
+                {(stats.costliest || stats.cheapest) && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Extremes</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {stats.costliest && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            Priciest — {stats.costliest.title}
+                          </span>
+                          <span className="shrink-0 font-semibold text-negative">
+                            {formatCurrency(stats.costliest.total_cost)}
+                          </span>
+                        </div>
+                      )}
+                      {stats.cheapest && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            Cheapest — {stats.cheapest.title}
+                          </span>
+                          <span className="shrink-0 font-semibold text-positive">
+                            {formatCurrency(stats.cheapest.total_cost)}
+                          </span>
+                        </div>
+                      )}
+                      {stats.bestValue && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            Best value — {stats.bestValue.title}
+                          </span>
+                          <span className="shrink-0 font-semibold text-gold">
+                            {(stats.bestValue.value_score || 0).toFixed(1)}
+                          </span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Cost per Minute by Format */}
                 {stats.costPerMinuteByFormat.length > 0 && (
@@ -868,6 +1107,71 @@ export default function StatsPage() {
                     )}
                   </CardContent>
                 </Card>
+              
+                {/* Highs & lows */}
+                {stats.bestMovies.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Highs &amp; Lows</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-positive">Best</p>
+                        <div className="space-y-1.5 text-sm">
+                          {stats.bestMovies.map((m) => (
+                            <div key={m.title} className="flex items-center justify-between gap-3">
+                              <span className="min-w-0 truncate">{m.title}</span>
+                              <span className="shrink-0 font-semibold text-positive">{m.rating.toFixed(1)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {stats.worstMovies.length > 0 && (
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-negative">Worst</p>
+                          <div className="space-y-1.5 text-sm">
+                            {stats.worstMovies.map((m) => (
+                              <div key={m.title} className="flex items-center justify-between gap-3">
+                                <span className="min-w-0 truncate">{m.title}</span>
+                                <span className="shrink-0 font-semibold text-negative">{m.rating.toFixed(1)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Rating by genre */}
+                {stats.genreRatings.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Taste by Genre</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {stats.genreRatings.map((g) => (
+                          <div key={g.genre} className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div className="flex justify-between text-sm">
+                                <span>{g.genre}</span>
+                                <span className="text-muted-foreground">{g.avg.toFixed(1)} · {g.count} films</span>
+                              </div>
+                              <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
+                                <div
+                                  className="h-full bg-primary/80"
+                                  style={{ width: `${(g.avg / 10) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
               </TabsContent>
 
               <TabsContent value="insights" className="space-y-4">
@@ -887,7 +1191,7 @@ export default function StatsPage() {
                               onClick={() => setSelectedFormat("all")}
                               className={cn(
                                 "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
-                                selectedFormat === "all"
+                                priceFluctuation.activeFormat === "all"
                                   ? "bg-primary text-primary-foreground"
                                   : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
                               )}
@@ -900,7 +1204,7 @@ export default function StatsPage() {
                                 onClick={() => setSelectedFormat(f)}
                                 className={cn(
                                   "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
-                                  selectedFormat === f
+                                  priceFluctuation.activeFormat === f
                                     ? "bg-primary text-primary-foreground"
                                     : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
                                 )}
@@ -917,7 +1221,7 @@ export default function StatsPage() {
                               onClick={() => setSelectedTheater("all")}
                               className={cn(
                                 "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
-                                selectedTheater === "all"
+                                priceFluctuation.activeTheater === "all"
                                   ? "bg-primary text-primary-foreground"
                                   : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
                               )}
@@ -930,7 +1234,7 @@ export default function StatsPage() {
                                 onClick={() => setSelectedTheater(t)}
                                 className={cn(
                                   "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
-                                  selectedTheater === t
+                                  priceFluctuation.activeTheater === t
                                     ? "bg-primary text-primary-foreground"
                                     : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
                                 )}
@@ -1053,6 +1357,75 @@ export default function StatsPage() {
                           )}
                         </>
                       )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* How soon after release */}
+                {stats.releaseWindowTotal > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">How Soon You Watch</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {stats.releaseWindows.map((w) => (
+                          <div key={w.label} className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div className="flex justify-between text-sm">
+                                <span>{w.label}</span>
+                                <span className="text-muted-foreground">{w.count}</span>
+                              </div>
+                              <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
+                                <div
+                                  className="h-full bg-violet-400/70"
+                                  style={{ width: `${(w.count / stats.releaseWindowTotal) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[11px] text-muted-foreground/60">
+                        Based on {stats.releaseWindowTotal} movies with a known release date.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Hall occupancy */}
+                {stats.occupancyMovies > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Hall Occupancy</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-baseline gap-2">
+                        <span className="marquee text-3xl text-foreground/90">
+                          {Math.round(stats.avgOccupancy)}%
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          average across {stats.occupancyMovies} captured {stats.occupancyMovies === 1 ? "show" : "shows"}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5 text-sm">
+                        {stats.fullestShow && (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate">Fullest — {stats.fullestShow.title}</span>
+                            <span className="shrink-0 font-semibold text-negative">
+                              {Math.round(stats.fullestShow.occupancy || 0)}%
+                            </span>
+                          </div>
+                        )}
+                        {stats.emptiestShow && stats.occupancyMovies > 1 && (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate">Emptiest — {stats.emptiestShow.title}</span>
+                            <span className="shrink-0 font-semibold text-positive">
+                              {Math.round(stats.emptiestShow.occupancy || 0)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 )}
