@@ -112,31 +112,53 @@ export async function POST(request: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      config: {
-        systemInstruction: EXTRACTION_PROMPT,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [
+    const GC_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"];
+    let response;
+    let lastError: unknown = null;
+    for (const model of GC_MODELS) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          config: {
+            systemInstruction: EXTRACTION_PROMPT,
+            responseMimeType: "application/json",
+            responseSchema: responseSchema,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          },
+          contents: [
             {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data,
-              },
-            },
-            {
-              text: "Read every piece of text in this gift card image. Extract the card number, PIN, face value, expiry date, and platform.",
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data,
+                  },
+                },
+                {
+                  text: "Read every piece of text in this gift card image. Extract the card number, PIN, face value, expiry date, and platform.",
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        });
+        break; // Success — stop trying other models
+      } catch (apiError: unknown) {
+        lastError = apiError;
+        const status = (apiError as { status?: number })?.status;
+        const message = apiError instanceof Error ? apiError.message : "";
+        console.error(`[GC-OCR] ${model} failed:`, status, message.substring(0, 160));
+        if (status === 429 || status === 503 || message.includes("RESOURCE_EXHAUSTED")) {
+          continue; // Quota/unavailable: fall through to the next model
+        }
+        throw apiError;
+      }
+    }
+    if (!response) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("All Gemini models failed (quota exhausted). Try again later.");
+    }
 
     const textResponse = response.text;
     if (!textResponse) {
