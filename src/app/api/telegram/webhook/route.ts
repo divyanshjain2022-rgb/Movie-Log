@@ -41,10 +41,12 @@ interface OcrTicket {
 
 async function activeFormulaParams(): Promise<FormulaParams> {
   const supabase = serviceClient();
-  if (!supabase) return DEFAULT_FORMULA_PARAMS;
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return DEFAULT_FORMULA_PARAMS;
   const { data } = await supabase
     .from("formula_configs")
     .select("params")
+    .eq("user_id", userId)
     .eq("is_active", true)
     .maybeSingle();
   return ((data as { params?: FormulaParams } | null)?.params as FormulaParams) || DEFAULT_FORMULA_PARAMS;

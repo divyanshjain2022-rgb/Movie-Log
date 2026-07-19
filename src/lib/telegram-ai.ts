@@ -15,7 +15,9 @@ import {
 import { calculateValueScore, DEFAULT_FORMULA_PARAMS, getValueTier } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
 
-const MODEL = "gemini-3.5-flash";
+// Free-tier Gemini quotas are per-model per-day (3.5-flash allows only 20
+// requests/day), so exhausting one model falls through to the next.
+const MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
 const HISTORY_KEY = "chat_history";
 const MAX_HISTORY_TURNS = 16;
 
@@ -25,10 +27,14 @@ function norm(value: string): string {
 
 async function activeParams(): Promise<FormulaParams> {
   const supabase = serviceClient();
-  if (!supabase) return DEFAULT_FORMULA_PARAMS;
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return DEFAULT_FORMULA_PARAMS;
+  // Service role sees every user's configs — scope to the app's account or
+  // maybeSingle() trips over a stray second row and silently falls back.
   const { data } = await supabase
     .from("formula_configs")
     .select("params")
+    .eq("user_id", userId)
     .eq("is_active", true)
     .maybeSingle();
   return ((data as { params?: FormulaParams } | null)?.params as FormulaParams) || DEFAULT_FORMULA_PARAMS;
@@ -44,7 +50,7 @@ export async function applyRating(
   const { data: movie } = await supabase
     .from("movies")
     .select(
-      "title,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,format:formats(weight),movie_gift_cards(amount_used,gift_card:gift_cards(discount_percent))"
+      "title,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,format:formats(weight),movie_gift_cards(amount_used,purpose,gift_card:gift_cards(discount_percent))"
     )
     .eq("id", movieId)
     .maybeSingle();
@@ -59,6 +65,7 @@ export async function applyRating(
     format: { weight: number | null } | null;
     movie_gift_cards: Array<{
       amount_used: number;
+      purpose: string | null;
       gift_card: { discount_percent: number | null } | null;
     }> | null;
   };
@@ -66,10 +73,9 @@ export async function applyRating(
   const params = await activeParams();
   let cost = (m.ticket_cost || 0) + (m.convenience_fee || 0) - (m.passport_savings || 0);
   if (params.use_true_cost) cost += (m.fnb_cost || 0) + (m.other_expenses || 0);
-  cost -= (m.movie_gift_cards || []).reduce(
-    (sum, g) => sum + g.amount_used * ((g.gift_card?.discount_percent || 0) / 100),
-    0
-  );
+  cost -= (m.movie_gift_cards || [])
+    .filter((g) => params.use_true_cost || (g.purpose || "ticket") === "ticket")
+    .reduce((sum, g) => sum + g.amount_used * ((g.gift_card?.discount_percent || 0) / 100), 0);
   const valueScore = cost > 0 ? calculateValueScore(rating, cost, m.format?.weight || 1, params) : null;
 
   await supabase.from("movies").update({ rating, value_score: valueScore } as never).eq("id", movieId);
@@ -339,16 +345,42 @@ export async function converse(userText: string): Promise<string> {
   ].join("\n");
 
   let finalText = "";
-  for (let round = 0; round < 4; round += 1) {
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      config: {
-        systemInstruction,
-        tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-      contents,
-    });
+  let modelIndex = 0;
+  for (let round = 0; round < 6; round += 1) {
+    const model = MODELS[modelIndex];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let response: any;
+    try {
+      response = await ai.models.generateContent({
+        model,
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+          // Gemini 2.x rejects thinkingLevel; only the 3.x models take it.
+          ...(model.startsWith("gemini-3")
+            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+            : {}),
+        },
+        contents,
+      });
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      if (status === 429 && modelIndex < MODELS.length - 1) {
+        // Quota hit: switch model and restart the conversation turn cleanly
+        // (thought signatures don't transfer between models).
+        modelIndex += 1;
+        contents.length = 0;
+        contents.push(
+          ...history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+          { role: "user", parts: [{ text: userText }] }
+        );
+        continue;
+      }
+      if (status === 429) {
+        return "Gemini's free-tier quota is exhausted for today — the buttons and /tonight, /gc, /recap still work. Chat resets at midnight PT (or enable billing on the Google AI key for effectively unlimited use).";
+      }
+      throw error;
+    }
 
     const calls = response.functionCalls;
     const modelContent = response.candidates?.[0]?.content;

@@ -83,14 +83,19 @@ async function computeValueScore(
   if (movieId) {
     const { data: gcUsage } = await supabase
       .from("movie_gift_cards")
-      .select("amount_used, gift_card:gift_cards(discount_percent)")
+      .select("amount_used, purpose, gift_card:gift_cards(discount_percent)")
       .eq("movie_id", movieId);
-    const giftCardUsageRows = gcUsage as GiftCardUsageForScore[] | null;
+    const giftCardUsageRows = gcUsage as unknown as Array<GiftCardUsageForScore & { purpose?: string | null }> | null;
     if (giftCardUsageRows) {
-      const gcSavings = giftCardUsageRows.reduce((sum, mgc) => {
-        const discount = mgc.gift_card?.discount_percent || 0;
-        return sum + mgc.amount_used * (discount / 100);
-      }, 0);
+      // GC savings must match the cost basis: with true cost off, only the
+      // ticket-purpose usage counts (an F&B gift card can't discount a cost
+      // that never included F&B — that used to drive cost to zero/negative).
+      const gcSavings = giftCardUsageRows
+        .filter((mgc) => params.use_true_cost || (mgc.purpose || "ticket") === "ticket")
+        .reduce((sum, mgc) => {
+          const discount = mgc.gift_card?.discount_percent || 0;
+          return sum + mgc.amount_used * (discount / 100);
+        }, 0);
       cost -= gcSavings;
     }
   }

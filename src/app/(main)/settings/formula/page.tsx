@@ -119,7 +119,7 @@ export default function FormulaPage() {
             // them here used to overwrite correct scores with inflated-cost ones.
             const { data: moviesRaw, error: moviesError } = await supabase
                 .from("movies")
-                .select("id, rating, ticket_cost, convenience_fee, fnb_cost, other_expenses, passport_savings, format:formats(weight), movie_gift_cards(amount_used, gift_card:gift_cards(discount_percent))");
+                .select("id, rating, ticket_cost, convenience_fee, fnb_cost, other_expenses, passport_savings, format:formats(weight), movie_gift_cards(amount_used, purpose, gift_card:gift_cards(discount_percent))");
             if (moviesError) throw moviesError;
 
             const movies = (moviesRaw || []) as Array<{
@@ -129,6 +129,7 @@ export default function FormulaPage() {
                 format: { weight: number } | null;
                 movie_gift_cards: Array<{
                     amount_used: number;
+                    purpose: string | null;
                     gift_card: { discount_percent: number | null } | null;
                 }> | null;
             }>;
@@ -143,10 +144,12 @@ export default function FormulaPage() {
                 if (config.params.use_true_cost) {
                     cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
                 }
-                const gcSavings = (movie.movie_gift_cards || []).reduce((sum, mgc) => {
-                    const discount = mgc.gift_card?.discount_percent || 0;
-                    return sum + mgc.amount_used * (discount / 100);
-                }, 0);
+                const gcSavings = (movie.movie_gift_cards || [])
+                    .filter((mgc) => config.params.use_true_cost || (mgc.purpose || "ticket") === "ticket")
+                    .reduce((sum, mgc) => {
+                        const discount = mgc.gift_card?.discount_percent || 0;
+                        return sum + mgc.amount_used * (discount / 100);
+                    }, 0);
                 cost -= gcSavings;
                 if (cost <= 0) continue;
 

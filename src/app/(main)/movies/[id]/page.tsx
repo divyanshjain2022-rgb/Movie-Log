@@ -185,10 +185,12 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
     if (formulaParams.use_true_cost) {
       cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
     }
-    const gcSavings = (movie.movie_gift_cards || []).reduce((sum, usage) => {
-      const discount = usage.gift_card?.discount_percent || 0;
-      return sum + usage.amount_used * (discount / 100);
-    }, 0);
+    const gcSavings = (movie.movie_gift_cards || [])
+      .filter((usage) => formulaParams.use_true_cost || (usage.purpose || "ticket") === "ticket")
+      .reduce((sum, usage) => {
+        const discount = usage.gift_card?.discount_percent || 0;
+        return sum + usage.amount_used * (discount / 100);
+      }, 0);
     return Math.max(cost - gcSavings, 0);
   }, [movie, formulaParams]);
 
@@ -561,7 +563,8 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                       </span>
                     </p>
                     <p className="text-[10px] text-muted-foreground/60">
-                      at {formatCurrency(valueScoreCost)} true cost
+                      at {formatCurrency(valueScoreCost)}{" "}
+                      {formulaParams.use_true_cost ? "true cost" : "ticket cost"}
                     </p>
                   </div>
                 )}
