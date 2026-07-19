@@ -765,8 +765,8 @@ export function predictMoviePersonalFit(
       pushReason(
         reasons,
         crowdDelta > 0
-          ? "You tend to rate this kind of movie above TMDB"
-          : "You tend to rate this kind of movie below TMDB"
+          ? "You tend to rate this kind of movie above the crowd"
+          : "You tend to rate this kind of movie below the crowd"
       );
     }
   }

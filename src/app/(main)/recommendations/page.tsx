@@ -146,7 +146,7 @@ function confidenceBadgeClass(label: PredictionConfidenceLabel): string {
 function crowdDeltaLabel(delta: number | null): string | null {
   if (delta === null) return null;
   const sign = delta > 0 ? "+" : "";
-  return `${sign}${delta.toFixed(1)} vs TMDB`;
+  return `${sign}${delta.toFixed(1)} vs crowd`;
 }
 
 function cheapestOptionPrice(recommendation: MovieRecommendation): number | null {
@@ -1405,7 +1405,7 @@ export default function RecommendationsPage() {
             <ul className="mt-2 space-y-1.5">
               <li><span className="font-medium text-foreground">predicted</span> — the rating we think you&apos;d give it (out of 10), from your Movie Log history.</li>
               <li><span className="font-medium text-foreground">confidence</span> — how sure that prediction is, based on how much relevant history you have.</li>
-              <li><span className="font-medium text-foreground">vs TMDB</span> — how your predicted rating compares to the public TMDB score (+ above the crowd, − below).</li>
+              <li><span className="font-medium text-foreground">vs crowd</span> — how your predicted rating compares to the blended public score (TMDB + Letterboxd, vote-weighted; + above the crowd, − below).</li>
               <li><span className="font-medium text-foreground">Value</span> — predicted enjoyment per rupee; higher means more bang for the ticket price.</li>
               <li><span className="font-medium text-foreground">fast price</span> = estimate from PVR&apos;s range; <span className="font-medium text-foreground">exact price</span> = confirmed from the live seat map.</li>
             </ul>

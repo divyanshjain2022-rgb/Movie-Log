@@ -200,6 +200,26 @@
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
+/* The many raw `bg-card/NN` translucent containers read as "pure glass"
+   (unblurred transparency) — frost them all without touching each page. */
+[class*="bg-card/"] {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Mobile fixes: no accidental horizontal scroll, and 16px form controls so
+   iOS Safari stops auto-zooming the page when an input gets focus. */
+body {
+  overflow-x: hidden;
+}
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Custom utility classes */
 @layer utilities {
   .text-balance {
@@ -232,30 +252,31 @@
     font-weight: 400;
   }
 
-  /* Glass morphism card */
+  /* Frosted glass card — opaque enough to stay legible on mobile, blur does
+     the "glass" work rather than raw transparency. */
   .glass {
-    background: rgba(24, 24, 27, 0.55);
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    background: rgba(26, 26, 30, 0.78);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
   .light .glass {
-    background: rgba(255, 255, 255, 0.62);
+    background: rgba(255, 255, 255, 0.8);
     border-color: rgba(0, 0, 0, 0.06);
   }
 
   /* Heavier glass for floating chrome (nav pill, sheets) */
   .glass-strong {
-    background: rgba(18, 18, 21, 0.7);
-    backdrop-filter: blur(28px) saturate(160%);
-    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    background: rgba(20, 20, 24, 0.85);
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
     border: 1px solid rgba(255, 255, 255, 0.09);
     box-shadow:
       0 16px 48px -16px rgba(0, 0, 0, 0.65),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
   .light .glass-strong {
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.85);
     border-color: rgba(0, 0, 0, 0.08);
     box-shadow: 0 16px 48px -16px rgba(0, 0, 0, 0.2);
   }

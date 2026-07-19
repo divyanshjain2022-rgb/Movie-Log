@@ -30,10 +30,10 @@ export function SummaryCard({
       <div className="absolute -right-14 -top-14 h-44 w-44 rounded-full bg-primary/12 blur-3xl" />
       <div className="absolute -bottom-10 -left-10 h-36 w-36 rounded-full bg-violet-500/8 blur-3xl" />
 
-      <div className="relative px-8 py-6">
+      <div className="relative px-7 py-5 sm:px-8 sm:py-6">
         {/* Header */}
-        <div className="mb-4 flex items-baseline gap-2.5">
-          <span className="marquee text-4xl leading-none text-foreground/95">
+        <div className="mb-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <span className="marquee text-3xl leading-none text-foreground/95 sm:text-4xl">
             {yearLabel}
           </span>
           <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
@@ -43,7 +43,7 @@ export function SummaryCard({
 
         {/* Big marquee number */}
         <div className="mb-5 flex items-baseline gap-3">
-          <span className="marquee text-gradient-gold text-7xl leading-[0.9]">
+          <span className="marquee text-gradient-gold text-6xl leading-[0.9] sm:text-7xl">
             {movieCount}
           </span>
           <span className="text-sm font-medium text-muted-foreground">
@@ -54,7 +54,7 @@ export function SummaryCard({
         </div>
 
         {/* Stat row */}
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3 sm:gap-x-6">
           <div>
             <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
               Spent

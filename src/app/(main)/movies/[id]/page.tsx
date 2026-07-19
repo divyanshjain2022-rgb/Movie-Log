@@ -127,6 +127,9 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const router = useRouter();
   const { movie, isLoading, error, refetch } = useMovie(id);
   const formulaParams = useFormulaParams();
+  // Blended IMDb+Letterboxd+TMDB score from the extras fetch; replaces the
+  // raw TMDB number in the rating comparison once loaded.
+  const [crowdRating, setCrowdRating] = useState<number | null>(null);
   const { movies: allMovies } = useMovies();
   const { updateMovie } = useUpdateMovie();
   const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
@@ -473,7 +476,10 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
         {/* Cast photos + external ratings (IMDb / RT / Letterboxd) */}
         {movie.tmdb_id && (
           <div className="mb-4">
-            <MovieExtras tmdbId={movie.tmdb_id} />
+            <MovieExtras
+              tmdbId={movie.tmdb_id}
+              onCombined={setCrowdRating}
+            />
           </div>
         )}
 
@@ -527,17 +533,19 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                 </div>
               </div>
               <div className="text-right space-y-1">
-                {movie.tmdb_rating && (
+                {(crowdRating ?? movie.tmdb_rating) && (
                   <div>
-                    <p className="text-xs text-muted-foreground">TMDB</p>
+                    <p className="text-xs text-muted-foreground">
+                      {crowdRating ? "Crowd" : "TMDB"}
+                    </p>
                     <p className="text-sm font-medium">
-                      {movie.tmdb_rating.toFixed(1)}/10
+                      {(crowdRating ?? movie.tmdb_rating)!.toFixed(1)}/10
                       {movie.rating && (
                         <span className={cn(
                           "ml-1 text-xs",
-                          movie.rating > movie.tmdb_rating ? "text-positive" : movie.rating < movie.tmdb_rating ? "text-negative" : "text-muted-foreground"
+                          movie.rating > (crowdRating ?? movie.tmdb_rating)! ? "text-positive" : movie.rating < (crowdRating ?? movie.tmdb_rating)! ? "text-negative" : "text-muted-foreground"
                         )}>
-                          ({movie.rating > movie.tmdb_rating ? "+" : ""}{(movie.rating - movie.tmdb_rating).toFixed(1)})
+                          ({movie.rating > (crowdRating ?? movie.tmdb_rating)! ? "+" : ""}{(movie.rating - (crowdRating ?? movie.tmdb_rating)!).toFixed(1)})
                         </span>
                       )}
                     </p>

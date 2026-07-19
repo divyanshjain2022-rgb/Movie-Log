@@ -1,3 +1,4 @@
+import { blendRatings, fetchLetterboxdRating } from "@/lib/crowd-ratings";
 import type { PvrMovie } from "@/lib/pvr/types";
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -123,6 +124,7 @@ async function enrichMovie(movie: PvrMovie): Promise<PvrMovie> {
   if (!detail) {
     return {
       ...movie,
+      tmdbId: bestMatch.candidate.id,
       releaseDate: movie.releaseDate || bestMatch.candidate.release_date || null,
       posterUrl:
         movie.posterUrl ||
@@ -151,6 +153,7 @@ async function enrichMovie(movie: PvrMovie): Promise<PvrMovie> {
 
   return {
     ...movie,
+    tmdbId: bestMatch.candidate.id,
     releaseDate:
       movie.releaseDate || detail.release_date || bestMatch.candidate.release_date || null,
     posterUrl:
@@ -233,5 +236,43 @@ export async function enrichPvrMoviesWithTmdb(
     results[target.index] = movie;
   });
 
+  return results;
+}
+
+// Fold Letterboxd's weighted average into each movie's crowd rating (vote-
+// weighted, /10) so downstream prediction and "vs crowd" deltas aren't
+// TMDB-only. Bounded and best-effort; movies without a TMDB match pass through.
+export async function blendCrowdRatings(
+  movies: PvrMovie[],
+  limit = 20
+): Promise<PvrMovie[]> {
+  const results = [...movies];
+  const candidates = movies
+    .map((movie, index) => ({ movie, index }))
+    .filter(
+      ({ movie }) =>
+        movie.tmdbId && typeof movie.tmdbRating === "number" && movie.tmdbRating > 0
+    )
+    .slice(0, limit);
+  if (candidates.length === 0) return results;
+
+  const blended = await mapWithConcurrency(candidates, 6, async ({ movie }) => {
+    try {
+      const letterboxd = await fetchLetterboxdRating(movie.tmdbId!);
+      if (!letterboxd) return movie;
+      const combined = blendRatings([
+        { value: movie.tmdbRating!, votes: movie.tmdbVoteCount || 0 },
+        { value: letterboxd.rating * 2, votes: letterboxd.votes || 0 },
+      ]);
+      if (!combined) return movie;
+      return { ...movie, tmdbRating: combined.rating, tmdbVoteCount: combined.votes };
+    } catch {
+      return movie;
+    }
+  });
+
+  blended.forEach((movie, offset) => {
+    results[candidates[offset].index] = movie;
+  });
   return results;
 }

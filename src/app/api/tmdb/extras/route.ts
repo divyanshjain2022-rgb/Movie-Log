@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  blendRatings,
+  fetchImdbRating,
+  fetchLetterboxdRating,
+  type SourceRating,
+} from "@/lib/crowd-ratings";
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
@@ -11,11 +17,6 @@ export interface CastMember {
   name: string;
   character: string | null;
   profileUrl: string | null;
-}
-
-export interface SourceRating {
-  rating: number;
-  votes: number | null;
 }
 
 interface ExtrasResponse {
@@ -32,38 +33,6 @@ interface ExtrasResponse {
 
 function normalizeTitle(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-async function fetchImdbRating(imdbId: string): Promise<SourceRating | null> {
-  // IMDb's site bot-walls plain fetches, but this static JSONP document
-  // endpoint (used by their own embeds) serves ratings without fuss.
-  const response = await fetch(
-    `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`,
-    {
-      headers: { "User-Agent": BROWSER_UA },
-      next: { revalidate: REVALIDATE_SECONDS },
-    }
-  );
-  if (!response.ok) return null;
-  const text = await response.text();
-  const match = text.match(/"rating":([\d.]+),"ratingCount":(\d+)/);
-  if (!match) return null;
-  return { rating: Number(match[1]), votes: Number(match[2]) };
-}
-
-async function fetchLetterboxdRating(tmdbId: string): Promise<SourceRating | null> {
-  // letterboxd.com/tmdb/{id} redirects to the film page, whose JSON-LD
-  // carries the weighted average (0.5-5) and rating count.
-  const response = await fetch(`https://letterboxd.com/tmdb/${tmdbId}/`, {
-    headers: { "User-Agent": BROWSER_UA },
-    redirect: "follow",
-    next: { revalidate: REVALIDATE_SECONDS },
-  });
-  if (!response.ok) return null;
-  const html = await response.text();
-  const match = html.match(/"ratingValue":([\d.]+)[\s\S]*?"ratingCount":(\d+)/);
-  if (!match) return null;
-  return { rating: Number(match[1]), votes: Number(match[2]) };
 }
 
 async function fetchRottenTomatoesScore(
@@ -152,25 +121,11 @@ export async function GET(request: NextRequest) {
         : null;
 
     // Voter-weighted blend, everything normalised to /10 (Letterboxd is /5).
-    const blendParts = [
+    const combined = blendRatings([
       imdb ? { value: imdb.rating, votes: imdb.votes || 0 } : null,
       letterboxd ? { value: letterboxd.rating * 2, votes: letterboxd.votes || 0 } : null,
       tmdb ? { value: tmdb.rating, votes: tmdb.votes || 0 } : null,
-    ].filter((part): part is { value: number; votes: number } => part !== null && part.votes > 0);
-
-    const totalVotes = blendParts.reduce((sum, part) => sum + part.votes, 0);
-    const combined =
-      totalVotes > 0
-        ? {
-            rating:
-              Math.round(
-                (blendParts.reduce((sum, part) => sum + part.value * part.votes, 0) /
-                  totalVotes) *
-                  10
-              ) / 10,
-            votes: totalVotes,
-          }
-        : null;
+    ]);
 
     const payload: ExtrasResponse = {
       cast,

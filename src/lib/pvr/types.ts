@@ -29,6 +29,9 @@ export interface PvrMovie {
   director?: string | null;
   cast?: string[] | null;
   keywords?: string[] | null;
+  tmdbId?: number | null;
+  // Crowd rating: TMDB's own score, or the Letterboxd+TMDB vote-weighted
+  // blend once blendCrowdRatings has run (still /10).
   tmdbRating?: number | null;
   tmdbVoteCount?: number | null;
   posterUrl: string | null;

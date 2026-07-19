@@ -19,7 +19,7 @@ import {
   languageMatches,
   loadRecommendationUserData,
 } from "@/lib/pvr/recommendation-user-data";
-import { enrichPvrMoviesWithTmdb } from "@/lib/pvr/tmdb-enrichment";
+import { blendCrowdRatings, enrichPvrMoviesWithTmdb } from "@/lib/pvr/tmdb-enrichment";
 import type {
   PvrCacheMeta,
   PvrRecommendationsResponse,
@@ -76,7 +76,12 @@ export async function GET(request: NextRequest) {
       }),
     ]);
     const pvrMovies = combineMovies([...searchMovies.data, ...comingSoon.data]);
-    const enrichedMovies = await enrichPvrMoviesWithTmdb(pvrMovies);
+    // Enrich with TMDB, then fold Letterboxd in so crowd ratings aren't
+    // TMDB-only (the merged list has now-showing first, which the blend
+    // limit prioritises).
+    const enrichedMovies = await blendCrowdRatings(
+      await enrichPvrMoviesWithTmdb(pvrMovies)
+    );
     const enrichedById = new Map(enrichedMovies.map((movie) => [movie.id, movie]));
     const enrichedComingSoonMovies = comingSoon.data.map(
       (movie) => enrichedById.get(movie.id) || movie

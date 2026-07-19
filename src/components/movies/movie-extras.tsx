@@ -63,7 +63,13 @@ function RatingTile({
   );
 }
 
-export function MovieExtras({ tmdbId }: { tmdbId: number }) {
+export function MovieExtras({
+  tmdbId,
+  onCombined,
+}: {
+  tmdbId: number;
+  onCombined?: (rating: number | null) => void;
+}) {
   const [data, setData] = useState<ExtrasData | null>(null);
 
   useEffect(() => {
@@ -71,12 +77,17 @@ export function MovieExtras({ tmdbId }: { tmdbId: number }) {
     fetch(`/api/tmdb/extras?id=${tmdbId}`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
-        if (payload && !payload.error) setData(payload as ExtrasData);
+        if (payload && !payload.error) {
+          const extras = payload as ExtrasData;
+          setData(extras);
+          onCombined?.(extras.combined?.rating ?? null);
+        }
       })
       .catch(() => {
         // Best-effort enrichment — the page works fine without it.
       });
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tmdbId]);
 
   if (!data) return null;
