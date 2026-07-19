@@ -9,7 +9,8 @@ import {
   SITE_URL,
   tg,
 } from "@/lib/telegram";
-import { calculateValueScore, DEFAULT_FORMULA_PARAMS, formatCurrency, getValueTier } from "@/lib/formula";
+import { applyRating, converse } from "@/lib/telegram-ai";
+import { formatCurrency, getValueTier, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
 
 export const maxDuration = 60;
@@ -387,48 +388,21 @@ async function handleRatingCallback(
   movieId: string,
   rating: number
 ): Promise<void> {
-  const supabase = serviceClient();
-  if (!supabase) return;
-  const { data: movie } = await supabase
-    .from("movies")
-    .select("title,ticket_cost,convenience_fee,fnb_cost,other_expenses,passport_savings,format:formats(weight),movie_gift_cards(amount_used,gift_card:gift_cards(discount_percent))")
-    .eq("id", movieId)
-    .maybeSingle();
-  if (!movie) {
+  const result = await applyRating(movieId, rating);
+  if (!result) {
     await tg("answerCallbackQuery", { callback_query_id: callbackId, text: "Movie not found" });
     return;
   }
-  const m = movie as unknown as {
-    title: string;
-    ticket_cost: number;
-    convenience_fee: number;
-    fnb_cost: number | null;
-    other_expenses: number | null;
-    passport_savings: number | null;
-    format: { weight: number | null } | null;
-    movie_gift_cards: Array<{ amount_used: number; gift_card: { discount_percent: number | null } | null }> | null;
-  };
-
-  const params = await activeFormulaParams();
-  let cost = (m.ticket_cost || 0) + (m.convenience_fee || 0) - (m.passport_savings || 0);
-  if (params.use_true_cost) cost += (m.fnb_cost || 0) + (m.other_expenses || 0);
-  cost -= (m.movie_gift_cards || []).reduce(
-    (sum, g) => sum + g.amount_used * ((g.gift_card?.discount_percent || 0) / 100),
-    0
-  );
-  const valueScore = cost > 0 ? calculateValueScore(rating, cost, m.format?.weight || 1, params) : null;
-
-  await supabase
-    .from("movies")
-    .update({ rating, value_score: valueScore } as never)
-    .eq("id", movieId);
-
   await tg("answerCallbackQuery", { callback_query_id: callbackId, text: `Rated ${rating}/10` });
-  const tierText = valueScore
-    ? ` · value ${valueScore.toFixed(1)} (${getValueTier(valueScore, params).label})`
+  await tg("editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: [] },
+  });
+  const tierText = result.valueScore
+    ? ` · value ${result.valueScore.toFixed(1)} (${result.tierLabel})`
     : "";
-  await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
-  await sendMessage(chatId, `⭐ <b>${esc(m.title)}</b> rated ${rating}/10${tierText}`);
+  await sendMessage(chatId, `⭐ <b>${esc(result.title)}</b> rated ${rating}/10${tierText}`);
 }
 
 const HELP_TEXT = [
@@ -439,7 +413,7 @@ const HELP_TEXT = [
   "• /tonight — top picks playing now",
   "• /gc — gift card balances + which to use",
   "• /recap — last 7 days",
-  "• Any movie name — is it worth it / where's it playing",
+  "• Just talk to me — \"what should I watch this weekend?\", \"how much did I spend in June?\", \"rate the odyssey 8.5\"",
   "",
   "I'll also ping you: rating prompts after shows, hall-occupancy captures,",
   "expiring gift cards, Thursday release digests, and Sunday recaps.",
@@ -522,7 +496,10 @@ export async function POST(request: NextRequest) {
     } else if (text.startsWith("/recap")) {
       await handleRecap(chatId);
     } else if (!text.startsWith("/")) {
-      await handleTonight(chatId, text);
+      await tg("sendChatAction", { chat_id: chatId, action: "typing" });
+      const reply = await converse(text);
+      // Plain text: model output isn't guaranteed to be valid Telegram HTML.
+      await tg("sendMessage", { chat_id: chatId, text: reply.slice(0, 4000) });
     } else {
       await sendMessage(chatId, "Unknown command — /help lists what I can do.");
     }
