@@ -185,9 +185,9 @@ export function useMovies() {
   return { movies, isLoading, error, refetch: fetchMovies };
 }
 
-export function useMovie(id: string) {
-  const [movie, setMovie] = useState<MovieWithRelations | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+export function useMovie(id: string, initial?: MovieWithRelations | null) {
+  const [movie, setMovie] = useState<MovieWithRelations | null>(initial ?? null);
+  const [isLoading, setIsLoading] = useState(!initial);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchMovie = useCallback(async (options?: { silent?: boolean }) => {
@@ -226,10 +226,17 @@ export function useMovie(id: string) {
   }, [id]);
 
   useEffect(() => {
+    // Server-provided data covers the initial render (and updates when the
+    // route re-renders with fresh params); fetch only when there is none.
+    if (initial !== undefined) {
+      setMovie(initial ?? null);
+      setIsLoading(false);
+      return;
+    }
     if (id) {
       fetchMovie();
     }
-  }, [id, fetchMovie]);
+  }, [id, fetchMovie, initial]);
 
   return { movie, isLoading, error, refetch: fetchMovie };
 }
