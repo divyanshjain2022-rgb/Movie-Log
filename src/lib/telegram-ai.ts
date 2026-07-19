@@ -351,11 +351,11 @@ export async function converse(userText: string): Promise<string> {
     });
 
     const calls = response.functionCalls;
-    if (calls && calls.length > 0) {
-      contents.push({
-        role: "model",
-        parts: calls.map((call) => ({ functionCall: { name: call.name, args: call.args } })),
-      });
+    const modelContent = response.candidates?.[0]?.content;
+    if (calls && calls.length > 0 && modelContent) {
+      // Echo the model's own content back verbatim — Gemini 3 requires the
+      // thoughtSignature attached to each functionCall part to be preserved.
+      contents.push(modelContent);
       const responseParts = [];
       for (const call of calls) {
         const impl = TOOL_IMPL[call.name || ""];
