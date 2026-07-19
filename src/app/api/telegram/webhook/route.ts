@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   allowedChatId,
   esc,
+  getBotState,
   getTelegramFileBase64,
   resolveBotUserId,
   sendMessage,
   serviceClient,
+  setBotState,
   SITE_URL,
   tg,
 } from "@/lib/telegram";
+import { GoogleGenAI } from "@google/genai";
 import { applyRating, converse } from "@/lib/telegram-ai";
 import { formatCurrency, getValueTier, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
@@ -50,6 +53,115 @@ async function activeFormulaParams(): Promise<FormulaParams> {
     .eq("is_active", true)
     .maybeSingle();
   return ((data as { params?: FormulaParams } | null)?.params as FormulaParams) || DEFAULT_FORMULA_PARAMS;
+}
+
+// ---- Image classification: ticket, gift card, or just a photo? ----
+
+async function classifyImage(base64: string, mime: string): Promise<"ticket" | "gift_card" | "other"> {
+  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+  if (!apiKey) return "ticket";
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite",
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT" as const,
+          properties: {
+            kind: {
+              type: "STRING" as const,
+              description: "ticket | gift_card | other",
+            },
+          },
+        },
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: mime, data: base64 } },
+            {
+              text: "Classify this image. 'ticket' = movie ticket, booking confirmation, or an SMS/WhatsApp/app screenshot of a cinema booking. 'gift_card' = gift card or voucher. 'other' = anything else (photos of people, food, cinema halls, posters, random images).",
+            },
+          ],
+        },
+      ],
+    });
+    const parsed = JSON.parse(response.text || "{}") as { kind?: string };
+    if (parsed.kind === "gift_card" || parsed.kind === "other") return parsed.kind;
+    return "ticket";
+  } catch {
+    return "ticket";
+  }
+}
+
+interface PendingImage {
+  fileId: string;
+  mode: "choose" | "await_title";
+}
+
+async function offerImageChoices(chatId: string, fileId: string): Promise<void> {
+  await setBotState("pending_image", { fileId, mode: "choose" } satisfies PendingImage);
+  await sendMessage(chatId, "This doesn't look like a ticket. What should I do with it?", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🎟 Log as ticket", callback_data: "img:ticket" },
+          { text: "💳 Gift card", callback_data: "img:gc" },
+        ],
+        [
+          { text: "📎 Attach to a movie", callback_data: "img:attach" },
+          { text: "✖️ Ignore", callback_data: "img:ignore" },
+        ],
+      ],
+    },
+  });
+}
+
+async function attachPhotoToMovie(chatId: string, fileId: string, title: string): Promise<void> {
+  const supabase = serviceClient();
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return;
+  const { data } = await supabase
+    .from("movies")
+    .select("id,title,date")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(80);
+  const wanted = norm(title);
+  const match = ((data || []) as Array<{ id: string; title: string }>).find(
+    (m) => norm(m.title) === wanted || norm(m.title).includes(wanted) || wanted.includes(norm(m.title))
+  );
+  if (!match) {
+    await sendMessage(chatId, `No logged movie matching “${esc(title)}” — try again with the exact title.`);
+    return;
+  }
+  const file = await getTelegramFileBase64(fileId);
+  if (!file) {
+    await sendMessage(chatId, "Couldn't re-download that photo from Telegram, send it again.");
+    await setBotState("pending_image", null);
+    return;
+  }
+  const ext = file.mime === "image/png" ? "png" : "jpg";
+  const path = `${userId}/${match.id}/${Date.now()}.${ext}`;
+  const bytes = Buffer.from(file.base64, "base64");
+  const { error: uploadError } = await supabase.storage
+    .from("movie-photos")
+    .upload(path, bytes, { contentType: file.mime });
+  if (uploadError) {
+    await sendMessage(chatId, `Upload failed: ${esc(uploadError.message)}`);
+    return;
+  }
+  await supabase.from("movie_photos").insert({
+    user_id: userId,
+    movie_id: match.id,
+    storage_path: path,
+    photo_type: "general",
+    caption: "via Telegram",
+  } as never);
+  await setBotState("pending_image", null);
+  await sendMessage(chatId, `📎 Photo attached to <b>${esc(match.title)}</b>.`);
 }
 
 // ---- Ticket photo -> OCR -> logged movie ----
@@ -105,6 +217,48 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
     .sort((a, b) => b.score - a.score)
     .find((x) => x.score > 0)?.f || formatRows.find((f) => norm(f.name) === "2d") || null;
 
+  // Enrich from TMDB the same way the app's new-movie flow does: poster,
+  // runtime, genres, director, cast, ratings, trailer.
+  let tmdbFields: Record<string, unknown> = {};
+  try {
+    const searchResponse = await fetch(
+      `${SITE_URL}/api/tmdb?query=${encodeURIComponent(ticket.movie_title)}`
+    );
+    const search = (await searchResponse.json()) as {
+      results?: Array<{ tmdb_id: number }>;
+    };
+    const first = search.results?.[0];
+    if (first?.tmdb_id) {
+      const detailResponse = await fetch(`${SITE_URL}/api/tmdb?id=${first.tmdb_id}`);
+      if (detailResponse.ok) {
+        const d = (await detailResponse.json()) as Record<string, unknown>;
+        tmdbFields = {
+          tmdb_id: d.tmdb_id ?? null,
+          runtime_minutes: d.runtime_minutes ?? null,
+          genres: Array.isArray(d.genres) && d.genres.length > 0 ? d.genres : null,
+          language: d.language ?? null,
+          director: d.director ?? null,
+          poster_url: d.poster_url ?? null,
+          release_date: d.release_date ?? null,
+          overview: d.overview ?? null,
+          cast_members:
+            Array.isArray(d.cast_members) && d.cast_members.length > 0 ? d.cast_members : null,
+          composer: d.composer ?? null,
+          cinematographer: d.cinematographer ?? null,
+          budget: d.budget ?? null,
+          box_office: d.box_office ?? null,
+          tmdb_rating: d.tmdb_rating ?? null,
+          tmdb_vote_count: d.tmdb_vote_count ?? null,
+          certification: d.certification ?? null,
+          trailer_url: d.trailer_url ?? null,
+          keywords: Array.isArray(d.keywords) && d.keywords.length > 0 ? d.keywords : null,
+        };
+      }
+    }
+  } catch {
+    // Enrichment is best-effort; the log entry works without it.
+  }
+
   const row = {
     user_id: userId,
     title: ticket.movie_title,
@@ -118,6 +272,7 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
     convenience_fee: ticket.convenience_fee || 0,
     booking_id: ticket.booking_id || null,
     status: "watched",
+    ...tmdbFields,
   };
 
   const { data: created, error } = await supabase
@@ -131,17 +286,45 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
   }
   const movieId = (created as { id: string }).id;
 
+  const missing: string[] = [];
+  if (!ticket.ticket_cost) missing.push("ticket price");
+  if (!ticket.date) missing.push("date");
+  if (!ticket.showtime) missing.push("showtime");
+
   const lines = [
-    `🎬 <b>${esc(ticket.movie_title)}</b> logged`,
+    `🎬 <b>${esc(ticket.movie_title)}</b> logged${tmdbFields.poster_url ? " (TMDB matched)" : ""}`,
     `${esc(ticket.date || "?")} · ${esc(ticket.showtime || "?")} · ${esc(theater?.name || ticket.theater || "unknown theater")}`,
     `${esc(format?.name || ticket.format || "2D")} · Audi ${esc(ticket.audi || "?")} · Seat ${esc(ticket.seat || "?")}`,
     `Ticket ${formatCurrency(ticket.ticket_cost || 0)} + fee ${formatCurrency(ticket.convenience_fee || 0)}`,
-    "",
-    "How was it?",
   ];
+  if (missing.length > 0) {
+    lines.push(
+      "",
+      `⚠️ I couldn't read the ${missing.join(", ")} — just tell me (e.g. "ticket was 250, popcorn 300") and I'll fill it in.`
+    );
+  }
+  lines.push("", "How was it?");
   await sendMessage(chatId, lines.join("\n"), {
     reply_markup: ratingKeyboard(movieId),
   });
+
+  // Seed the conversation history so a plain-text follow-up ("paid 250, had
+  // fries for 180") resolves to update_movie on this title.
+  try {
+    const history =
+      (await getBotState<Array<{ role: "user" | "model"; text: string }>>("chat_history")) || [];
+    history.push({
+      role: "model",
+      text: `(Just logged "${ticket.movie_title}" (${ticket.date || "today"}) from a ticket photo.${
+        missing.length > 0
+          ? ` Missing: ${missing.join(", ")}. If the user provides costs or details next, call update_movie for "${ticket.movie_title}".`
+          : ""
+      })`,
+    });
+    await setBotState("chat_history", history.slice(-16));
+  } catch {
+    // Context seeding is best-effort.
+  }
 }
 
 function ratingKeyboard(movieId: string) {
@@ -464,6 +647,24 @@ export async function POST(request: NextRequest) {
           match[1],
           Number(match[2])
         );
+      } else if (dataStr.startsWith("img:")) {
+        await tg("answerCallbackQuery", { callback_query_id: callback.id });
+        const pending = await getBotState<PendingImage>("pending_image");
+        if (!pending?.fileId) {
+          await sendMessage(chatId, "That image is gone — send it again.");
+        } else if (dataStr === "img:ticket") {
+          await setBotState("pending_image", null);
+          await handleTicketPhoto(chatId, pending.fileId);
+        } else if (dataStr === "img:gc") {
+          await setBotState("pending_image", null);
+          await handleGiftCardPhoto(chatId, pending.fileId);
+        } else if (dataStr === "img:attach") {
+          await setBotState("pending_image", { ...pending, mode: "await_title" });
+          await sendMessage(chatId, "Which movie? Reply with the title.");
+        } else {
+          await setBotState("pending_image", null);
+          await sendMessage(chatId, "Ignored.");
+        }
       } else {
         await tg("answerCallbackQuery", { callback_query_id: callback.id });
       }
@@ -480,14 +681,28 @@ export async function POST(request: NextRequest) {
       const fileId = photo?.file_id || document?.file_id;
       if (caption.includes("gc") || caption.includes("gift")) {
         await handleGiftCardPhoto(chatId, fileId);
-      } else {
+      } else if (caption.includes("ticket")) {
         await handleTicketPhoto(chatId, fileId);
+      } else {
+        // No explicit caption: classify first — not every image is a ticket.
+        const file = await getTelegramFileBase64(fileId);
+        const kind = file ? await classifyImage(file.base64, file.mime) : "ticket";
+        if (kind === "gift_card") await handleGiftCardPhoto(chatId, fileId);
+        else if (kind === "other") await offerImageChoices(chatId, fileId);
+        else await handleTicketPhoto(chatId, fileId);
       }
       return NextResponse.json({ ok: true });
     }
 
     const text: string = (message.text || "").trim();
     if (!text) return NextResponse.json({ ok: true });
+
+    // A photo is waiting for a movie title to attach to.
+    const pendingImage = await getBotState<PendingImage>("pending_image");
+    if (pendingImage?.mode === "await_title" && !text.startsWith("/")) {
+      await attachPhotoToMovie(chatId, pendingImage.fileId, text);
+      return NextResponse.json({ ok: true });
+    }
 
     if (text === "/start" || text === "/help") {
       await sendMessage(chatId, HELP_TEXT);
