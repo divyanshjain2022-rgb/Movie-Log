@@ -67,13 +67,27 @@ export type ValueTier = {
   className: string;
 };
 
-// Interpret a value score for humans. Thresholds sit on the default formula's
-// scale (an 8/10 at the ₹100 floor scores ~23; at ₹400 it scores ~5.7).
-export function getValueTier(score: number): ValueTier {
-  if (score >= 18) return { label: "Bargain", className: "text-positive" };
-  if (score >= 11) return { label: "Great value", className: "text-positive" };
-  if (score >= 6.5) return { label: "Fair", className: "text-gold" };
-  if (score >= 3.5) return { label: "Stretch", className: "text-muted-foreground" };
+// Interpret a value score for humans. The raw score's scale depends entirely
+// on the user's exponent config (flat exponents produce scores an order of
+// magnitude below the defaults), so absolute thresholds are meaningless.
+// Instead each boundary is an anchor scenario priced through the SAME params:
+// "Great value" is whatever an 8/10 at ₹300 all-in scores under your formula.
+export function getValueTier(
+  score: number,
+  params: FormulaParams = DEFAULT_FORMULA_PARAMS
+): ValueTier {
+  if (score >= calculateValueScore(8.5, 250, 1, params)) {
+    return { label: "Bargain", className: "text-positive" };
+  }
+  if (score >= calculateValueScore(8, 300, 1, params)) {
+    return { label: "Great value", className: "text-positive" };
+  }
+  if (score >= calculateValueScore(7, 350, 1, params)) {
+    return { label: "Fair", className: "text-gold" };
+  }
+  if (score >= calculateValueScore(6, 400, 1, params)) {
+    return { label: "Stretch", className: "text-muted-foreground" };
+  }
   return { label: "Splurge", className: "text-negative" };
 }
 

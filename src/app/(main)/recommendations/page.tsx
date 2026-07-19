@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { SeatMap } from "@/components/movies/seat-map";
 import { useCreateWatchlistItem } from "@/hooks/use-watchlist";
+import { useFormulaParams } from "@/hooks/use-formula-params";
 import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,6 +173,7 @@ function RecommendationOptionRow({
   onViewSeats?: (show: PvrShow) => void;
 }) {
   const crowdDelta = crowdDeltaLabel(option.crowdDelta);
+  const formulaParams = useFormulaParams();
 
   return (
     <div className="rounded-lg border border-white/[0.06] bg-background/35 p-3">
@@ -210,8 +212,8 @@ function RecommendationOptionRow({
           <p className="text-[11px] text-muted-foreground/60">
             Value {option.valueScore.toFixed(1)}
             {option.valueScore > 0 && (
-              <span className={`ml-1 ${getValueTier(option.valueScore).className}`}>
-                {getValueTier(option.valueScore).label}
+              <span className={`ml-1 ${getValueTier(option.valueScore, formulaParams).className}`}>
+                {getValueTier(option.valueScore, formulaParams).label}
               </span>
             )}
           </p>

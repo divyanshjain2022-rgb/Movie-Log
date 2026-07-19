@@ -26,7 +26,7 @@ import { MovieExtras } from "@/components/movies/movie-extras";
 import { PhotoGallery } from "@/components/movies/photo-gallery";
 import { ShareableCard } from "@/components/movies/shareable-card";
 import { TheaterRatingForm } from "@/components/movies/theater-rating-form";
-import { useDeleteMovie, useMovie, useMovies, useUpdateMovie } from "@/hooks";
+import { useDeleteMovie, useFormulaParams, useMovie, useMovies, useUpdateMovie } from "@/hooks";
 import { formatAudiDisplay } from "@/lib/audi";
 import {
   formatCurrency,
@@ -126,6 +126,7 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
   const { id } = use(params);
   const router = useRouter();
   const { movie, isLoading, error, refetch } = useMovie(id);
+  const formulaParams = useFormulaParams();
   const { movies: allMovies } = useMovies();
   const { updateMovie } = useUpdateMovie();
   const { deleteMovie, isLoading: isDeleting } = useDeleteMovie();
@@ -172,6 +173,21 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
     if (!movie) return 0;
     return Math.max(grossTotal - filteredPassportSavings - filteredGiftCardSavings, 0);
   }, [filteredGiftCardSavings, filteredPassportSavings, grossTotal, movie]);
+
+  // Mirror of the server-side value-score cost, so the displayed basis
+  // matches what the score actually divided by (unaffected by the toggles).
+  const valueScoreCost = useMemo(() => {
+    if (!movie) return 0;
+    let cost = (movie.ticket_cost || 0) + (movie.convenience_fee || 0) - (movie.passport_savings || 0);
+    if (formulaParams.use_true_cost) {
+      cost += (movie.fnb_cost || 0) + (movie.other_expenses || 0);
+    }
+    const gcSavings = (movie.movie_gift_cards || []).reduce((sum, usage) => {
+      const discount = usage.gift_card?.discount_percent || 0;
+      return sum + usage.amount_used * (discount / 100);
+    }, 0);
+    return Math.max(cost - gcSavings, 0);
+  }, [movie, formulaParams]);
 
   const isCustomCost = !costToggles.ticket || !costToggles.bookingFee || !costToggles.fnb || !costToggles.other;
 
@@ -532,9 +548,12 @@ export default function MovieDetailPage({ params }: MovieDetailPageProps) {
                     <p className="text-xs text-muted-foreground">Value Score</p>
                     <p className="text-sm font-bold">
                       {movie.value_score.toFixed(1)}
-                      <span className={cn("ml-1.5 text-xs font-medium", getValueTier(movie.value_score).className)}>
-                        {getValueTier(movie.value_score).label}
+                      <span className={cn("ml-1.5 text-xs font-medium", getValueTier(movie.value_score, formulaParams).className)}>
+                        {getValueTier(movie.value_score, formulaParams).label}
                       </span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/60">
+                      at {formatCurrency(valueScoreCost)} true cost
                     </p>
                   </div>
                 )}
