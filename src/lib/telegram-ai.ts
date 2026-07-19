@@ -258,10 +258,20 @@ export async function applyRating(
 
 // ---- Tools the model can call ----
 
-async function toolRecommendations(args: { query?: string }): Promise<unknown> {
+async function toolRecommendations(args: {
+  query?: string;
+  date?: string;
+  format?: string;
+  language?: string;
+  time?: string;
+}): Promise<unknown> {
   const secret = process.env.CRON_SECRET;
   const params = new URLSearchParams({ city: "Lucknow" });
   if (args.query) params.set("text", args.query);
+  if (args.date) params.set("date", args.date);
+  if (args.format) params.set("format", args.format);
+  if (args.language) params.set("language", args.language);
+  if (args.time) params.set("time", args.time);
   const response = await fetch(`${SITE_URL}/api/pvr/recommendations?${params}`, {
     headers: secret ? { "x-bot-secret": secret } : undefined,
   });
@@ -272,7 +282,7 @@ async function toolRecommendations(args: { query?: string }): Promise<unknown> {
       predictedRating: number;
       reasons: string[];
       options: Array<{
-        show: { showTime: string; cinemaName: string; format: string; redirectUrl: string };
+        show: { showDate: string; showTime: string; cinemaName: string; format: string; redirectUrl: string };
         displayPrice: number | null;
         valueScore: number;
         occupancyPercent: number | null;
@@ -281,6 +291,12 @@ async function toolRecommendations(args: { query?: string }): Promise<unknown> {
     upcoming: Array<{ title: string; releaseDate: string | null; onWatchlist?: boolean }>;
   };
   return {
+    showtimesDate: args.date || istDateString(),
+    filters: {
+      format: args.format || "ALL",
+      language: args.language || "ALL",
+      time: args.time || "ALL",
+    },
     nowShowing: (payload.recommendations || []).slice(0, 8).map((rec) => ({
       title: rec.movie.title,
       genres: rec.movie.genres,
@@ -288,6 +304,7 @@ async function toolRecommendations(args: { query?: string }): Promise<unknown> {
       predictedRatingForUser: rec.predictedRating,
       whyRecommended: rec.reasons,
       shows: rec.options.slice(0, 3).map((option) => ({
+        date: option.show.showDate,
         time: option.show.showTime,
         cinema: option.show.cinemaName,
         format: option.show.format,
@@ -725,10 +742,27 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: "get_recommendations",
     description:
-      "Live PVR Lucknow data: personalized now-showing picks (predicted rating for the user, showtimes, prices, value scores, hall occupancy, booking links) and upcoming releases. Optional query filters by movie title.",
+      "Live PVR Lucknow data: personalized now-showing picks (predicted rating for the user, showtimes, prices, value scores, hall occupancy, booking links) and upcoming releases. Returns showtimes ONLY for one date (default today) — for 'tomorrow'/weekend questions you MUST pass date. For IMAX/4DX/3D/Dolby questions pass format so premium shows aren't ranked out.",
     parameters: {
       type: Type.OBJECT,
-      properties: { query: { type: Type.STRING, description: "Optional title filter" } },
+      properties: {
+        query: { type: Type.STRING, description: "Optional title filter" },
+        date: {
+          type: Type.STRING,
+          description:
+            "Show date YYYY-MM-DD. Omit for today. Compute from today's date for words like tomorrow/Saturday.",
+        },
+        format: {
+          type: Type.STRING,
+          description:
+            "Filter shows to a format, substring match: IMAX, 4DX, 3D, 2D, EPIQ, Dolby. Omit for all formats.",
+        },
+        language: { type: Type.STRING, description: "Filter by language, e.g. Hindi, English. Omit for all." },
+        time: {
+          type: Type.STRING,
+          description: "Time window HH:MM-HH:MM (24h), e.g. 18:00-24:00 for evening. Omit for all day.",
+        },
+      },
     },
   },
   {
@@ -906,6 +940,8 @@ export async function converse(userText: string): Promise<string> {
     "- get_recent_movies returns logStartsOn; anything before that date does not exist in the log.",
     "- For superlatives (worst/best/most expensive in a period) fetch that period's movies first, then compare only what came back.",
     "- If a title or card is ambiguous, ask instead of guessing. After any edit, report exactly what changed (old -> new).",
+    "- Showtimes are per-date: get_recommendations returns shows ONLY for its showtimesDate. When he asks about tomorrow or any other day, call it with that date — presenting one day's showtimes as another day's is a critical failure. Say which date the times are for.",
+    "- For format questions (IMAX/4DX/3D/Dolby) call get_recommendations with format set — the unfiltered ranking hides premium shows, so 'no IMAX in the results' without the filter proves nothing.",
     "LOGGING & EDITING: log_movie logs a watched movie from conversation with every detail he gives (date, costs, gift card usage, rating, review) — you CAN log movies, never claim otherwise. update_movie edits rating/review/remarks/costs/seat/showtime/date; update_gift_card fixes amount_paid or expiry; rate_movie is a rating shortcut; add_to_watchlist adds titles. All writes are audit-logged; undo_last_edit reverts the latest one when he says undo/revert.",
     "Style: plain text only (no markdown, no HTML tags). Telegram-short — a few lines, not essays.",
     "Prices are in rupees (₹). Predicted ratings are personalized to his taste; value tiers run Bargain/Great value/Fair/Stretch/Splurge.",
