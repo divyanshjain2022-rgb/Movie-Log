@@ -1,10 +1,14 @@
 # Pings the Telegram bot's cron endpoint every 15 minutes. Vercel Hobby crons
 # only run daily, so this drives the time-sensitive tasks (occupancy capture,
-# rating prompts). The daily Vercel cron remains as a backstop.
+# rating prompts, PVR cache warming). The daily Vercel cron remains as a backstop.
+#
+# Schedule uses offset minutes: GitHub deprioritizes scheduled workflows firing
+# on :00/:15/:30/:45 (the congested slots) — */15 here was really running only
+# every 60-105 minutes. Odd minutes get picked up far more reliably.
 name: telegram-cron
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
 jobs:
   ping:
