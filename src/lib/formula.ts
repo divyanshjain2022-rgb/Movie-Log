@@ -164,11 +164,27 @@ export function formatTime(timeString: string): string {
   return `${displayHour}:${minutes} ${ampm}`;
 }
 
+// Seven-step hue ramp so mid ratings don't all collapse into one yellow:
+// 9+ teal, 8s emerald, 7s lime, 6s yellow, 5s orange, 4s red, below deep red.
 export function getRatingColor(rating: number): string {
-  if (rating >= 8) return "text-positive";
-  if (rating >= 6) return "text-gold";
-  if (rating >= 4) return "text-muted-foreground";
-  return "text-negative";
+  if (rating >= 9) return "text-teal-400";
+  if (rating >= 8) return "text-emerald-400";
+  if (rating >= 7) return "text-lime-400";
+  if (rating >= 6) return "text-yellow-400";
+  if (rating >= 5) return "text-orange-400";
+  if (rating >= 4) return "text-red-400";
+  return "text-red-600";
+}
+
+// Matching badge treatment (soft background + text) for rating chips.
+export function getRatingBadgeClasses(rating: number): string {
+  if (rating >= 9) return "bg-teal-500/12 text-teal-400";
+  if (rating >= 8) return "bg-emerald-500/12 text-emerald-400";
+  if (rating >= 7) return "bg-lime-500/12 text-lime-400";
+  if (rating >= 6) return "bg-yellow-500/12 text-yellow-400";
+  if (rating >= 5) return "bg-orange-500/12 text-orange-400";
+  if (rating >= 4) return "bg-red-500/12 text-red-400";
+  return "bg-red-600/15 text-red-500";
 }
 
 export function getRatingLabel(rating: number): string {

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { Film } from "lucide-react";
-import { formatCurrency, formatDate, getRatingColor, getEffectiveCost } from "@/lib/formula";
+import { formatCurrency, formatDate, getRatingBadgeClasses,
+  getRatingColor, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { MovieWithRelations } from "@/types";
 
@@ -43,13 +44,6 @@ interface MovieCardProps {
   movie: MovieWithRelations;
   variant?: "default" | "compact";
   costComponents?: CostComponents;
-}
-
-function getRatingBg(rating: number) {
-  if (rating >= 8) return "bg-emerald-500/12 text-emerald-400";
-  if (rating >= 6) return "bg-primary/12 text-primary";
-  if (rating >= 4) return "bg-orange-500/12 text-orange-400";
-  return "bg-red-500/12 text-red-400";
 }
 
 export function MovieCard({ movie, variant = "default", costComponents }: MovieCardProps) {
@@ -117,7 +111,7 @@ export function MovieCard({ movie, variant = "default", costComponents }: MovieC
               {movie.rating && (
                 <div className={cn(
                   "flex-shrink-0 rounded-lg px-2 py-0.5 text-xs font-bold tabular-nums",
-                  getRatingBg(movie.rating)
+                  getRatingBadgeClasses(movie.rating)
                 )}>
                   {movie.rating}
                 </div>
