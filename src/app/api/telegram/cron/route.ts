@@ -303,6 +303,30 @@ async function recapTask(userId: string): Promise<string> {
   return "sent";
 }
 
+// 7. Warm the durable PVR cache during waking hours so the recommendations
+// page and bot showtime queries read from Supabase (pvr_cache) instead of
+// scraping PVR cold. quotes=skip keeps the warm sweep off the live
+// seat-layout endpoints. Also trims cache rows past their stale window.
+async function warmPvrTask(): Promise<string> {
+  if (istMinutesOfDay() < 7 * 60 + 30) return "night — skipped";
+  const secret = process.env.CRON_SECRET;
+  const response = await fetch(
+    `${SITE_URL}/api/pvr/recommendations?city=Lucknow&quotes=skip`,
+    { headers: secret ? { "x-bot-secret": secret } : undefined }
+  );
+  if (!response.ok) return `warm fetch failed (${response.status})`;
+  const payload = (await response.json()) as { recommendations?: unknown[] };
+
+  const supabase = serviceClient();
+  if (supabase) {
+    await supabase
+      .from("pvr_cache")
+      .delete()
+      .lt("stale_until", new Date(Date.now() - 86_400_000).toISOString());
+  }
+  return `warmed ${payload.recommendations?.length ?? 0} recs`;
+}
+
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const provided =
@@ -325,6 +349,7 @@ export async function GET(request: NextRequest) {
     ["giftCards", () => giftCardTask(userId)],
     ["digest", () => digestTask()],
     ["recap", () => recapTask(userId)],
+    ["warmPvr", () => warmPvrTask()],
   ];
   for (const [name, task] of tasks) {
     try {

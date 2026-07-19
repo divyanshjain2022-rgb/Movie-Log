@@ -972,12 +972,25 @@ export default function RecommendationsPage() {
         setPulledById({});
         setPullErrorById({});
         setRepricedById({});
-        const response = await fetch(requestUrl, { signal: controller.signal });
+        // Phase 1: ranked list without the live seat-layout pass — renders
+        // immediately when the cron-warmed cache is hot.
+        const response = await fetch(`${requestUrl}&quotes=skip`, { signal: controller.signal });
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.error || "Failed to load recommendations");
         }
         setData(payload as PvrRecommendationsResponse);
+        setIsLoading(false);
+        // Phase 2: same query with live seat quotes; prices upgrade in place.
+        // A failure here keeps the phase-1 result — quotes are an enhancement.
+        try {
+          const fullResponse = await fetch(requestUrl, { signal: controller.signal });
+          if (fullResponse.ok) {
+            setData((await fullResponse.json()) as PvrRecommendationsResponse);
+          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Failed to load recommendations");

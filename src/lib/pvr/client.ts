@@ -1,4 +1,5 @@
 import { findPvrCity } from "@/lib/pvr/cities";
+import { durableCacheGet, durableCacheKey, durableCachePut } from "@/lib/pvr/durable-cache";
 import type {
   PvrCacheMeta,
   PvrFetchResult,
@@ -14,9 +15,12 @@ import type {
 const PVR_API_BASE = "https://api3.pvrcinemas.com/api/v1/booking";
 const PVR_ORIGIN = "https://www.pvrcinemas.com";
 
+// Listing TTLs match the ~15-min cron warm cadence so page loads and bot
+// queries stay on the durable cache; seat layouts are live availability and
+// must stay short.
 const COMING_SOON_TTL_SECONDS = 15 * 60;
-const SEARCH_TTL_SECONDS = 5 * 60;
-const SESSIONS_TTL_SECONDS = 5 * 60;
+const SEARCH_TTL_SECONDS = 15 * 60;
+const SESSIONS_TTL_SECONDS = 15 * 60;
 const SEAT_LAYOUT_TTL_SECONDS = 90;
 const STALE_GRACE_SECONDS = 30 * 60;
 
@@ -649,6 +653,28 @@ async function postPvrJson(
     };
   }
 
+  // Memory miss: another instance (or the cron warmer) may have a fresh row.
+  const durableKey = durableCacheKey(endpoint, city, body);
+  const durable = await durableCacheGet(durableKey);
+  if (durable && durable.expiresAt > now) {
+    responseCache.set(cacheKey, {
+      data: durable.data,
+      expiresAt: durable.expiresAt,
+      staleUntil: durable.staleUntil,
+      fetchedAt: durable.fetchedAt,
+      ttlSeconds: durable.ttlSeconds,
+    });
+    return {
+      data: durable.data,
+      cache: {
+        cached: true,
+        stale: false,
+        fetchedAt: new Date(durable.fetchedAt).toISOString(),
+        ttlSeconds: durable.ttlSeconds,
+      },
+    };
+  }
+
   try {
     const response = await fetch(`${PVR_API_BASE}${endpoint}`, {
       method: "POST",
@@ -669,6 +695,7 @@ async function postPvrJson(
       fetchedAt: now,
       ttlSeconds,
     });
+    await durableCachePut(durableKey, endpoint, data, now, ttlSeconds, STALE_GRACE_SECONDS);
 
     return {
       data,
@@ -688,6 +715,17 @@ async function postPvrJson(
           stale: true,
           fetchedAt: new Date(cached.fetchedAt).toISOString(),
           ttlSeconds: cached.ttlSeconds,
+        },
+      };
+    }
+    if (durable && durable.staleUntil > now) {
+      return {
+        data: durable.data,
+        cache: {
+          cached: true,
+          stale: true,
+          fetchedAt: new Date(durable.fetchedAt).toISOString(),
+          ttlSeconds: durable.ttlSeconds,
         },
       };
     }

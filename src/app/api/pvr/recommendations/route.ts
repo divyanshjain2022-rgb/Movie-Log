@@ -58,6 +58,9 @@ export async function GET(request: NextRequest) {
   const time = searchParams.get("time") || "08:00-24:00";
   const text = searchParams.get("text") || "";
   const genre = searchParams.get("genre") || "";
+  // quotes=skip: ranked list + showtimes only, no live seat-layout pass.
+  // The page renders this fast phase first, then re-requests with quotes.
+  const skipQuotes = searchParams.get("quotes") === "skip";
 
   const errors: string[] = [];
 
@@ -150,10 +153,9 @@ export async function GET(request: NextRequest) {
       userData,
       new Map<string, PvrSeatQuote>()
     );
-    const showsForExactPricing = getShowsForExactPricing(
-      initialRecommendations,
-      MAX_EXACT_SEAT_QUOTES
-    );
+    const showsForExactPricing = skipQuotes
+      ? []
+      : getShowsForExactPricing(initialRecommendations, MAX_EXACT_SEAT_QUOTES);
 
     const seatResults = await settledWithConcurrency(
       showsForExactPricing,
