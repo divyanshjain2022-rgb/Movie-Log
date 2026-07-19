@@ -11,8 +11,9 @@ import {
   SITE_URL,
   tg,
 } from "@/lib/telegram";
+import { istDateString } from "@/lib/telegram";
 import { GoogleGenAI } from "@google/genai";
-import { applyRating, converse } from "@/lib/telegram-ai";
+import { applyRating, converse, updateMovieFields } from "@/lib/telegram-ai";
 import { formatCurrency, getValueTier, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
 
@@ -57,7 +58,7 @@ async function activeFormulaParams(): Promise<FormulaParams> {
 
 // ---- Image classification: ticket, gift card, or just a photo? ----
 
-async function classifyImage(base64: string, mime: string): Promise<"ticket" | "gift_card" | "other"> {
+async function classifyImage(base64: string, mime: string): Promise<"ticket" | "gift_card" | "food_receipt" | "other"> {
   const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
   if (!apiKey) return "ticket";
   try {
@@ -82,18 +83,103 @@ async function classifyImage(base64: string, mime: string): Promise<"ticket" | "
           parts: [
             { inlineData: { mimeType: mime, data: base64 } },
             {
-              text: "Classify this image. 'ticket' = movie ticket, booking confirmation, or an SMS/WhatsApp/app screenshot of a cinema booking. 'gift_card' = gift card or voucher. 'other' = anything else (photos of people, food, cinema halls, posters, random images).",
+              text: "Classify this image. 'ticket' = movie ticket, booking confirmation, or an SMS/WhatsApp/app screenshot of a cinema booking. 'gift_card' = gift card or voucher. 'food_receipt' = a food/beverage bill or POS receipt (cinema snacks, restaurant). 'other' = anything else (photos of people, food itself, cinema halls, posters, random images).",
             },
           ],
         },
       ],
     });
     const parsed = JSON.parse(response.text || "{}") as { kind?: string };
-    if (parsed.kind === "gift_card" || parsed.kind === "other") return parsed.kind;
+    if (parsed.kind === "gift_card" || parsed.kind === "other" || parsed.kind === "food_receipt") {
+      return parsed.kind;
+    }
     return "ticket";
   } catch {
     return "ticket";
   }
+}
+
+// ---- F&B receipt -> add to today's (or latest) movie ----
+
+async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
+  const supabase = serviceClient();
+  const userId = await resolveBotUserId();
+  if (!supabase || !userId) return;
+  const file = await getTelegramFileBase64(fileId);
+  if (!file) {
+    await sendMessage(chatId, "Couldn't download that receipt, try again.");
+    return;
+  }
+  await sendMessage(chatId, "Reading the bill…");
+
+  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+  if (!apiKey) return;
+  let total = 0;
+  let items: string | null = null;
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite",
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT" as const,
+          properties: {
+            total: { type: "NUMBER" as const, description: "Final total paid in rupees" },
+            items: { type: "STRING" as const, description: "Comma-separated item names, e.g. 'Popcorn Large, Pepsi'" },
+          },
+        },
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: file.mime, data: file.base64 } },
+            { text: "Extract the final total amount and the purchased items from this food/beverage receipt." },
+          ],
+        },
+      ],
+    });
+    const parsed = JSON.parse(response.text || "{}") as { total?: number; items?: string };
+    total = parsed.total || 0;
+    items = parsed.items || null;
+  } catch {
+    // fall through
+  }
+  if (!total) {
+    await sendMessage(chatId, "Couldn't read a total from that receipt — tell me the amount and I'll add it.");
+    return;
+  }
+
+  // Attach to today's movie, else the most recent one.
+  const { data } = await supabase
+    .from("movies")
+    .select("id,title,date,fnb_cost,fnb_items")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(1);
+  const movie = ((data || []) as Array<{ id: string; title: string; date: string; fnb_cost: number | null; fnb_items: string | null }>)[0];
+  if (!movie) {
+    await sendMessage(chatId, "No movies in the log to attach this to.");
+    return;
+  }
+
+  const newFnb = (movie.fnb_cost || 0) + total;
+  const newItems = [movie.fnb_items, items].filter(Boolean).join(", ") || null;
+  const result = await updateMovieFields(movie.id, {
+    fnb_cost: newFnb,
+    ...(newItems ? { fnb_items: newItems } : {}),
+  });
+  if ("error" in result) {
+    await sendMessage(chatId, `Couldn't save: ${esc(result.error)}`);
+    return;
+  }
+  const isToday = movie.date === istDateString();
+  await sendMessage(
+    chatId,
+    `🍿 Added <b>${formatCurrency(total)}</b>${items ? ` (${esc(items)})` : ""} to <b>${esc(movie.title)}</b>` +
+      `${isToday ? "" : ` (${esc(movie.date)} — latest log)`} · F&amp;B now ${formatCurrency(newFnb)}.`
+  );
 }
 
 interface PendingImage {
@@ -111,9 +197,10 @@ async function offerImageChoices(chatId: string, fileId: string): Promise<void> 
           { text: "💳 Gift card", callback_data: "img:gc" },
         ],
         [
+          { text: "🍿 F&B bill", callback_data: "img:fnb" },
           { text: "📎 Attach to a movie", callback_data: "img:attach" },
-          { text: "✖️ Ignore", callback_data: "img:ignore" },
         ],
+        [{ text: "✖️ Ignore", callback_data: "img:ignore" }],
       ],
     },
   });
@@ -286,6 +373,41 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
   }
   const movieId = (created as { id: string }).id;
 
+  // Stage-1 occupancy capture: right at log time (stages 2 and 3 — before
+  // and during the show — run from the cron). Best-effort; later successful
+  // captures overwrite, failures keep whatever exists.
+  let occupancyLine: string | null = null;
+  if (row.date === istDateString() && ticket.showtime) {
+    try {
+      const occupancyResponse = await fetch(`${SITE_URL}/api/pvr/occupancy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: theater ? undefined : "Lucknow",
+          title: ticket.movie_title,
+          theaterName: theater?.name || ticket.theater || null,
+          date: row.date,
+          showtime: ticket.showtime,
+          format: format?.name || ticket.format || null,
+          audi: ticket.audi || null,
+        }),
+      });
+      const occupancyPayload = await occupancyResponse.json().catch(() => null);
+      if (occupancyPayload?.found) {
+        await supabase
+          .from("movies")
+          .update({
+            occupancy: occupancyPayload.occupancy,
+            seat_map: occupancyPayload.seatMap,
+          } as never)
+          .eq("id", movieId);
+        occupancyLine = `📸 Hall currently ${occupancyPayload.occupancy}% full (snapshot saved)`;
+      }
+    } catch {
+      // Silent — cron stages will try again around showtime.
+    }
+  }
+
   const missing: string[] = [];
   if (!ticket.ticket_cost) missing.push("ticket price");
   if (!ticket.date) missing.push("date");
@@ -296,6 +418,7 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
     `${esc(ticket.date || "?")} · ${esc(ticket.showtime || "?")} · ${esc(theater?.name || ticket.theater || "unknown theater")}`,
     `${esc(format?.name || ticket.format || "2D")} · Audi ${esc(ticket.audi || "?")} · Seat ${esc(ticket.seat || "?")}`,
     `Ticket ${formatCurrency(ticket.ticket_cost || 0)} + fee ${formatCurrency(ticket.convenience_fee || 0)}`,
+    ...(occupancyLine ? [occupancyLine] : []),
   ];
   if (missing.length > 0) {
     lines.push(
@@ -587,7 +710,23 @@ async function handleRatingCallback(
   const tierText = result.valueScore
     ? ` · value ${result.valueScore.toFixed(1)} (${result.tierLabel})`
     : "";
-  await sendMessage(chatId, `⭐ <b>${esc(result.title)}</b> rated ${rating}/10${tierText}`);
+  await sendMessage(
+    chatId,
+    `⭐ <b>${esc(result.title)}</b> rated ${rating}/10${tierText}\n\nOne-line review? Reply here (or ignore).`
+  );
+
+  // Seed conversation memory so the next plain message saves as the review.
+  try {
+    const history =
+      (await getBotState<Array<{ role: "user" | "model"; text: string }>>("chat_history")) || [];
+    history.push({
+      role: "model",
+      text: `(User just rated "${result.title}" ${rating}/10 and was asked for an optional one-line review. If the next message reads like an opinion/review of the movie, call update_movie for "${result.title}" with it as the review. If it's clearly something else, treat it normally.)`,
+    });
+    await setBotState("chat_history", history.slice(-16));
+  } catch {
+    // Best-effort.
+  }
 }
 
 const HELP_TEXT = [
@@ -658,6 +797,9 @@ export async function POST(request: NextRequest) {
         } else if (dataStr === "img:gc") {
           await setBotState("pending_image", null);
           await handleGiftCardPhoto(chatId, pending.fileId);
+        } else if (dataStr === "img:fnb") {
+          await setBotState("pending_image", null);
+          await handleFnbReceipt(chatId, pending.fileId);
         } else if (dataStr === "img:attach") {
           await setBotState("pending_image", { ...pending, mode: "await_title" });
           await sendMessage(chatId, "Which movie? Reply with the title.");
@@ -688,6 +830,7 @@ export async function POST(request: NextRequest) {
         const file = await getTelegramFileBase64(fileId);
         const kind = file ? await classifyImage(file.base64, file.mime) : "ticket";
         if (kind === "gift_card") await handleGiftCardPhoto(chatId, fileId);
+        else if (kind === "food_receipt") await handleFnbReceipt(chatId, fileId);
         else if (kind === "other") await offerImageChoices(chatId, fileId);
         else await handleTicketPhoto(chatId, fileId);
       }

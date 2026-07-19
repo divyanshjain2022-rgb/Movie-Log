@@ -61,14 +61,14 @@ async function logBotEdit(
 // Whitelisted, audited movie editor. Recomputes value_score when a field it
 // depends on changes. Never deletes anything.
 const EDITABLE_MOVIE_FIELDS = [
-  "rating", "review", "remarks", "fnb_cost", "other_expenses",
+  "rating", "review", "remarks", "fnb_cost", "fnb_items", "other_expenses",
   "ticket_cost", "convenience_fee", "seat", "audi", "showtime", "date",
 ] as const;
 const SCORE_FIELDS = new Set([
   "rating", "fnb_cost", "other_expenses", "ticket_cost", "convenience_fee",
 ]);
 
-async function updateMovieFields(
+export async function updateMovieFields(
   movieId: string,
   updates: Record<string, unknown>
 ): Promise<{ title: string; changes: Record<string, { old: unknown; new: unknown }>; valueScore: number | null } | { error: string }> {
@@ -86,7 +86,7 @@ async function updateMovieFields(
 
   const { data: before } = await supabase
     .from("movies")
-    .select("title,rating,review,remarks,fnb_cost,other_expenses,ticket_cost,convenience_fee,seat,audi,showtime,date,value_score")
+    .select("title,rating,review,remarks,fnb_cost,fnb_items,other_expenses,ticket_cost,convenience_fee,seat,audi,showtime,date,value_score")
     .eq("id", movieId)
     .maybeSingle();
   if (!before) return { error: "movie not found" };

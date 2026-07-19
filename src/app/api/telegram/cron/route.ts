@@ -50,7 +50,11 @@ async function todaysMovies(userId: string): Promise<MovieForCron[]> {
   return (data || []) as unknown as MovieForCron[];
 }
 
-// 1. Auto-capture hall occupancy shortly before each logged show starts.
+// 1. Auto-capture hall occupancy at two staged points around each logged
+// show: ~10 minutes before start and ~25 minutes in (final numbers). A third
+// capture happens at log time in the webhook. Each successful capture
+// OVERWRITES (later = closer to the real turnout); failures never clear
+// existing data, so the movie keeps the best snapshot it ever got.
 async function occupancyTask(userId: string): Promise<string> {
   const nowMinutes = istMinutesOfDay();
   const movies = await todaysMovies(userId);
@@ -59,14 +63,19 @@ async function occupancyTask(userId: string): Promise<string> {
   let captured = 0;
 
   for (const movie of movies) {
-    if (movie.seat_map || !movie.showtime) continue;
+    if (!movie.showtime) continue;
     const showMinutes = minutesFromTime(movie.showtime);
     if (showMinutes === null) continue;
     const delta = showMinutes - nowMinutes;
-    // Capture window: 40 minutes before showtime until 5 minutes after.
-    if (delta > 40 || delta < -5) continue;
-    const stateKey = `occ:${movie.id}`;
-    if (await getBotState(stateKey)) continue;
+
+    // Cron ticks every ~15 min; these windows land one attempt per stage.
+    const stage = delta >= 0 && delta <= 15 ? "pre" : delta <= -20 && delta >= -35 ? "post" : null;
+    if (!stage) continue;
+
+    const stateKey = `occ2:${movie.id}`;
+    const state = (await getBotState<{ pre?: boolean; post?: boolean }>(stateKey)) || {};
+    if (state[stage]) continue;
+    await setBotState(stateKey, { ...state, [stage]: true });
 
     const response = await fetch(`${SITE_URL}/api/pvr/occupancy`, {
       method: "POST",
@@ -82,7 +91,6 @@ async function occupancyTask(userId: string): Promise<string> {
       }),
     });
     const payload = await response.json().catch(() => null);
-    await setBotState(stateKey, { at: new Date().toISOString(), found: Boolean(payload?.found) });
 
     if (payload?.found) {
       await supabase
@@ -90,8 +98,15 @@ async function occupancyTask(userId: string): Promise<string> {
         .update({ occupancy: payload.occupancy, seat_map: payload.seatMap } as never)
         .eq("id", movie.id);
       captured += 1;
+      const label = stage === "pre" ? "10 min before showtime" : "25 min into the show";
       await notify(
-        `📸 Captured the hall for <b>${esc(movie.title)}</b> (${esc(movie.showtime)}) — ${payload.occupancy}% full.`
+        `📸 <b>${esc(movie.title)}</b> hall snapshot (${label}): ${payload.occupancy}% full.`
+      );
+    } else if (stage === "post" && movie.occupancy) {
+      // Seat map already closed — keep the earlier snapshot silently.
+    } else if (stage === "post") {
+      await notify(
+        `📸 Couldn't capture <b>${esc(movie.title)}</b> — PVR closed the seat map and no earlier snapshot exists.`
       );
     }
   }
