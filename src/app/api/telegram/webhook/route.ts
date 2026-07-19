@@ -116,6 +116,7 @@ async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
   if (!apiKey) return;
   let total = 0;
   let items: string | null = null;
+  let receiptDate: string | null = null;
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
@@ -127,6 +128,7 @@ async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
           properties: {
             total: { type: "NUMBER" as const, description: "Final total paid in rupees" },
             items: { type: "STRING" as const, description: "Comma-separated item names, e.g. 'Popcorn Large, Pepsi'" },
+            receipt_date: { type: "STRING" as const, description: "Date printed on the receipt as YYYY-MM-DD, null if not visible" },
           },
         },
       },
@@ -140,9 +142,14 @@ async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
         },
       ],
     });
-    const parsed = JSON.parse(response.text || "{}") as { total?: number; items?: string };
+    const parsed = JSON.parse(response.text || "{}") as {
+      total?: number;
+      items?: string;
+      receipt_date?: string;
+    };
     total = parsed.total || 0;
     items = parsed.items || null;
+    receiptDate = parsed.receipt_date || null;
   } catch {
     // fall through
   }
@@ -151,22 +158,72 @@ async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
     return;
   }
 
-  // Attach to today's movie, else the most recent one.
+  // Pick the target: a movie on the receipt's printed date beats everything;
+  // otherwise today's latest movie attaches silently; anything older asks.
   const { data } = await supabase
     .from("movies")
-    .select("id,title,date,fnb_cost,fnb_items")
+    .select("id,title,date,showtime,fnb_cost,fnb_items")
     .eq("user_id", userId)
     .order("date", { ascending: false })
-    .limit(1);
-  const movie = ((data || []) as Array<{ id: string; title: string; date: string; fnb_cost: number | null; fnb_items: string | null }>)[0];
-  if (!movie) {
+    .order("showtime", { ascending: false, nullsFirst: false })
+    .limit(15);
+  const recent = (data || []) as Array<{
+    id: string; title: string; date: string; showtime: string | null;
+    fnb_cost: number | null; fnb_items: string | null;
+  }>;
+  if (recent.length === 0) {
     await sendMessage(chatId, "No movies in the log to attach this to.");
     return;
   }
+  const dateMatch = receiptDate ? recent.find((m) => m.date === receiptDate) : null;
+  const movie = dateMatch || recent[0];
+  const confident = Boolean(dateMatch) || movie.date === istDateString();
 
+  if (!confident) {
+    await setBotState("pending_fnb", { movieId: movie.id, title: movie.title, total, items });
+    await sendMessage(
+      chatId,
+      `🍿 Read <b>${formatCurrency(total)}</b>${items ? ` (${esc(items)})` : ""} but your latest movie is <b>${esc(movie.title)}</b> from ${esc(movie.date)}. Attach there?`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ Yes, attach", callback_data: "fnb:yes" },
+              { text: "🎬 Different movie", callback_data: "fnb:other" },
+              { text: "✖️ Ignore", callback_data: "fnb:no" },
+            ],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  await applyFnbToMovie(chatId, movie.id, total, items, Boolean(dateMatch));
+}
+
+async function applyFnbToMovie(
+  chatId: string,
+  movieId: string,
+  total: number,
+  items: string | null,
+  fromReceiptDate = false
+): Promise<void> {
+  const supabase = serviceClient();
+  if (!supabase) return;
+  const { data } = await supabase
+    .from("movies")
+    .select("title,date,fnb_cost,fnb_items")
+    .eq("id", movieId)
+    .maybeSingle();
+  const movie = data as { title: string; date: string; fnb_cost: number | null; fnb_items: string | null } | null;
+  if (!movie) {
+    await sendMessage(chatId, "That movie disappeared — try again.");
+    return;
+  }
   const newFnb = (movie.fnb_cost || 0) + total;
   const newItems = [movie.fnb_items, items].filter(Boolean).join(", ") || null;
-  const result = await updateMovieFields(movie.id, {
+  const result = await updateMovieFields(movieId, {
     fnb_cost: newFnb,
     ...(newItems ? { fnb_items: newItems } : {}),
   });
@@ -174,11 +231,10 @@ async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
     await sendMessage(chatId, `Couldn't save: ${esc(result.error)}`);
     return;
   }
-  const isToday = movie.date === istDateString();
   await sendMessage(
     chatId,
     `🍿 Added <b>${formatCurrency(total)}</b>${items ? ` (${esc(items)})` : ""} to <b>${esc(movie.title)}</b>` +
-      `${isToday ? "" : ` (${esc(movie.date)} — latest log)`} · F&amp;B now ${formatCurrency(newFnb)}.`
+      `${fromReceiptDate ? ` (matched by receipt date ${esc(movie.date)})` : ""} · F&amp;B now ${formatCurrency(newFnb)}.`
   );
 }
 
@@ -797,6 +853,22 @@ export async function POST(request: NextRequest) {
         } else if (dataStr === "img:gc") {
           await setBotState("pending_image", null);
           await handleGiftCardPhoto(chatId, pending.fileId);
+        } else if (dataStr.startsWith("fnb:")) {
+          const pendingFnb = await getBotState<{
+            movieId: string; title: string; total: number; items: string | null; mode?: string;
+          }>("pending_fnb");
+          if (!pendingFnb) {
+            await sendMessage(chatId, "That receipt is gone — send it again.");
+          } else if (dataStr === "fnb:yes") {
+            await setBotState("pending_fnb", null);
+            await applyFnbToMovie(chatId, pendingFnb.movieId, pendingFnb.total, pendingFnb.items);
+          } else if (dataStr === "fnb:other") {
+            await setBotState("pending_fnb", { ...pendingFnb, mode: "await_title" });
+            await sendMessage(chatId, "Which movie? Reply with the title.");
+          } else {
+            await setBotState("pending_fnb", null);
+            await sendMessage(chatId, "Ignored.");
+          }
         } else if (dataStr === "img:fnb") {
           await setBotState("pending_image", null);
           await handleFnbReceipt(chatId, pending.fileId);
@@ -839,6 +911,34 @@ export async function POST(request: NextRequest) {
 
     const text: string = (message.text || "").trim();
     if (!text) return NextResponse.json({ ok: true });
+
+    // An F&B receipt is waiting for a movie title.
+    const pendingFnb = await getBotState<{
+      movieId: string; title: string; total: number; items: string | null; mode?: string;
+    }>("pending_fnb");
+    if (pendingFnb?.mode === "await_title" && !text.startsWith("/")) {
+      const supabase = serviceClient();
+      const userId = await resolveBotUserId();
+      if (supabase && userId) {
+        const { data } = await supabase
+          .from("movies")
+          .select("id,title,date")
+          .eq("user_id", userId)
+          .order("date", { ascending: false })
+          .limit(80);
+        const wanted = norm(text);
+        const match = ((data || []) as Array<{ id: string; title: string }>).find(
+          (m) => norm(m.title) === wanted || norm(m.title).includes(wanted) || wanted.includes(norm(m.title))
+        );
+        if (match) {
+          await setBotState("pending_fnb", null);
+          await applyFnbToMovie(chatId, match.id, pendingFnb.total, pendingFnb.items);
+        } else {
+          await sendMessage(chatId, `No logged movie matching “${esc(text)}” — try the exact title.`);
+        }
+      }
+      return NextResponse.json({ ok: true });
+    }
 
     // A photo is waiting for a movie title to attach to.
     const pendingImage = await getBotState<PendingImage>("pending_image");
