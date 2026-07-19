@@ -1,0 +1,17 @@
+# Pings the Telegram bot's cron endpoint every 15 minutes. Vercel Hobby crons
+# only run daily, so this drives the time-sensitive tasks (occupancy capture,
+# rating prompts). The daily Vercel cron remains as a backstop.
+name: telegram-cron
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping cron endpoint
+        run: |
+          curl -fsS --max-time 280 \
+            "https://movie-log-eight.vercel.app/api/telegram/cron?secret=${{ secrets.CRON_SECRET }}" \
+            | head -c 500
