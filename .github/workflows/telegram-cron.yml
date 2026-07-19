@@ -12,6 +12,6 @@ jobs:
     steps:
       - name: Ping cron endpoint
         run: |
-          curl -fsS --max-time 280 \
+          curl -fsS --max-time 90 \
             "https://movie-log-eight.vercel.app/api/telegram/cron?secret=${{ secrets.CRON_SECRET }}" \
             | head -c 500

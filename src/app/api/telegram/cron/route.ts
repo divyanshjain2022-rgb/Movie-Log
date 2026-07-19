@@ -16,7 +16,7 @@ import { fetchPvrSearchMovies } from "@/lib/pvr/client";
 import { titleMatches } from "@/lib/pvr/personal-predictor";
 import { formatCurrency } from "@/lib/formula";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 interface MovieForCron {
   id: string;
