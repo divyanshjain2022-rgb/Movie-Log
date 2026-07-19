@@ -65,7 +65,7 @@ const EDITABLE_MOVIE_FIELDS = [
   "ticket_cost", "convenience_fee", "seat", "audi", "showtime", "date",
 ] as const;
 const SCORE_FIELDS = new Set([
-  "rating", "fnb_cost", "other_expenses", "ticket_cost", "convenience_fee",
+  "rating", "fnb_cost", "other_expenses", "ticket_cost", "convenience_fee", "format_id",
 ]);
 
 export async function updateMovieFields(
@@ -79,6 +79,40 @@ export async function updateMovieFields(
   for (const field of EDITABLE_MOVIE_FIELDS) {
     if (updates[field] !== undefined && updates[field] !== null) filtered[field] = updates[field];
   }
+
+  // Relational fields arrive as names and resolve to ids against the user's
+  // own tables (token match, most-specific wins).
+  const userId = await resolveBotUserId();
+  const nameChanges: Record<string, { old: unknown; new: unknown }> = {};
+  const resolveByName = async (
+    table: "formats" | "theaters",
+    wanted: string
+  ): Promise<{ id: string; name: string } | null> => {
+    const { data } = await supabase.from(table).select("id,name").eq("user_id", userId!);
+    const wantedNorm = norm(wanted);
+    return (
+      ((data || []) as Array<{ id: string; name: string }>)
+        .map((row) => {
+          const tokens = norm(row.name).split(" ").filter(Boolean);
+          return { row, score: tokens.every((t) => wantedNorm.includes(t)) ? tokens.length : 0 };
+        })
+        .sort((a, b) => b.score - a.score)
+        .find((x) => x.score > 0)?.row || null
+    );
+  };
+  if (typeof updates.format === "string" && updates.format && userId) {
+    const match = await resolveByName("formats", updates.format);
+    if (!match) return { error: `no format matching "${updates.format}" — check Settings > Formats for exact names` };
+    filtered.format_id = match.id;
+    nameChanges.format = { old: null, new: match.name };
+  }
+  if (typeof updates.theater === "string" && updates.theater && userId) {
+    const match = await resolveByName("theaters", updates.theater);
+    if (!match) return { error: `no theater matching "${updates.theater}"` };
+    filtered.theater_id = match.id;
+    nameChanges.theater = { old: null, new: match.name };
+  }
+
   if (Object.keys(filtered).length === 0) return { error: "no editable fields provided" };
   if (typeof filtered.rating === "number" && (filtered.rating < 1 || filtered.rating > 10)) {
     return { error: "rating must be between 1 and 10" };
@@ -86,15 +120,29 @@ export async function updateMovieFields(
 
   const { data: before } = await supabase
     .from("movies")
-    .select("title,rating,review,remarks,fnb_cost,fnb_items,other_expenses,ticket_cost,convenience_fee,seat,audi,showtime,date,value_score")
+    .select("title,rating,review,remarks,fnb_cost,fnb_items,other_expenses,ticket_cost,convenience_fee,seat,audi,showtime,date,value_score,format_id,theater_id,format:formats(name),theater:theaters(name)")
     .eq("id", movieId)
     .maybeSingle();
   if (!before) return { error: "movie not found" };
   const beforeRow = before as Record<string, unknown> & { title: string; value_score: number | null };
 
+  const beforeNames = beforeRow as unknown as {
+    format: { name: string } | null;
+    theater: { name: string } | null;
+  };
   const changes: Record<string, { old: unknown; new: unknown }> = {};
   for (const [field, value] of Object.entries(filtered)) {
-    if (beforeRow[field] !== value) changes[field] = { old: beforeRow[field] ?? null, new: value };
+    if (beforeRow[field] !== value) {
+      if (field === "format_id") {
+        changes.format_id = { old: beforeRow.format_id ?? null, new: value };
+        changes.format_name = { old: beforeNames.format?.name ?? null, new: nameChanges.format?.new ?? null };
+      } else if (field === "theater_id") {
+        changes.theater_id = { old: beforeRow.theater_id ?? null, new: value };
+        changes.theater_name = { old: beforeNames.theater?.name ?? null, new: nameChanges.theater?.new ?? null };
+      } else {
+        changes[field] = { old: beforeRow[field] ?? null, new: value };
+      }
+    }
   }
   if (Object.keys(changes).length === 0) {
     return { title: beforeRow.title, changes, valueScore: beforeRow.value_score };
@@ -627,7 +675,10 @@ async function toolUndoLastEdit(): Promise<unknown> {
     return { error: "the last edit was a movie creation — deletions aren't allowed from the bot; remove it in the app if needed" };
   }
   const restore: Record<string, unknown> = {};
-  for (const [field, change] of Object.entries(edit.changes)) restore[field] = change.old;
+  for (const [field, change] of Object.entries(edit.changes)) {
+    if (field === "format_name" || field === "theater_name") continue; // display-only
+    restore[field] = change.old;
+  }
   const { error } = await supabase.from(edit.table_name).update(restore as never).eq("id", edit.record_id);
   if (error) return { error: error.message };
   await supabase.from("bot_edits").update({ undone: true } as never).eq("id", edit.id);
@@ -745,7 +796,7 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: "update_movie",
     description:
-      "Edit a logged movie (matched by title). Editable: rating, review, remarks, fnb_cost, other_expenses, ticket_cost, convenience_fee, seat, audi, showtime (HH:MM), date (YYYY-MM-DD). Value score recomputes automatically. Every change is audit-logged and reversible via undo_last_edit.",
+      "Edit a logged movie (matched by title). Editable: rating, review, remarks, fnb_cost, other_expenses, ticket_cost, convenience_fee, seat, audi, showtime (HH:MM), date (YYYY-MM-DD), format (by name, e.g. IMAX 2D), theater (by name). Value score recomputes automatically. Every change is audit-logged and reversible via undo_last_edit.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -761,6 +812,8 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         audi: { type: Type.STRING },
         showtime: { type: Type.STRING },
         date: { type: Type.STRING },
+        format: { type: Type.STRING, description: "Format name, e.g. 2D, 3D, IMAX 2D, IMAX 3D, 4DX, Dolby Atmos" },
+        theater: { type: Type.STRING, description: "Theater name to reassign the movie to" },
       },
       required: ["title"],
     },
