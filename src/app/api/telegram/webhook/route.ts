@@ -12,7 +12,7 @@ import {
   tg,
 } from "@/lib/telegram";
 import { istDateString } from "@/lib/telegram";
-import { GoogleGenAI } from "@google/genai";
+import { visionJson } from "@/lib/inference";
 import { applyRating, converse, updateMovieFields } from "@/lib/telegram-ai";
 import { formatCurrency, getValueTier, DEFAULT_FORMULA_PARAMS } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
@@ -59,38 +59,25 @@ async function activeFormulaParams(): Promise<FormulaParams> {
 // ---- Image classification: ticket, gift card, or just a photo? ----
 
 async function classifyImage(base64: string, mime: string): Promise<"ticket" | "gift_card" | "food_receipt" | "other"> {
-  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
-  if (!apiKey) return "ticket";
+  if (!process.env.HETZNER_API_KEY) return "ticket";
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT" as const,
-          properties: {
-            kind: {
-              type: "STRING" as const,
-              description: "ticket | gift_card | other",
-            },
+    const parsed = await visionJson<{ kind?: string }>({
+      base64,
+      mime,
+      schema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["ticket", "gift_card", "food_receipt", "other"],
           },
         },
+        required: ["kind"],
       },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: mime, data: base64 } },
-            {
-              text: "Classify this image. 'ticket' = movie ticket, booking confirmation, or an SMS/WhatsApp/app screenshot of a cinema booking. 'gift_card' = gift card or voucher. 'food_receipt' = a food/beverage bill or POS receipt (cinema snacks, restaurant). 'other' = anything else (photos of people, food itself, cinema halls, posters, random images).",
-            },
-          ],
-        },
-      ],
+      prompt:
+        "Classify this image. 'ticket' = movie ticket, booking confirmation, or an SMS/WhatsApp/app screenshot of a cinema booking. 'gift_card' = gift card or voucher. 'food_receipt' = a food/beverage bill or POS receipt (cinema snacks, restaurant). 'other' = anything else (photos of people, food itself, cinema halls, posters, random images).",
     });
-    const parsed = JSON.parse(response.text || "{}") as { kind?: string };
-    if (parsed.kind === "gift_card" || parsed.kind === "other" || parsed.kind === "food_receipt") {
+    if (parsed?.kind === "gift_card" || parsed?.kind === "other" || parsed?.kind === "food_receipt") {
       return parsed.kind;
     }
     return "ticket";
@@ -112,44 +99,32 @@ async function handleFnbReceipt(chatId: string, fileId: string): Promise<void> {
   }
   await sendMessage(chatId, "Reading the bill…");
 
-  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
-  if (!apiKey) return;
+  if (!process.env.HETZNER_API_KEY) return;
   let total = 0;
   let items: string | null = null;
   let receiptDate: string | null = null;
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT" as const,
-          properties: {
-            total: { type: "NUMBER" as const, description: "Final total paid in rupees" },
-            items: { type: "STRING" as const, description: "Comma-separated item names, e.g. 'Popcorn Large, Pepsi'" },
-            receipt_date: { type: "STRING" as const, description: "Date printed on the receipt as YYYY-MM-DD, null if not visible" },
-          },
-        },
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: file.mime, data: file.base64 } },
-            { text: "Extract the final total amount and the purchased items from this food/beverage receipt." },
-          ],
-        },
-      ],
-    });
-    const parsed = JSON.parse(response.text || "{}") as {
+    const parsed = await visionJson<{
       total?: number;
       items?: string;
       receipt_date?: string;
-    };
-    total = parsed.total || 0;
-    items = parsed.items || null;
-    receiptDate = parsed.receipt_date || null;
+    }>({
+      base64: file.base64,
+      mime: file.mime,
+      schema: {
+        type: "object",
+        properties: {
+          total: { type: "number", description: "Final total paid in rupees" },
+          items: { type: "string", description: "Comma-separated item names, e.g. 'Popcorn Large, Pepsi'" },
+          receipt_date: { type: "string", description: "Date printed on the receipt as YYYY-MM-DD, null if not visible" },
+        },
+        required: ["total"],
+      },
+      prompt: "Extract the final total amount and the purchased items from this food/beverage receipt.",
+    });
+    total = parsed?.total || 0;
+    items = parsed?.items || null;
+    receiptDate = parsed?.receipt_date || null;
   } catch {
     // fall through
   }
