@@ -7,6 +7,7 @@ import {
   CHAT_MODEL,
   chatCompletion,
   InferenceError,
+  messageText,
   type ChatMessage,
   type ToolDefinition,
 } from "@/lib/inference";
@@ -422,6 +423,7 @@ async function toolStats(args: { year?: number }): Promise<unknown> {
     ),
     avgRating: rated.length ? +(rated.reduce((s, m) => s + (m.rating || 0), 0) / rated.length).toFixed(1) : null,
     topGenres: Object.entries(genreCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
+    note: "totalSpend is the complete figure: it ALREADY includes fnbSpend, plus tickets, fees and other expenses, minus passport savings. Never add fnbSpend to totalSpend — that double-counts food.",
   };
 }
 
@@ -1047,7 +1049,7 @@ export async function converse(userText: string): Promise<string> {
       continue;
     }
 
-    finalText = message?.content || "";
+    finalText = message ? messageText(message) : "";
     break;
   }
 

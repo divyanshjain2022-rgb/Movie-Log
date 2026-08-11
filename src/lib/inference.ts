@@ -56,9 +56,25 @@ interface ChatCompletionRequest {
 
 interface ChatCompletionResponse {
   choices: Array<{
-    message: { content: string | null; tool_calls?: ToolCall[] };
+    message: { content: string | null; reasoning?: string | null; tool_calls?: ToolCall[] };
     finish_reason: string;
   }>;
+}
+
+/**
+ * The answer text, wherever the server decided to put it.
+ *
+ * Hetzner runs a reasoning parser that splits the model's output into
+ * `reasoning` and `content`. When the model produces no separate final
+ * channel — common on short answers right after a tool result — `content`
+ * comes back null and the whole reply sits in `reasoning`. Reading only
+ * `content` silently loses correct answers.
+ */
+export function messageText(message: {
+  content?: string | null;
+  reasoning?: string | null;
+}): string {
+  return (message.content || message.reasoning || "").trim();
 }
 
 export class InferenceError extends Error {
@@ -147,5 +163,6 @@ export async function visionJson<T>(options: {
       },
     ],
   });
-  return parseJsonLoose<T>(response.choices?.[0]?.message?.content ?? null);
+  const message = response.choices?.[0]?.message;
+  return parseJsonLoose<T>(message ? messageText(message) : null);
 }
