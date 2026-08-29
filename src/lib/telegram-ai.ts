@@ -16,20 +16,92 @@ import { calculateValueScore, DEFAULT_FORMULA_PARAMS, getValueTier } from "@/lib
 import type { FormulaParams } from "@/types";
 
 // Free-tier Gemini quotas are per-model per-day (a flash model allows only 20
-// requests/day), so exhausting one model falls through to the next. Newest
-// first: each step down is a real capability drop, and the daily budget is
-// four models deep rather than one model wide.
+// requests/day), so exhausting one model falls through to the next.
+//
+// Ordered by measured latency, NOT by version number. Benchmarked 2026-08-29
+// against this exact system prompt and all 24 tool declarations, same query,
+// identical tool call and token counts from every model:
+//
+//   gemini-3.5-flash        1976 / 2137 / 2139 ms   tight and repeatable
+//   gemini-3.1-flash-lite   2284 ms
+//   gemini-3.6-flash        4438 / 12648 / 37807 / 58400 ms
+//   gemini-3.7-flash        503 "high demand" on 3 of 5 attempts
+//
+// The two newest models are the two worst here. 3.6 in particular is erratic
+// to the point of danger: a 58s call exceeds this route's maxDuration of 60,
+// so the whole webhook dies and the user gets nothing. They stay in the chain
+// because a slow answer beats no answer once 3.5's daily quota is gone, but
+// they belong at the back of it. Re-measure before reordering — this is a
+// statement about current serving load, not about model quality.
+// gemini-3.6-flash is the primary model by decision (2026-08-29). The rest of
+// the chain is fallback, for when its daily free-tier quota is gone (a flash
+// model allows ~20 requests/day) or when it is stalling.
+//
+// The fallbacks are ordered by measured latency, not version number.
+// Benchmarked against this exact system prompt and all 24 tool declarations,
+// same query, identical tool call and token counts from every model:
+//
+//   gemini-3.5-flash        1976 / 2137 / 2139 ms   tight and repeatable
+//   gemini-3.1-flash-lite   2284 ms
+//   gemini-3.6-flash        4438 / 12648 / 37807 / 58400 ms
+//   gemini-3.7-flash        503 "high demand" on 3 of 5 attempts
+//
+// 3.6's latency is erratic rather than uniformly slow, and the 58s case
+// matters: this route's maxDuration is 60, so one unlucky call would spend the
+// entire budget and the webhook would die without replying. Hence the
+// per-attempt deadline below — a stalled 3.6 is abandoned and 3.5 answers in
+// about two seconds instead. Re-measure before reordering; this describes
+// current serving load, not model quality.
 const MODELS = [
-  "gemini-3.7-flash",
   "gemini-3.6-flash",
   "gemini-3.5-flash",
   "gemini-3.1-flash-lite",
+  "gemini-3.7-flash",
 ];
+
+// A single attempt past this will not feel like a chat reply. Abandon it and
+// let the next model in the chain try, rather than waiting it out.
+const ATTEMPT_TIMEOUT_MS = 18000;
+// Stop starting new work in time for the webhook to still send its reply.
+const TOTAL_BUDGET_MS = 45000;
 const HISTORY_KEY = "chat_history";
 const MAX_HISTORY_TURNS = 16;
 
 function norm(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * Drop null and empty-string fields from a tool result.
+ *
+ * Tool results are fed straight back to the model as input tokens, so every
+ * `"director":null` in a 25-row answer is paid for twice: once in latency,
+ * once against the daily quota. A real log row is sparse — measured
+ * 2026-08-29, this took a 25-movie get_recent_movies payload from 6299 to
+ * 4899 tokens, 22% smaller. Absent and null mean the same thing to the model
+ * ("not recorded"), and the field is described in the tool declaration
+ * either way.
+ *
+ * Empty arrays and empty objects are KEPT, even though dropping them would
+ * save another 5%. `movies: []` is not noise, it is the answer: the system
+ * prompt tells the model that an empty movies array means nothing was watched
+ * in that window, which is the rule that stops it inventing films. Deleting
+ * the key would leave it with nothing to read that as. `false` and `0` are
+ * kept for the same reason — they are values, not absences.
+ */
+function compactResult(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(compactResult).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      const compacted = compactResult(val);
+      if (compacted !== undefined) out[key] = compacted;
+    }
+    return out;
+  }
+  return value === null || value === "" ? undefined : value;
 }
 
 // Tables whose rows the user refers to by name in chat, never by id.
@@ -1696,52 +1768,68 @@ export async function converse(userText: string): Promise<string> {
     "You may include a bare booking URL when recommending a specific show.",
   ].join("\n");
 
+  const startedAt = Date.now();
+  const budgetLeft = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
+
   let finalText = "";
   let modelIndex = 0;
+  let ranOutOfTime = false;
+
   for (let round = 0; round < 6; round += 1) {
-    const model = MODELS[modelIndex];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let response: any;
-    try {
-      response = await ai.models.generateContent({
-        model,
-        config: {
-          systemInstruction,
-          temperature: 0.2,
-          tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
-          // Every model in MODELS is a 3.x, which all take thinkingLevel;
-          // a 2.x entry would reject it and need a guard here again.
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        },
-        contents,
-      });
-    } catch (error) {
-      const status = (error as { status?: number })?.status;
-      // 429 = that model's daily free-tier quota is gone. 503 = the model is
-      // overloaded, which is routine on a just-released model: gemini-3.7-flash
-      // answered 503 "experiencing high demand" on 2 of 3 calls the day it was
-      // added here. Both mean "this model can't serve the turn", so both step
-      // down the chain rather than failing the whole message.
-      const recoverable = status === 429 || status === 503 || status === 500;
-      if (recoverable && modelIndex < MODELS.length - 1) {
-        // Switch model and restart the conversation turn cleanly — thought
-        // signatures don't transfer between models.
+    let response: any = null;
+
+    while (!response) {
+      if (budgetLeft() <= 2000) {
+        ranOutOfTime = true;
+        break;
+      }
+      try {
+        response = await ai.models.generateContent({
+          model: MODELS[modelIndex],
+          config: {
+            systemInstruction,
+            temperature: 0.2,
+            tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+            // Whichever runs out first wins: this attempt's deadline, or what
+            // is left of the turn.
+            abortSignal: AbortSignal.timeout(
+              Math.min(ATTEMPT_TIMEOUT_MS, Math.max(budgetLeft(), 1))
+            ),
+          },
+          contents,
+        });
+      } catch (error) {
+        const status = (error as { status?: number })?.status;
+        const name = (error as { name?: string })?.name;
+        // A stall is as good a reason to change model as a 429 or a 503, and
+        // on this chain it is the likelier one.
+        const stalled = name === "AbortError" || name === "TimeoutError";
+        const recoverable = stalled || status === 429 || status === 503 || status === 500;
+        if (!recoverable) throw error;
+
+        if (modelIndex >= MODELS.length - 1) {
+          if (status === 429) {
+            return "Gemini's free-tier quota is exhausted for today — the buttons and /tonight, /gc, /recap still work. Chat resets at midnight PT (or enable billing on the Google AI key for effectively unlimited use).";
+          }
+          ranOutOfTime = true;
+          break;
+        }
+
+        // Restart the turn cleanly on the next model: thought signatures do
+        // not transfer between models, and a partially-built `contents` holds
+        // signatures from an attempt that never completed.
         modelIndex += 1;
         contents.length = 0;
         contents.push(
           ...history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
           { role: "user", parts: [{ text: userText }] }
         );
-        continue;
+        round = 0;
       }
-      if (status === 429) {
-        return "Gemini's free-tier quota is exhausted for today — the buttons and /tonight, /gc, /recap still work. Chat resets at midnight PT (or enable billing on the Google AI key for effectively unlimited use).";
-      }
-      if (recoverable) {
-        return "Every Gemini model is busy or rate-limited right now — try again in a minute. The buttons and /tonight, /gc, /recap still work.";
-      }
-      throw error;
     }
+    if (!response) break;
 
     const calls = response.functionCalls;
     const modelContent = response.candidates?.[0]?.content;
@@ -1749,19 +1837,26 @@ export async function converse(userText: string): Promise<string> {
       // Echo the model's own content back verbatim — Gemini 3 requires the
       // thoughtSignature attached to each functionCall part to be preserved.
       contents.push(modelContent);
-      const responseParts = [];
-      for (const call of calls) {
-        const impl = TOOL_IMPL[call.name || ""];
-        let result: unknown;
-        try {
-          result = impl ? await impl((call.args || {}) as never) : { error: `unknown tool ${call.name}` };
-        } catch (error) {
-          result = { error: error instanceof Error ? error.message : "tool failed" };
-        }
-        responseParts.push({
-          functionResponse: { name: call.name, response: { result } },
-        });
-      }
+
+      // Run the round's tools together. The model asks for several at once
+      // (recent movies plus gift cards, say) and they are independent reads,
+      // so awaiting them one after another just added up their latencies.
+      const responseParts = await Promise.all(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        calls.map(async (call: any) => {
+          const impl = TOOL_IMPL[call.name || ""];
+          let result: unknown;
+          try {
+            result = impl ? await impl((call.args || {}) as never) : { error: `unknown tool ${call.name}` };
+          } catch (error) {
+            result = { error: error instanceof Error ? error.message : "tool failed" };
+          }
+          // Strip empties: this goes straight back in as input tokens.
+          return {
+            functionResponse: { name: call.name, response: { result: compactResult(result) } },
+          };
+        })
+      );
       contents.push({ role: "user", parts: responseParts });
       continue;
     }
@@ -1770,6 +1865,9 @@ export async function converse(userText: string): Promise<string> {
     break;
   }
 
+  if (!finalText && ranOutOfTime) {
+    return "Gemini is stalling on that one — ask me again in a moment? The buttons and /tonight, /gc, /recap still work.";
+  }
   if (!finalText) finalText = "I got stuck on that one — try rephrasing?";
 
   const nextHistory: HistoryTurn[] = [
