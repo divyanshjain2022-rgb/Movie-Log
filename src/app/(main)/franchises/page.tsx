@@ -22,6 +22,7 @@ import {
   useDeleteFranchise,
   useMovies,
 } from "@/hooks";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 export default function FranchisesPage() {
   const { franchises, isLoading, refetch } = useFranchises();
@@ -118,8 +119,8 @@ export default function FranchisesPage() {
                   className="flex items-center gap-3 rounded-lg border p-4 transition-colors hover:bg-secondary/50"
                 >
                   {f.poster_url ? (
-                    <img
-                      src={f.poster_url}
+                    <img loading="lazy" decoding="async"
+                      src={tmdbImage(f.poster_url, "w154")}
                       alt={f.name}
                       className="h-14 w-10 rounded object-cover"
                     />

@@ -41,6 +41,7 @@ import type {
   PassportWithUsage,
 } from "@/types";
 import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 const supabase = createClient();
 
@@ -579,8 +580,8 @@ export function MovieForm({
             <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
               <div className="flex gap-3">
                 {watch("poster_url") && (
-                  <img
-                    src={watch("poster_url")}
+                  <img loading="lazy" decoding="async"
+                    src={tmdbImage(watch("poster_url"), "w342")}
                     alt={watch("title")}
                     className="h-24 w-16 rounded object-cover shadow"
                   />

@@ -250,7 +250,10 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
     try {
       await deleteMovie(id);
       toast.success("Movie deleted");
-      router.push("/movies");
+      // The detail page behind us describes a row that no longer exists, so it
+      // must not stay in history — Back would have rendered a deleted movie.
+      router.replace("/movies");
+      router.refresh();
     } catch (error) {
       toast.error("Failed to delete movie");
       console.error(error);
@@ -383,6 +386,8 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
                 src={movie.poster_url}
                 alt={movie.title}
                 className="h-full w-full object-cover"
+                fetchPriority="high"
+                decoding="async"
               />
             </div>
           ) : (

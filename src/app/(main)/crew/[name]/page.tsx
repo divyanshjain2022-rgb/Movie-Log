@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared";
 import { useMovies } from "@/hooks";
 import { formatCurrency, getRatingColor } from "@/lib/formula";
 import { cn } from "@/lib/utils";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 interface CrewPageProps {
   params: Promise<{ name: string }>;
@@ -192,8 +193,8 @@ export default function CrewPage({ params }: CrewPageProps) {
                     className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-secondary/50"
                   >
                     {movie.poster_url ? (
-                      <img
-                        src={movie.poster_url}
+                      <img loading="lazy" decoding="async"
+                        src={tmdbImage(movie.poster_url, "w185")}
                         alt={movie.title}
                         className="h-16 w-11 rounded object-cover"
                       />

@@ -5,6 +5,7 @@ import { Film } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { HomeMovie } from "@/lib/server/home-data";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 type CostMode = "ticket" | "ticket_fnb" | "all";
 
@@ -63,8 +64,8 @@ export function RecentMovies({ movies, costMode = "all" }: RecentMoviesProps) {
             {/* Poster */}
             {movie.poster_url ? (
               <div className="relative h-[72px] w-12 flex-shrink-0 overflow-hidden rounded-xl">
-                <img
-                  src={movie.poster_url}
+                <img loading="lazy" decoding="async"
+                  src={tmdbImage(movie.poster_url, "w154")}
                   alt={movie.title}
                   className="h-full w-full object-cover"
                 />

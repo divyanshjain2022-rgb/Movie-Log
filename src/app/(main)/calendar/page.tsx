@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/shared";
 import { useMovies } from "@/hooks";
 import { getRatingColor } from "@/lib/formula";
 import { cn } from "@/lib/utils";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 export default function CalendarPage() {
   const { movies, isLoading } = useMovies();
@@ -172,8 +173,8 @@ export default function CalendarPage() {
                         className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-secondary/50"
                       >
                         {movie.poster_url ? (
-                          <img
-                            src={movie.poster_url}
+                          <img loading="lazy" decoding="async"
+                            src={tmdbImage(movie.poster_url, "w154")}
                             alt={movie.title}
                             className="h-14 w-10 rounded object-cover"
                           />

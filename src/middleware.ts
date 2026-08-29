@@ -43,10 +43,22 @@ export async function middleware(request: NextRequest) {
         }
     );
 
-    // Refresh session if expired
+    // getClaims, not getUser: getUser sends the access token to the Auth
+    // server on EVERY request, and this middleware runs on every navigation,
+    // so each page view paid a round trip to Supabase before it could start
+    // rendering. This project signs its JWTs with an asymmetric key (ES256),
+    // so getClaims verifies the signature locally with WebCrypto against the
+    // JWKS, which auth-js caches module-level and therefore fetches once per
+    // warm instance rather than once per request.
+    //
+    // Session refresh is unaffected: with no explicit token, getClaims calls
+    // getSession internally, which still refreshes an expired session and
+    // writes the rotated cookies through the setAll handler above. On a
+    // symmetric key or without WebCrypto it falls back to getUser by itself.
     const {
-        data: { user },
-    } = await supabase.auth.getUser();
+        data: claims,
+    } = await supabase.auth.getClaims();
+    const user = claims?.claims ?? null;
 
     // Public routes that don't require auth
     const publicRoutes = ["/login", "/auth/callback", "/api"];

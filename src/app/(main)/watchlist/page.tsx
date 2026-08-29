@@ -35,6 +35,7 @@ import {
   useUpdateWatchlistItem,
 } from "@/hooks";
 import { watchlistItemMatchesMovie } from "@/lib/watchlist";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 const PRIORITY_LABELS = ["Low", "Medium", "High"];
 const PRIORITY_COLORS = ["text-muted-foreground", "text-yellow-500", "text-red-500"];
@@ -355,8 +356,8 @@ export default function WatchlistPage() {
                     className="min-w-40 rounded-lg border bg-background/45 p-2.5"
                   >
                     {movie.posterUrl ? (
-                      <img
-                        src={movie.posterUrl}
+                      <img loading="lazy" decoding="async"
+                        src={tmdbImage(movie.posterUrl, "w342")}
                         alt={movie.title}
                         className="h-40 w-full rounded-md object-cover"
                       />
@@ -429,8 +430,8 @@ export default function WatchlistPage() {
                     className="flex items-center gap-3 rounded-lg border p-3"
                   >
                     {item.poster_url ? (
-                      <img
-                        src={item.poster_url}
+                      <img loading="lazy" decoding="async"
+                        src={tmdbImage(item.poster_url, "w185")}
                         alt={item.title}
                         className="h-16 w-11 rounded object-cover"
                       />

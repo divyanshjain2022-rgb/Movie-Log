@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/shared";
 import { useMovies, useGiftCards } from "@/hooks";
 import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 export default function YearWrappedPage() {
     const { movies, isLoading: moviesLoading } = useMovies();
@@ -358,8 +359,8 @@ export default function YearWrappedPage() {
                             </div>
                             <div className="mt-3 flex gap-3">
                                 {stats.topRated.poster_url ? (
-                                    <img
-                                        src={stats.topRated.poster_url}
+                                    <img loading="lazy" decoding="async"
+                                        src={tmdbImage(stats.topRated.poster_url, "w342")}
                                         alt={stats.topRated.title}
                                         className="h-24 w-16 rounded-lg object-cover"
                                     />
@@ -511,8 +512,8 @@ export default function YearWrappedPage() {
                             </div>
                             <div className="mt-2 flex items-center gap-3">
                                 {stats.biggestBoxOffice.poster_url && (
-                                    <img
-                                        src={stats.biggestBoxOffice.poster_url}
+                                    <img loading="lazy" decoding="async"
+                                        src={tmdbImage(stats.biggestBoxOffice.poster_url, "w185")}
                                         alt={stats.biggestBoxOffice.title}
                                         className="h-16 w-11 rounded object-cover"
                                     />

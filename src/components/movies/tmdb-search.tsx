@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Search, Film, Loader2, X, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 interface TMDBMovie {
   tmdb_id: number;
@@ -148,8 +149,8 @@ export function TMDBSearch({ initialTitle = "", onSelect, onTitleChange, selecte
       {selectedMovie && !showResults && (
         <div className="mt-2 flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
           {selectedMovie.poster_url ? (
-            <img
-              src={selectedMovie.poster_url}
+            <img loading="lazy" decoding="async"
+              src={tmdbImage(selectedMovie.poster_url, "w154")}
               alt={selectedMovie.title}
               className="h-12 w-8 rounded object-cover"
             />
@@ -188,8 +189,8 @@ export function TMDBSearch({ initialTitle = "", onSelect, onTitleChange, selecte
               )}
             >
               {movie.poster_url ? (
-                <img
-                  src={movie.poster_url}
+                <img loading="lazy" decoding="async"
+                  src={tmdbImage(movie.poster_url, "w154")}
                   alt={movie.title}
                   className="h-14 w-10 rounded object-cover shadow"
                 />

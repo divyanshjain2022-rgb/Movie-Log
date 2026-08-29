@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, getRatingBadgeClasses,
   getRatingColor, getEffectiveCost } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import type { ListMovie } from "@/lib/server/movies-data";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 export interface CostComponents {
   ticket: boolean;
@@ -57,7 +58,7 @@ export function MovieCard({ movie, variant = "default", costComponents }: MovieC
         <div className="flex items-center gap-3 rounded-2xl bg-card/40 p-3 transition-all active:scale-[0.98] hover:bg-card/60">
           {movie.poster_url ? (
             <div className="h-12 w-8 flex-shrink-0 overflow-hidden rounded-lg">
-              <img src={movie.poster_url} alt={movie.title} className="h-full w-full object-cover" />
+              <img loading="lazy" decoding="async" src={tmdbImage(movie.poster_url, "w154")} alt={movie.title} className="h-full w-full object-cover" />
             </div>
           ) : (
             <div className="flex h-12 w-8 items-center justify-center rounded-lg bg-secondary/50">
@@ -89,8 +90,8 @@ export function MovieCard({ movie, variant = "default", costComponents }: MovieC
         {/* Poster */}
         {movie.poster_url ? (
           <div className="relative h-[110px] w-[73px] flex-shrink-0 overflow-hidden rounded-xl">
-            <img
-              src={movie.poster_url}
+            <img loading="lazy" decoding="async"
+              src={tmdbImage(movie.poster_url, "w342")}
               alt={movie.title}
               className="h-full w-full object-cover"
             />

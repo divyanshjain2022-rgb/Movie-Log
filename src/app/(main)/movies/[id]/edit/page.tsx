@@ -151,7 +151,13 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
       }
 
       toast.success("Movie updated successfully!");
-      router.push(`/movies/${id}`);
+      // replace, not push: the edit form is a completed step, and pushing left
+      // it in history so Back walked straight back into the form that was just
+      // submitted. refresh() then drops the cached server payload for the
+      // detail page — staleTimes.dynamic keeps it for 30s, which is long
+      // enough to show the values that were just edited away.
+      router.replace(`/movies/${id}`);
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? `Failed to update movie: ${error.message}` : "Failed to update movie");
       console.error(error);

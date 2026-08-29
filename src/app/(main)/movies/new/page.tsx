@@ -477,7 +477,10 @@ function NewMoviePageInner() {
       }
 
       toast.success(mode === "advance" ? "Advance booking saved!" : "Movie logged successfully!");
-      router.push("/movies");
+      // Same as the edit form: Back should return to wherever logging started,
+      // not to a spent form. refresh() so the new movie is actually in the list.
+      router.replace("/movies");
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? `Failed to save movie: ${error.message}` : "Failed to save movie");
       console.error(error);

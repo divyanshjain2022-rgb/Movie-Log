@@ -133,7 +133,7 @@ export function PhotoGallery({ movieId }: PhotoGalleryProps) {
               onClick={() => setLightboxPhoto(photo)}
               className="relative aspect-square overflow-hidden rounded-lg"
             >
-              <img
+              <img loading="lazy" decoding="async"
                 src={photo.url}
                 alt={photo.caption || "Movie photo"}
                 className="h-full w-full object-cover"
@@ -155,7 +155,7 @@ export function PhotoGallery({ movieId }: PhotoGalleryProps) {
           <DialogTitle className="sr-only">Photo viewer</DialogTitle>
           {lightboxPhoto && (
             <div className="relative">
-              <img
+              <img loading="lazy" decoding="async"
                 src={lightboxPhoto.url}
                 alt={lightboxPhoto.caption || "Photo"}
                 className="w-full rounded-lg"

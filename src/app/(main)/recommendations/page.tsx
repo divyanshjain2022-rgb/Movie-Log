@@ -53,6 +53,7 @@ import type {
   PvrShow,
   RecommendationOption,
 } from "@/lib/pvr/types";
+import { tmdbImage } from "@/lib/tmdb-image";
 
 const LANGUAGE_OPTIONS = ["ALL", "Hindi", "English", "Tamil", "Telugu", "Malayalam", "Kannada"];
 const FORMAT_OPTIONS = ["ALL", "Regular", "IMAX", "4DX", "PXL", "LUXE", "INSIGNIA", "ATMOS"];
@@ -299,7 +300,7 @@ function OtherPlayingCard({
     <div className="flex gap-3 rounded-lg bg-card/40 p-2.5">
       {movie.posterUrl ? (
         <img
-          src={movie.posterUrl}
+          src={tmdbImage(movie.posterUrl, "w185")}
           alt={movie.title}
           loading="lazy"
           className="h-20 w-14 shrink-0 rounded-md object-cover"
@@ -393,7 +394,7 @@ function UpcomingWatchlistCard({ movie }: { movie: PvrMovie }) {
     >
       {movie.posterUrl ? (
         <img
-          src={movie.posterUrl}
+          src={tmdbImage(movie.posterUrl, "w185")}
           alt={movie.title}
           loading="lazy"
           className="h-20 w-14 shrink-0 rounded-md object-cover"
@@ -470,7 +471,7 @@ function RecommendationCard({
       >
         {recommendation.movie.posterUrl ? (
           <img
-            src={recommendation.movie.posterUrl}
+            src={tmdbImage(recommendation.movie.posterUrl, "w342")}
             alt={recommendation.movie.title}
             loading="lazy"
             className="h-24 w-16 shrink-0 rounded-lg object-cover"

@@ -203,19 +203,21 @@ export async function loadRecommendationUserData(botUserId?: string): Promise<{
     resolvedUserId = botUserId;
   } else {
     supabase = await createClient();
-    const {
-      data: { user: authedUser },
-      error: authError,
-    } = await supabase.auth.getUser();
+    // Locally verified against the JWKS instead of a round trip to the Auth
+    // server — this sits in front of the slowest page in the app, so the
+    // request it saves is the one the user is already waiting on. `sub` is
+    // the user id.
+    const { data: claims, error: authError } = await supabase.auth.getClaims();
+    const subject = claims?.claims?.sub;
 
-    if (authError || !authedUser) {
+    if (authError || !subject) {
       return {
         userData: LOCAL_RECOMMENDATION_USER_DATA,
         localMode: false,
         errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
       };
     }
-    resolvedUserId = authedUser.id;
+    resolvedUserId = subject;
   }
   const user = { id: resolvedUserId };
 
