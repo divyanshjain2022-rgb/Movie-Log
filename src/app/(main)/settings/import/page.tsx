@@ -416,7 +416,7 @@ export default function ImportPage() {
                   await supabase
                     .from("movies")
                     .update(enrichment as never)
-                    .eq("id", (insertedMovie as any).id);
+                    .eq("id", (insertedMovie as { id: string }).id);
                 }
               }
             }

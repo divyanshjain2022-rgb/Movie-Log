@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import type { GiftCardOCRData } from "@/types";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_CLOUD_API_KEY;
 
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
 
     console.log("[GC-OCR] Raw response:", textResponse.substring(0, 500));
 
-    let geminiData: any;
+    let geminiData: Partial<GiftCardOCRData>;
     try {
       const jsonStr = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
       geminiData = JSON.parse(jsonStr);
@@ -185,10 +186,10 @@ export async function POST(request: NextRequest) {
       expiry_date: geminiData.expiry_date || null,
       platform: geminiData.platform || null,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[GC-OCR] Error:", error);
     return NextResponse.json(
-      { error: `Gift Card OCR Failed: ${error.message || "Unknown error"}` },
+      { error: `Gift Card OCR Failed: ${error instanceof Error ? error.message : "Unknown error"}` },
       { status: 500 }
     );
   }

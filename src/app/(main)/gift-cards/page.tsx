@@ -39,6 +39,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/shared";
 import { useGiftCards, useCreateGiftCard, useUpdateGiftCard, useDeleteGiftCard, useLookupData } from "@/hooks";
+import { useNow } from "@/hooks/use-now";
+import { daysUntil } from "@/lib/date-utils";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -496,10 +498,13 @@ function GiftCardItem({
   onDelete: () => void;
 }) {
   const [showCode, setShowCode] = useState(false);
-  const daysUntilExpiry = Math.ceil(
-    (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
-  const isExpiringSoon = gc.status === "active" && daysUntilExpiry <= 30;
+  // Frozen at mount rather than read during render: the cards are fetched
+  // client-side anyway, so there is no visible delay, and a clock read in
+  // render drifts between re-renders and disagrees with the server HTML.
+  const now = useNow();
+  const daysUntilExpiry = now === null ? null : daysUntil(gc.expiry_date, now);
+  const isExpiringSoon =
+    gc.status === "active" && daysUntilExpiry !== null && daysUntilExpiry <= 30;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);

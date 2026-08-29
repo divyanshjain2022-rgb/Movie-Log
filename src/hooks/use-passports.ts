@@ -9,10 +9,12 @@ const supabase = createClient();
 export function usePassports() {
   const [passports, setPassports] = useState<PassportWithUsage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPassports = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
 
       // Fetch all passports
       const { data: passportData, error: passportError } = await supabase
@@ -28,12 +30,18 @@ export function usePassports() {
         .select("id, passport_id, passport_savings")
         .gt("passport_savings", 0);
 
-      const movies = moviesData || [];
+      // Exactly the three columns selected above.
+      type PassportUsageRow = {
+        id: string;
+        passport_id: string | null;
+        passport_savings: number | null;
+      };
+      const movies = (moviesData || []) as unknown as PassportUsageRow[];
 
       // Compute usage stats per passport
       const enriched: PassportWithUsage[] = (passportData || []).map((p: Passport) => {
-        const linkedMovies = movies.filter((m: any) => m.passport_id === p.id);
-        const totalSavings = linkedMovies.reduce((sum: number, m: any) => sum + (m.passport_savings || 0), 0);
+        const linkedMovies = movies.filter((m) => m.passport_id === p.id);
+        const totalSavings = linkedMovies.reduce((sum, m) => sum + (m.passport_savings || 0), 0);
 
         return {
           ...p,
@@ -44,6 +52,11 @@ export function usePassports() {
       });
 
       setPassports(enriched);
+    } catch (caught) {
+      // Called from an effect: rethrowing here surfaced only as an unhandled
+      // rejection in the console on the dashboard.
+      setError(caught instanceof Error ? caught.message : "Failed to load passports");
+      setPassports([]);
     } finally {
       setIsLoading(false);
     }
@@ -53,7 +66,7 @@ export function usePassports() {
     fetchPassports();
   }, [fetchPassports]);
 
-  return { passports, isLoading, refetch: fetchPassports };
+  return { passports, isLoading, error, refetch: fetchPassports };
 }
 
 export function useCreatePassport() {

@@ -9,10 +9,12 @@ const supabase = createClient();
 export function useTheaterRatings(theaterId?: string) {
   const [ratings, setRatings] = useState<TheaterRating[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchRatings = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
       let query = supabase
         .from("theater_ratings")
         .select("*")
@@ -25,6 +27,11 @@ export function useTheaterRatings(theaterId?: string) {
       const { data, error } = await query;
       if (error) throw error;
       setRatings(data || []);
+    } catch (caught) {
+      // Runs from an effect: an escaping rejection is unhandled and shows up
+      // only as a console exception on the page.
+      setError(caught instanceof Error ? caught.message : "Failed to load theater ratings");
+      setRatings([]);
     } finally {
       setIsLoading(false);
     }
@@ -34,7 +41,7 @@ export function useTheaterRatings(theaterId?: string) {
     fetchRatings();
   }, [fetchRatings]);
 
-  return { ratings, isLoading, refetch: fetchRatings };
+  return { ratings, isLoading, error, refetch: fetchRatings };
 }
 
 export function useCreateTheaterRating() {

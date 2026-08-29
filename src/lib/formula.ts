@@ -108,7 +108,9 @@ export function getEffectiveCost(movie: {
   passport_savings?: number;
   movie_gift_cards?: Array<{
     amount_used: number;
-    gift_card?: { discount_percent?: number } | null;
+    // Nullable in the database; declaring it non-null here was what forced
+    // every caller to cast its row to `any` to get past the mismatch.
+    gift_card?: { discount_percent?: number | null } | null;
   }>;
 }): number {
   const gross =

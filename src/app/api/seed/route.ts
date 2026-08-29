@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
             const { error } = await supabase.from("formats").insert({
                 user_id: userId,
                 ...item
-            } as any);
+            } as never);
             // But standard tables don't usually have unique name constraints per user unless set.
             // We'll rely on checking count or just appending if clean.
             if (!error) results.formats++;
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
             { name: "Bored", emoji: "😴", sentiment: "negative", sort_order: 8 },
         ];
         for (const item of moods) {
-            const { error } = await supabase.from("moods").insert({ user_id: userId, ...item } as any);
+            const { error } = await supabase.from("moods").insert({ user_id: userId, ...item } as never);
             if (!error) results.moods++;
         }
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
             { name: "Pacing", category: "narrative" },
         ];
         for (const item of aspects) {
-            const { error } = await supabase.from("aspects").insert({ user_id: userId, ...item } as any);
+            const { error } = await supabase.from("aspects").insert({ user_id: userId, ...item } as never);
             if (!error) results.aspects++;
         }
 
@@ -83,14 +83,14 @@ export async function GET(request: NextRequest) {
             { name: "Instant classic", value: 5, sort_order: 5 },
         ];
         for (const item of rewatch) {
-            const { error } = await supabase.from("rewatch_options").insert({ user_id: userId, ...item } as any);
+            const { error } = await supabase.from("rewatch_options").insert({ user_id: userId, ...item } as never);
             if (!error) results.rewatch++;
         }
 
         // 6. Seed Platforms
         const platforms = ["PVR INOX", "BookMyShow", "Paytm", "Amazon Pay"];
         for (const name of platforms) {
-            const { error } = await supabase.from("platforms").insert({ user_id: userId, name } as any);
+            const { error } = await supabase.from("platforms").insert({ user_id: userId, name } as never);
             if (!error) results.platforms++;
         }
 
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
             name: "INOX Phoenix Pallasio",
             city: "Lucknow",
             has_imax: true
-        } as any);
+        } as never);
         if (!tError) results.theaters++;
 
         return NextResponse.json({ success: true, seeded: results });

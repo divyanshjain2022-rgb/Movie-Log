@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Coffee, MoreHorizontal, Pencil, Trash2, Link2, X, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ import {
 } from "@/hooks";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { toast } from "sonner";
-import type { FnbPurchaseWithRelations, GiftCardUsageEntry } from "@/types";
+import type { FnbPurchaseWithRelations, GiftCardUsageEntry, GiftCardWithUsage, Theater } from "@/types";
 
 // Unified F&B entry — either from fnb_purchases table or from a movie's fnb fields
 interface FnbEntry {
@@ -66,210 +66,36 @@ interface FnbEntry {
   purchase?: FnbPurchaseWithRelations;
 }
 
-export default function FnbPage() {
-  const { fnbPurchases, isLoading: fnbLoading, refetch } = useFnbPurchases();
-  const { theaters } = useLookupData();
-  const { movies, isLoading: moviesLoading } = useMovies();
-  const { giftCards } = useGiftCards();
-  const { createFnbPurchase, isLoading: isCreating } = useCreateFnbPurchase();
-  const { updateFnbPurchase, isLoading: isUpdating } = useUpdateFnbPurchase();
-  const { deleteFnbPurchase, isLoading: isDeleting } = useDeleteFnbPurchase();
-
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingPurchase, setEditingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
-  const [deletingPurchase, setDeletingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
-  const [linkingPurchase, setLinkingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
-  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>([]);
-  const [selectedYear, setSelectedYear] = useState<YearFilterValue>(new Date().getFullYear());
-
-  const activeGiftCards = giftCards.filter(gc => gc.status === "active");
-  const availableGiftCards = activeGiftCards.filter(
-    gc => !giftCardUsage.some(u => u.gift_card_id === gc.id)
-  );
-
-  // Merge F&B from both sources
-  const allFnbEntries = useMemo(() => {
-    const entries: FnbEntry[] = [];
-
-    // From fnb_purchases table
-    fnbPurchases.forEach(p => {
-      entries.push({
-        id: p.id,
-        date: p.date,
-        items: p.items,
-        cost: p.cost,
-        theaterName: p.theater?.name,
-        movieTitle: p.movie?.title,
-        movieId: p.movie_id || undefined,
-        remarks: p.remarks,
-        source: "standalone",
-        purchase: p,
-      });
-    });
-
-    // From movies with fnb_cost > 0
-    movies.forEach(m => {
-      if (m.fnb_cost && m.fnb_cost > 0) {
-        entries.push({
-          id: `movie-${m.id}`,
-          date: m.date,
-          items: m.fnb_items || "F&B",
-          cost: m.fnb_cost,
-          theaterName: m.theater?.name,
-          movieTitle: m.title,
-          movieId: m.id,
-          remarks: null,
-          source: "movie",
-        });
-      }
-    });
-
-    // Sort by date descending
-    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [fnbPurchases, movies]);
-
-  const availableYears = useMemo(() => {
-    const years = [...new Set(allFnbEntries.map((entry) => new Date(entry.date).getFullYear()))].sort((a, b) => b - a);
-    return years.length > 0 ? years : [new Date().getFullYear()];
-  }, [allFnbEntries]);
-
-  useEffect(() => {
-    if (selectedYear !== "all" && !availableYears.includes(selectedYear)) {
-      setSelectedYear(availableYears[0]);
-    }
-  }, [availableYears, selectedYear]);
-
-  const filteredFnbEntries = useMemo(() => {
-    return selectedYear === "all"
-      ? allFnbEntries
-      : allFnbEntries.filter((entry) => new Date(entry.date).getFullYear() === selectedYear);
-  }, [allFnbEntries, selectedYear]);
-
-  // Stats
-  const stats = useMemo(() => {
-    const totalSpend = filteredFnbEntries.reduce((sum, entry) => sum + entry.cost, 0);
-    const avgPerVisit = filteredFnbEntries.length > 0 ? totalSpend / filteredFnbEntries.length : 0;
-    return { totalSpend, count: filteredFnbEntries.length, avgPerVisit };
-  }, [filteredFnbEntries]);
-
-  const addGiftCard = (gcId: string) => {
-    const gc = giftCards.find(g => g.id === gcId);
-    if (gc) {
-      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
-    }
-  };
-
-  const removeGiftCard = (gcId: string) => {
-    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
-  };
-
-  const updateGiftCardAmount = (gcId: string, amount: number) => {
-    setGiftCardUsage(prev =>
-      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
-    );
-  };
-
-  const resetGiftCardUsage = () => {
-    setGiftCardUsage([]);
-  };
-
-  const handleCreateFnbPurchase = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const theaterId = formData.get("theater_id") as string;
-
-    try {
-      await createFnbPurchase({
-        user_id: "",
-        date: formData.get("date") as string,
-        theater_id: theaterId === "none" ? null : theaterId || null,
-        items: formData.get("items") as string,
-        cost: parseFloat(formData.get("cost") as string),
-        remarks: (formData.get("remarks") as string) || null,
-        movie_id: null,
-      }, giftCardUsage.length > 0 ? giftCardUsage : undefined);
-
-      toast.success("F&B purchase added!");
-      setIsAddDialogOpen(false);
-      resetGiftCardUsage();
-      refetch();
-    } catch (error) {
-      toast.error("Failed to add F&B purchase");
-      console.error(error);
-    }
-  };
-
-  const handleUpdateFnbPurchase = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!editingPurchase) return;
-
-    const formData = new FormData(e.currentTarget);
-    const theaterId = formData.get("theater_id") as string;
-
-    try {
-      await updateFnbPurchase(editingPurchase.id, {
-        date: formData.get("date") as string,
-        theater_id: theaterId === "none" ? null : theaterId || null,
-        items: formData.get("items") as string,
-        cost: parseFloat(formData.get("cost") as string),
-        remarks: (formData.get("remarks") as string) || null,
-      });
-
-      toast.success("F&B purchase updated!");
-      setEditingPurchase(null);
-      refetch();
-    } catch (error) {
-      toast.error("Failed to update F&B purchase");
-      console.error(error);
-    }
-  };
-
-  const handleLinkToMovie = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!linkingPurchase) return;
-
-    const formData = new FormData(e.currentTarget);
-    const movieId = formData.get("movie_id") as string;
-
-    try {
-      await updateFnbPurchase(linkingPurchase.id, {
-        movie_id: movieId === "none" ? null : movieId,
-      });
-
-      toast.success(movieId === "none" ? "Unlinked from movie" : "Linked to movie!");
-      setLinkingPurchase(null);
-      refetch();
-    } catch (error) {
-      toast.error("Failed to link F&B purchase");
-      console.error(error);
-    }
-  };
-
-  const handleDeleteFnbPurchase = async () => {
-    if (!deletingPurchase) return;
-
-    try {
-      await deleteFnbPurchase(deletingPurchase.id);
-      toast.success("F&B purchase deleted");
-      setDeletingPurchase(null);
-      refetch();
-    } catch (error) {
-      toast.error("Failed to delete F&B purchase");
-      console.error(error);
-    }
-  };
-
-  const isLoading = fnbLoading || moviesLoading;
-
-  const FnbForm = ({
-    purchase,
-    onSubmit,
-    isSubmitting,
-  }: {
-    purchase?: FnbPurchaseWithRelations;
-    onSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
-    isSubmitting: boolean;
-  }) => (
+// Hoisted out of FnbPage. Defined inline, this was a fresh component type on
+// every render of the page, so React remounted the whole form each time — and
+// because the gift-card amount input is controlled by giftCardUsage state,
+// every keystroke in it remounted the form and reset the date, cost and notes
+// fields, which are uncontrolled and fall back to their defaultValue. The
+// seven values it used to close over are props now.
+function FnbForm({
+  purchase,
+  onSubmit,
+  isSubmitting,
+  theaters,
+  giftCards,
+  giftCardUsage,
+  availableGiftCards,
+  addGiftCard,
+  updateGiftCardAmount,
+  removeGiftCard,
+}: {
+  purchase?: FnbPurchaseWithRelations;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  isSubmitting: boolean;
+  theaters: Theater[];
+  giftCards: GiftCardWithUsage[];
+  giftCardUsage: GiftCardUsageEntry[];
+  availableGiftCards: GiftCardWithUsage[];
+  addGiftCard: (giftCardId: string) => void;
+  updateGiftCardAmount: (giftCardId: string, amount: number) => void;
+  removeGiftCard: (giftCardId: string) => void;
+}) {
+  return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
         <Label htmlFor="date">Date</Label>
@@ -399,6 +225,205 @@ export default function FnbPage() {
       </Button>
     </form>
   );
+}
+
+export default function FnbPage() {
+  const { fnbPurchases, isLoading: fnbLoading, refetch } = useFnbPurchases();
+  const { theaters } = useLookupData();
+  const { movies, isLoading: moviesLoading } = useMovies();
+  const { giftCards } = useGiftCards();
+  const { createFnbPurchase, isLoading: isCreating } = useCreateFnbPurchase();
+  const { updateFnbPurchase, isLoading: isUpdating } = useUpdateFnbPurchase();
+  const { deleteFnbPurchase, isLoading: isDeleting } = useDeleteFnbPurchase();
+
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
+  const [deletingPurchase, setDeletingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
+  const [linkingPurchase, setLinkingPurchase] = useState<FnbPurchaseWithRelations | null>(null);
+  const [giftCardUsage, setGiftCardUsage] = useState<GiftCardUsageEntry[]>([]);
+  const [pickedYear, setPickedYear] = useState<YearFilterValue>(new Date().getFullYear());
+
+  const activeGiftCards = giftCards.filter(gc => gc.status === "active");
+  const availableGiftCards = activeGiftCards.filter(
+    gc => !giftCardUsage.some(u => u.gift_card_id === gc.id)
+  );
+
+  // Merge F&B from both sources
+  const allFnbEntries = useMemo(() => {
+    const entries: FnbEntry[] = [];
+
+    // From fnb_purchases table
+    fnbPurchases.forEach(p => {
+      entries.push({
+        id: p.id,
+        date: p.date,
+        items: p.items,
+        cost: p.cost,
+        theaterName: p.theater?.name,
+        movieTitle: p.movie?.title,
+        movieId: p.movie_id || undefined,
+        remarks: p.remarks,
+        source: "standalone",
+        purchase: p,
+      });
+    });
+
+    // From movies with fnb_cost > 0
+    movies.forEach(m => {
+      if (m.fnb_cost && m.fnb_cost > 0) {
+        entries.push({
+          id: `movie-${m.id}`,
+          date: m.date,
+          items: m.fnb_items || "F&B",
+          cost: m.fnb_cost,
+          theaterName: m.theater?.name,
+          movieTitle: m.title,
+          movieId: m.id,
+          remarks: null,
+          source: "movie",
+        });
+      }
+    });
+
+    // Sort by date descending
+    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [fnbPurchases, movies]);
+
+  const availableYears = useMemo(() => {
+    const years = [...new Set(allFnbEntries.map((entry) => new Date(entry.date).getFullYear()))].sort((a, b) => b - a);
+    return years.length > 0 ? years : [new Date().getFullYear()];
+  }, [allFnbEntries]);
+
+  // Derived rather than synced through an effect: if the picked year has no
+  // entries left, fall back to the newest year that does. The effect version
+  // rendered once with the dead year before correcting itself.
+  const selectedYear: YearFilterValue =
+    pickedYear !== "all" && !availableYears.includes(pickedYear)
+      ? availableYears[0]
+      : pickedYear;
+
+  const filteredFnbEntries = useMemo(() => {
+    return selectedYear === "all"
+      ? allFnbEntries
+      : allFnbEntries.filter((entry) => new Date(entry.date).getFullYear() === selectedYear);
+  }, [allFnbEntries, selectedYear]);
+
+  // Stats
+  const stats = useMemo(() => {
+    const totalSpend = filteredFnbEntries.reduce((sum, entry) => sum + entry.cost, 0);
+    const avgPerVisit = filteredFnbEntries.length > 0 ? totalSpend / filteredFnbEntries.length : 0;
+    return { totalSpend, count: filteredFnbEntries.length, avgPerVisit };
+  }, [filteredFnbEntries]);
+
+  const addGiftCard = (gcId: string) => {
+    const gc = giftCards.find(g => g.id === gcId);
+    if (gc) {
+      setGiftCardUsage(prev => [...prev, { gift_card_id: gcId, amount_used: gc.balance }]);
+    }
+  };
+
+  const removeGiftCard = (gcId: string) => {
+    setGiftCardUsage(prev => prev.filter(u => u.gift_card_id !== gcId));
+  };
+
+  const updateGiftCardAmount = (gcId: string, amount: number) => {
+    setGiftCardUsage(prev =>
+      prev.map(u => u.gift_card_id === gcId ? { ...u, amount_used: amount } : u)
+    );
+  };
+
+  const resetGiftCardUsage = () => {
+    setGiftCardUsage([]);
+  };
+
+  const handleCreateFnbPurchase = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const theaterId = formData.get("theater_id") as string;
+
+    try {
+      await createFnbPurchase({
+        user_id: "",
+        date: formData.get("date") as string,
+        theater_id: theaterId === "none" ? null : theaterId || null,
+        items: formData.get("items") as string,
+        cost: parseFloat(formData.get("cost") as string),
+        remarks: (formData.get("remarks") as string) || null,
+        movie_id: null,
+      }, giftCardUsage.length > 0 ? giftCardUsage : undefined);
+
+      toast.success("F&B purchase added!");
+      setIsAddDialogOpen(false);
+      resetGiftCardUsage();
+      refetch();
+    } catch (error) {
+      toast.error("Failed to add F&B purchase");
+      console.error(error);
+    }
+  };
+
+  const handleUpdateFnbPurchase = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingPurchase) return;
+
+    const formData = new FormData(e.currentTarget);
+    const theaterId = formData.get("theater_id") as string;
+
+    try {
+      await updateFnbPurchase(editingPurchase.id, {
+        date: formData.get("date") as string,
+        theater_id: theaterId === "none" ? null : theaterId || null,
+        items: formData.get("items") as string,
+        cost: parseFloat(formData.get("cost") as string),
+        remarks: (formData.get("remarks") as string) || null,
+      });
+
+      toast.success("F&B purchase updated!");
+      setEditingPurchase(null);
+      refetch();
+    } catch (error) {
+      toast.error("Failed to update F&B purchase");
+      console.error(error);
+    }
+  };
+
+  const handleLinkToMovie = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!linkingPurchase) return;
+
+    const formData = new FormData(e.currentTarget);
+    const movieId = formData.get("movie_id") as string;
+
+    try {
+      await updateFnbPurchase(linkingPurchase.id, {
+        movie_id: movieId === "none" ? null : movieId,
+      });
+
+      toast.success(movieId === "none" ? "Unlinked from movie" : "Linked to movie!");
+      setLinkingPurchase(null);
+      refetch();
+    } catch (error) {
+      toast.error("Failed to link F&B purchase");
+      console.error(error);
+    }
+  };
+
+  const handleDeleteFnbPurchase = async () => {
+    if (!deletingPurchase) return;
+
+    try {
+      await deleteFnbPurchase(deletingPurchase.id);
+      toast.success("F&B purchase deleted");
+      setDeletingPurchase(null);
+      refetch();
+    } catch (error) {
+      toast.error("Failed to delete F&B purchase");
+      console.error(error);
+    }
+  };
+
+  const isLoading = fnbLoading || moviesLoading;
+
 
   return (
     <div className="min-h-screen pb-20">
@@ -417,7 +442,17 @@ export default function FnbPage() {
           <DialogHeader>
             <DialogTitle>Add F&B Purchase</DialogTitle>
           </DialogHeader>
-          <FnbForm onSubmit={handleCreateFnbPurchase} isSubmitting={isCreating} />
+          <FnbForm
+            onSubmit={handleCreateFnbPurchase}
+            isSubmitting={isCreating}
+            theaters={theaters}
+            giftCards={giftCards}
+            giftCardUsage={giftCardUsage}
+            availableGiftCards={availableGiftCards}
+            addGiftCard={addGiftCard}
+            updateGiftCardAmount={updateGiftCardAmount}
+            removeGiftCard={removeGiftCard}
+          />
         </DialogContent>
       </Dialog>
 
@@ -432,6 +467,13 @@ export default function FnbPage() {
               purchase={editingPurchase}
               onSubmit={handleUpdateFnbPurchase}
               isSubmitting={isUpdating}
+              theaters={theaters}
+              giftCards={giftCards}
+              giftCardUsage={giftCardUsage}
+              availableGiftCards={availableGiftCards}
+              addGiftCard={addGiftCard}
+              updateGiftCardAmount={updateGiftCardAmount}
+              removeGiftCard={removeGiftCard}
             />
           )}
         </DialogContent>
@@ -492,7 +534,7 @@ export default function FnbPage() {
       </AlertDialog>
 
       <div className="p-4 space-y-5">
-        <YearFilter years={availableYears} value={selectedYear} onChange={setSelectedYear} />
+        <YearFilter years={availableYears} value={selectedYear} onChange={setPickedYear} />
 
         {/* Year Stats */}
         {!isLoading && filteredFnbEntries.length > 0 && (

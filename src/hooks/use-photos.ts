@@ -9,10 +9,12 @@ const supabase = createClient();
 export function useMoviePhotos(movieId: string) {
   const [photos, setPhotos] = useState<(MoviePhoto & { url: string })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPhotos = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const { data, error } = await supabase
         .from("movie_photos")
         .select("*")
@@ -32,6 +34,11 @@ export function useMoviePhotos(movieId: string) {
       );
 
       setPhotos(photosWithUrls);
+    } catch (caught) {
+      // Runs from an effect: an escaping rejection is unhandled and shows up
+      // only as a console exception on the page.
+      setError(caught instanceof Error ? caught.message : "Failed to load photos");
+      setPhotos([]);
     } finally {
       setIsLoading(false);
     }
@@ -41,7 +48,7 @@ export function useMoviePhotos(movieId: string) {
     if (movieId) fetchPhotos();
   }, [movieId, fetchPhotos]);
 
-  return { photos, isLoading, refetch: fetchPhotos };
+  return { photos, isLoading, error, refetch: fetchPhotos };
 }
 
 export function useUploadPhoto() {

@@ -449,7 +449,7 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
                   </Link>
                 </span>
               )}
-              {movie.composer && movie.cinematographer && <span> \u2022 </span>}
+              {movie.composer && movie.cinematographer && <span> • </span>}
               {movie.cinematographer && (
                 <span>
                   DOP:{" "}
@@ -801,7 +801,7 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
                   return (
                     <div key={mgc.id} className="flex justify-between text-positive">
                       <span>
-                        {(mgc as any).purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}{" "}
+                        {mgc.purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}{" "}
                         {discount > 0 && `${discount.toFixed(0)}% off on ${formatCurrency(mgc.amount_used)}`}
                       </span>
                       <span>-{formatCurrency(savings)}</span>
@@ -835,7 +835,7 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
                   {gcUsages.map((mgc) => (
                     <div key={mgc.id} className="flex justify-between">
                       <span className="text-muted-foreground">
-                        {(mgc as any).purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}
+                        {mgc.purpose === "fnb" ? "GC (F&B)" : "GC (Movie)"}
                       </span>
                       <span>{formatCurrency(mgc.amount_used)}</span>
                     </div>

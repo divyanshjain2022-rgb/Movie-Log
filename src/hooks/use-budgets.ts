@@ -9,18 +9,26 @@ const supabase = createClient();
 export function useBudgets() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchBudgets = useCallback(async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase
+      setError(null);
+      const { data, error: queryError } = await supabase
         .from("budgets")
         .select("*")
         .order("year", { ascending: false })
         .order("month", { ascending: false });
 
-      if (error) throw error;
+      if (queryError) throw queryError;
       setBudgets(data || []);
+    } catch (caught) {
+      // This runs from an effect, so an escaping rejection is unhandled and
+      // only ever showed up as a console exception on the dashboard. Record
+      // it instead and let the caller decide whether to say anything.
+      setError(caught instanceof Error ? caught.message : "Failed to load budgets");
+      setBudgets([]);
     } finally {
       setIsLoading(false);
     }
@@ -30,7 +38,7 @@ export function useBudgets() {
     fetchBudgets();
   }, [fetchBudgets]);
 
-  return { budgets, isLoading, refetch: fetchBudgets };
+  return { budgets, isLoading, error, refetch: fetchBudgets };
 }
 
 export function useBudget(month: number, year: number) {
@@ -50,6 +58,9 @@ export function useBudget(month: number, year: number) {
 
         if (error) throw error;
         setBudget(data);
+      } catch {
+        // No budget is a legitimate state; a failed read renders the same way.
+        setBudget(null);
       } finally {
         setIsLoading(false);
       }

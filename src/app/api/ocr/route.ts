@@ -170,6 +170,40 @@ function stripDataUri(data: string): string {
 // Edge Runtime: 30s timeout on Hobby (vs 10s for Node.js serverless)
 export const runtime = "edge";
 
+/**
+ * The raw shape Gemini is asked to return for a ticket, which is not the same
+ * as TicketOCRData — that is what this route returns after normalising names
+ * and folding the pricing block into two numbers. Every field is optional
+ * because a model reading a photo can omit any of them.
+ */
+interface GeminiTicketResponse {
+  movie_title?: string | null;
+  show_date?: string | null;
+  show_time?: string | null;
+  theater_name?: string | null;
+  audi?: string | null;
+  seat_number?: string | null;
+  booking_id?: string | null;
+  formats?: string[] | null;
+  pricing?: {
+    admin_base?: number | null;
+    format_charge?: number | null;
+    service_charge?: number | null;
+    cgst?: number | null;
+    sgst?: number | null;
+    ticket_total?: number | null;
+    convenience_fee_total?: number | null;
+    grand_total?: number | null;
+    amount_paid?: number | null;
+  } | null;
+}
+
+/** Gemini surfaces the HTTP status under one of two names depending on path. */
+function apiStatusOf(error: unknown): { status: number | undefined; message: string } {
+  const e = (error || {}) as { status?: number; httpStatusCode?: number; message?: string };
+  return { status: e.status ?? e.httpStatusCode, message: e.message || "" };
+}
+
 const MODEL_PRIORITY = [
   "gemini-3.7-flash",
   "gemini-3.6-flash",
@@ -235,9 +269,8 @@ export async function POST(request: NextRequest) {
         });
         usedModel = model;
         break; // Success — stop trying other models
-      } catch (apiError: any) {
-        const status = apiError?.status || apiError?.httpStatusCode;
-        const message = apiError?.message || "";
+      } catch (apiError: unknown) {
+        const { status, message } = apiStatusOf(apiError);
         console.error(`[OCR] ${model} failed:`, status, message.substring(0, 200));
 
         // Only retry on quota/rate limit errors (429) or unavailable (503)
@@ -262,7 +295,7 @@ export async function POST(request: NextRequest) {
     console.log(`[OCR] Model used: ${usedModel}`);
     console.log("[OCR] Raw response:", textResponse.substring(0, 800));
 
-    let geminiData: any;
+    let geminiData: GeminiTicketResponse;
     try {
       const jsonStr = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
       geminiData = JSON.parse(jsonStr);
@@ -316,10 +349,10 @@ export async function POST(request: NextRequest) {
     console.log("[OCR] Final output:", JSON.stringify(ticketData, null, 2));
 
     return NextResponse.json(ticketData);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[OCR] Error:", error);
     return NextResponse.json(
-      { error: `OCR Processing Failed: ${error.message || "Unknown error"}` },
+      { error: `OCR Processing Failed: ${error instanceof Error ? error.message : "Unknown error"}` },
       { status: 500 }
     );
   }

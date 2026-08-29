@@ -204,7 +204,7 @@ export function ShareableCard({ movie, children }: ShareableCardProps) {
                         {movie.rating.toFixed(1)}
                       </span>
                       <span className="text-sm text-white/70">
-                        / 10 \u2022 {getRatingLabel(movie.rating)}
+                        / 10 • {getRatingLabel(movie.rating)}
                       </span>
                     </div>
                   )}

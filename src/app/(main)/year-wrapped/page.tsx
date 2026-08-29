@@ -26,6 +26,43 @@ import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import { tmdbImage } from "@/lib/tmdb-image";
 
+// Hoisted out of the page component: defined inline it was a new component
+// type on every render, so React unmounted and remounted all seven cards each
+// time the year filter or the data changed, throwing away their DOM state.
+function StatCard({
+    icon: Icon,
+    label,
+    value,
+    subValue,
+    accent = false,
+}: {
+    icon: React.ElementType;
+    label: string;
+    value: string | number;
+    subValue?: string;
+    accent?: boolean;
+}) {
+    return (
+        <Card className={cn(accent && "border-primary/50 bg-primary/5")}>
+            <CardContent className="flex items-center gap-4 p-4">
+                <div
+                    className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-full",
+                        accent ? "bg-primary text-primary-foreground" : "bg-secondary"
+                    )}
+                >
+                    <Icon className="h-6 w-6" />
+                </div>
+                <div>
+                    <p className="text-sm text-muted-foreground">{label}</p>
+                    <p className="text-2xl font-bold">{value}</p>
+                    {subValue && <p className="text-sm text-muted-foreground">{subValue}</p>}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
 export default function YearWrappedPage() {
     const { movies, isLoading: moviesLoading } = useMovies();
     const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
@@ -266,37 +303,6 @@ export default function YearWrappedPage() {
     const runtimeHours = Math.floor(stats.totalRuntime / 60);
     const runtimeMins = stats.totalRuntime % 60;
 
-    const StatCard = ({
-        icon: Icon,
-        label,
-        value,
-        subValue,
-        accent = false,
-    }: {
-        icon: React.ElementType;
-        label: string;
-        value: string | number;
-        subValue?: string;
-        accent?: boolean;
-    }) => (
-        <Card className={cn(accent && "border-primary/50 bg-primary/5")}>
-            <CardContent className="flex items-center gap-4 p-4">
-                <div
-                    className={cn(
-                        "flex h-12 w-12 items-center justify-center rounded-full",
-                        accent ? "bg-primary text-primary-foreground" : "bg-secondary"
-                    )}
-                >
-                    <Icon className="h-6 w-6" />
-                </div>
-                <div>
-                    <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="text-2xl font-bold">{value}</p>
-                    {subValue && <p className="text-sm text-muted-foreground">{subValue}</p>}
-                </div>
-            </CardContent>
-        </Card>
-    );
 
     return (
         <div className="min-h-screen">

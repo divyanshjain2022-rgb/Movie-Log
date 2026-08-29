@@ -9,10 +9,12 @@ const supabase = createClient();
 export function useCompanions() {
   const [companions, setCompanions] = useState<Companion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchCompanions = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const { data, error } = await supabase
         .from("companions")
         .select("*")
@@ -20,6 +22,11 @@ export function useCompanions() {
 
       if (error) throw error;
       setCompanions(data || []);
+    } catch (caught) {
+      // Runs from an effect: an escaping rejection is unhandled and shows up
+      // only as a console exception on the page.
+      setError(caught instanceof Error ? caught.message : "Failed to load companions");
+      setCompanions([]);
     } finally {
       setIsLoading(false);
     }
@@ -29,7 +36,7 @@ export function useCompanions() {
     fetchCompanions();
   }, [fetchCompanions]);
 
-  return { companions, isLoading, refetch: fetchCompanions };
+  return { companions, isLoading, error, refetch: fetchCompanions };
 }
 
 export function useCreateCompanion() {

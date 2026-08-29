@@ -3,22 +3,23 @@
 import Link from "next/link";
 import { CreditCard, AlertTriangle, Plus, ChevronRight } from "lucide-react";
 import { formatCurrency } from "@/lib/formula";
+import { daysUntil } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import type { GiftCardWithUsage } from "@/types";
 
 interface GCStatusProps {
   giftCards: GiftCardWithUsage[];
+  /** Server-rendered timestamp; see HomeData.now. */
+  now: number;
 }
 
-export function GCStatus({ giftCards }: GCStatusProps) {
+export function GCStatus({ giftCards, now }: GCStatusProps) {
   const activeCards = giftCards.filter((gc) => gc.status === "active");
   const totalBalance = activeCards.reduce((sum, gc) => sum + gc.balance, 0);
   const expiringSoonCards = activeCards
     .map((gc) => ({
       ...gc,
-      daysLeft: Math.ceil(
-        (new Date(gc.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      ),
+      daysLeft: daysUntil(gc.expiry_date, now),
     }))
     .filter((gc) => gc.daysLeft <= 30 && gc.daysLeft > 0);
 

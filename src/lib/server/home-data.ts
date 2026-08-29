@@ -24,6 +24,13 @@ export interface HomeMovie {
 }
 
 export interface HomeData {
+  /**
+   * The moment this payload was built, from the server clock. Anything
+   * date-derived in the client tree renders from this instead of reading the
+   * clock during render, which would disagree between the server HTML and
+   * hydration and drift on every re-render.
+   */
+  now: number;
   movies: HomeMovie[];
   giftCards: GiftCardWithUsage[];
   pendingWatchlistCount: number;
@@ -91,6 +98,7 @@ export async function getHomeData(): Promise<HomeData> {
     ]);
 
   return {
+    now: now.getTime(),
     movies: (movies.data || []) as unknown as HomeMovie[],
     giftCards: withUsage(
       (cards.data || []) as Array<GiftCard & { platform: Platform | null }>,

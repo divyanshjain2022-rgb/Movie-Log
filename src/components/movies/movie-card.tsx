@@ -23,7 +23,7 @@ export const DEFAULT_COST_COMPONENTS: CostComponents = {
 };
 
 function getCustomCost(movie: ListMovie, components: CostComponents): number {
-  const m = movie as any;
+  const m = movie;
   let cost = 0;
   if (components.ticket) cost += m.ticket_cost || 0;
   if (components.bookingFee) cost += m.convenience_fee || 0;
@@ -32,7 +32,7 @@ function getCustomCost(movie: ListMovie, components: CostComponents): number {
 
   // Always subtract passport savings and GC discounts from active components
   cost -= m.passport_savings || 0;
-  const gcSavings = (m.movie_gift_cards || []).reduce((sum: number, mgc: any) => {
+  const gcSavings = (m.movie_gift_cards || []).reduce((sum, mgc) => {
     const discount = mgc.gift_card?.discount_percent || 0;
     return sum + mgc.amount_used * (discount / 100);
   }, 0);
@@ -50,7 +50,7 @@ interface MovieCardProps {
 export function MovieCard({ movie, variant = "default", costComponents }: MovieCardProps) {
   const displayCost = costComponents
     ? getCustomCost(movie, costComponents)
-    : getEffectiveCost(movie as any);
+    : getEffectiveCost(movie);
 
   if (variant === "compact") {
     return (

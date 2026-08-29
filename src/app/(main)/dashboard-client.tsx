@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Film, Sparkles, Calendar, ListTodo } from "lucide-react";
 import {
@@ -17,6 +17,7 @@ import type { HomeData, HomeMovie } from "@/lib/server/home-data";
 type CostMode = "ticket" | "ticket_fnb" | "all";
 
 export function DashboardClient({
+  now,
   movies,
   giftCards,
   pendingWatchlistCount,
@@ -24,7 +25,9 @@ export function DashboardClient({
   passportCostTotal,
 }: HomeData) {
   const [costMode, setCostMode] = useState<CostMode>("all");
-  const [year, setYear] = useState<YearFilterValue>(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<YearFilterValue>(() =>
+    new Date(now).getFullYear()
+  );
 
   const getMovieCost = (m: HomeMovie, mode: CostMode) => {
     // GC discount savings
@@ -40,6 +43,20 @@ export function DashboardClient({
     const other = m.other_expenses || 0;
     return Math.max(ticket + fnb + other, 0);
   };
+
+  const availableYears = useMemo(() => {
+    const years = [...new Set(movies.map((m) => new Date(m.date).getFullYear()))].sort((a, b) => b - a);
+    return years.length > 0 ? years : [new Date(now).getFullYear()];
+  }, [movies, now]);
+
+  // Derived, not synced: if the selected year has no movies left in it (the
+  // last one was deleted, or the data changed underneath), fall back to the
+  // most recent year that does. An effect + setState rendered once with the
+  // dead year first and is what React 19 flags here.
+  const year: YearFilterValue =
+    selectedYear !== "all" && !availableYears.includes(selectedYear)
+      ? availableYears[0]
+      : selectedYear;
 
   const stats = useMemo(() => {
     const yearMovies = year === "all"
@@ -81,17 +98,6 @@ export function DashboardClient({
       .slice(0, 5);
   }, [movies]);
 
-  const availableYears = useMemo(() => {
-    const years = [...new Set(movies.map((m) => new Date(m.date).getFullYear()))].sort((a, b) => b - a);
-    return years.length > 0 ? years : [new Date().getFullYear()];
-  }, [movies]);
-
-  useEffect(() => {
-    if (year !== "all" && !availableYears.includes(year)) {
-      setYear(availableYears[0]);
-    }
-  }, [availableYears, year]);
-
   const yearLabel = year === "all" ? "All Time" : String(year);
 
   return (
@@ -115,7 +121,7 @@ export function DashboardClient({
 
       {/* Year + Cost Mode */}
       <div className="px-4 pt-3 space-y-2">
-        <YearFilter years={availableYears} value={year} onChange={setYear} />
+        <YearFilter years={availableYears} value={year} onChange={setSelectedYear} />
         <div className="flex rounded-xl bg-secondary/50 p-1">
           {([
             { key: "ticket" as CostMode, label: "Ticket" },
@@ -252,7 +258,7 @@ export function DashboardClient({
               Manage
             </Link>
           </div>
-          <GCStatus giftCards={giftCards} />
+          <GCStatus giftCards={giftCards} now={now} />
         </section>
 
         {/* Year Wrapped CTA */}

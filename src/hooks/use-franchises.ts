@@ -9,10 +9,12 @@ const supabase = createClient();
 export function useFranchises() {
   const [franchises, setFranchises] = useState<Franchise[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchFranchises = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const { data, error } = await supabase
         .from("franchises")
         .select("*")
@@ -20,6 +22,11 @@ export function useFranchises() {
 
       if (error) throw error;
       setFranchises(data || []);
+    } catch (caught) {
+      // Runs from an effect: an escaping rejection is unhandled and shows up
+      // only as a console exception on the page.
+      setError(caught instanceof Error ? caught.message : "Failed to load franchises");
+      setFranchises([]);
     } finally {
       setIsLoading(false);
     }
@@ -29,7 +36,7 @@ export function useFranchises() {
     fetchFranchises();
   }, [fetchFranchises]);
 
-  return { franchises, isLoading, refetch: fetchFranchises };
+  return { franchises, isLoading, error, refetch: fetchFranchises };
 }
 
 export function useFranchise(id: string) {
