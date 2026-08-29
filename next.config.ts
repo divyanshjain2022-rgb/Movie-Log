@@ -19,6 +19,29 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async headers() {
+    return [
+      {
+        // A cached service worker is a stuck service worker: the browser would
+        // keep serving the old policy long after a deploy replaced it.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+      {
+        source: "/manifest.webmanifest",
+        headers: [{ key: "Cache-Control", value: "public, max-age=3600" }],
+      },
+      {
+        // Content-hashed filenames, so this is safe and saves a revalidation
+        // round trip on every repeat visit.
+        source: "/:icon(icon-192|icon-512|icon-maskable-512|apple-icon-180|favicon-96).png",
+        headers: [{ key: "Cache-Control", value: "public, max-age=604800, immutable" }],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

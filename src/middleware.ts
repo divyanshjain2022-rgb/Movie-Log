@@ -73,6 +73,11 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
     matcher: [
-        "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+        // sw.js, manifest.webmanifest and offline.html are excluded because
+        // this middleware answers an unauthenticated request with a redirect
+        // to /login. A browser asking for the manifest would get an HTML login
+        // page and refuse to install the app; a service worker fetched as HTML
+        // never registers at all.
+        "/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|offline\\.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
     ],
 };
