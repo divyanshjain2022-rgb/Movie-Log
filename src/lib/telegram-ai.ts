@@ -1,16 +1,9 @@
-// Conversational layer for the Telegram bot: an open-weight model on Hetzner's
-// inference API with function calling over the app's own data (log, gift cards,
-// live PVR picks, stats), plus natural-language actions (rate a movie, add to
-// watchlist). Short rolling history lives in bot_state so follow-ups work.
+// Conversational layer for the Telegram bot: Gemini with function calling
+// over the app's own data (log, gift cards, live PVR picks, stats), plus
+// natural-language actions (rate a movie, add to watchlist). Short rolling
+// history lives in bot_state so follow-ups work.
 
-import {
-  CHAT_MODEL,
-  chatCompletion,
-  InferenceError,
-  messageText,
-  type ChatMessage,
-  type ToolDefinition,
-} from "@/lib/inference";
+import { GoogleGenAI, ThinkingLevel, Type, type FunctionDeclaration } from "@google/genai";
 import {
   getBotState,
   istDateString,
@@ -22,6 +15,16 @@ import {
 import { calculateValueScore, DEFAULT_FORMULA_PARAMS, getValueTier } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
 
+// Free-tier Gemini quotas are per-model per-day (a flash model allows only 20
+// requests/day), so exhausting one model falls through to the next. Newest
+// first: each step down is a real capability drop, and the daily budget is
+// four models deep rather than one model wide.
+const MODELS = [
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+];
 const HISTORY_KEY = "chat_history";
 const MAX_HISTORY_TURNS = 16;
 
@@ -743,198 +746,162 @@ async function toolAddToWatchlist(args: { title: string }): Promise<unknown> {
   return error ? { error: error.message } : { added: args.title };
 }
 
-const TOOLS: ToolDefinition[] = [
+const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
-    type: "function",
-    function: {
-      name: "get_recommendations",
-      description:
-        "Live PVR Lucknow data: personalized now-showing picks (predicted rating for the user, showtimes, prices, value scores, hall occupancy, booking links) and upcoming releases. Returns showtimes ONLY for one date (default today) — for 'tomorrow'/weekend questions you MUST pass date. For IMAX/4DX/3D/Dolby questions pass format so premium shows aren't ranked out.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Optional title filter" },
-          date: {
-            type: "string",
-            description:
-              "Show date YYYY-MM-DD. Omit for today. Compute from today's date for words like tomorrow/Saturday.",
-          },
-          format: {
-            type: "string",
-            description:
-              "Filter shows to a format, substring match: IMAX, 4DX, 3D, 2D, EPIQ, Dolby. Omit for all formats.",
-          },
-          language: { type: "string", description: "Filter by language, e.g. Hindi, English. Omit for all." },
-          time: {
-            type: "string",
-            description: "Time window HH:MM-HH:MM (24h), e.g. 18:00-24:00 for evening. Omit for all day.",
-          },
+    name: "get_recommendations",
+    description:
+      "Live PVR Lucknow data: personalized now-showing picks (predicted rating for the user, showtimes, prices, value scores, hall occupancy, booking links) and upcoming releases. Returns showtimes ONLY for one date (default today) — for 'tomorrow'/weekend questions you MUST pass date. For IMAX/4DX/3D/Dolby questions pass format so premium shows aren't ranked out.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: "Optional title filter" },
+        date: {
+          type: Type.STRING,
+          description:
+            "Show date YYYY-MM-DD. Omit for today. Compute from today's date for words like tomorrow/Saturday.",
+        },
+        format: {
+          type: Type.STRING,
+          description:
+            "Filter shows to a format, substring match: IMAX, 4DX, 3D, 2D, EPIQ, Dolby. Omit for all formats.",
+        },
+        language: { type: Type.STRING, description: "Filter by language, e.g. Hindi, English. Omit for all." },
+        time: {
+          type: Type.STRING,
+          description: "Time window HH:MM-HH:MM (24h), e.g. 18:00-24:00 for evening. Omit for all day.",
         },
       },
     },
   },
   {
-    type: "function",
-    function: {
-      name: "get_gift_cards",
-      description: "The user's gift cards: remaining balance, discount percent, expiry date.",
-      parameters: { type: "object", properties: {} },
-    },
+    name: "get_gift_cards",
+    description: "The user's gift cards: remaining balance, discount percent, expiry date.",
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
-    type: "function",
-    function: {
-      name: "get_recent_movies",
-      description: "The user's movie log, newest first: title, date, rating, value score, cost, theater, format.",
-      parameters: {
-        type: "object",
-        properties: {
-          limit: { type: "number", description: "Max rows (default 25, max 100)" },
-          since: { type: "string", description: "Only movies on/after this date (YYYY-MM-DD)" },
-          until: { type: "string", description: "Only movies on/before this date (YYYY-MM-DD). Use since+until together for month/week questions." },
-        },
+    name: "get_recent_movies",
+    description: "The user's movie log, newest first: title, date, rating, value score, cost, theater, format.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        limit: { type: Type.NUMBER, description: "Max rows (default 25, max 100)" },
+        since: { type: Type.STRING, description: "Only movies on/after this date (YYYY-MM-DD)" },
+        until: { type: Type.STRING, description: "Only movies on/before this date (YYYY-MM-DD). Use since+until together for month/week questions." },
       },
     },
   },
   {
-    type: "function",
-    function: {
-      name: "get_stats",
-      description: "Aggregates over the log: movie count, total/F&B spend, gift-card savings, average rating, top genres. Optionally for one year.",
-      parameters: {
-        type: "object",
-        properties: { year: { type: "number", description: "Calendar year, omit for all-time" } },
+    name: "get_stats",
+    description: "Aggregates over the log: movie count, total/F&B spend, gift-card savings, average rating, top genres. Optionally for one year.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { year: { type: Type.NUMBER, description: "Calendar year, omit for all-time" } },
+    },
+  },
+  {
+    name: "log_movie",
+    description:
+      "Log a WATCHED movie from conversation with everything known: title (required), date (YYYY-MM-DD), showtime (HH:MM 24h), theater name, format (2D/IMAX 2D/...), ticket_cost, convenience_fee, fnb_cost + fnb_items, other_expenses, seat, audi, rating, review. Optionally link a gift card: gc_amount_used + gc_purpose ('ticket'|'fnb') + gc_face_value to pick the card. Enriches from TMDB automatically.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        date: { type: Type.STRING },
+        showtime: { type: Type.STRING },
+        theater: { type: Type.STRING },
+        format: { type: Type.STRING },
+        ticket_cost: { type: Type.NUMBER },
+        convenience_fee: { type: Type.NUMBER },
+        fnb_cost: { type: Type.NUMBER },
+        fnb_items: { type: Type.STRING },
+        other_expenses: { type: Type.NUMBER },
+        seat: { type: Type.STRING },
+        audi: { type: Type.STRING },
+        rating: { type: Type.NUMBER },
+        review: { type: Type.STRING },
+        gc_amount_used: { type: Type.NUMBER },
+        gc_purpose: { type: Type.STRING },
+        gc_face_value: { type: Type.NUMBER },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "get_movie_details",
+    description: "Full details of one logged movie by title: review, remarks, all costs, seat, occupancy, value score, gift-card usage.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { title: { type: Type.STRING } },
+      required: ["title"],
+    },
+  },
+  {
+    name: "update_movie",
+    description:
+      "Edit a logged movie (matched by title). Editable: rating, review, remarks, fnb_cost, other_expenses, ticket_cost, convenience_fee, seat, audi, showtime (HH:MM), date (YYYY-MM-DD), format (by name, e.g. IMAX 2D), theater (by name). Value score recomputes automatically. Every change is audit-logged and reversible via undo_last_edit.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        rating: { type: Type.NUMBER },
+        review: { type: Type.STRING },
+        remarks: { type: Type.STRING },
+        fnb_cost: { type: Type.NUMBER },
+        other_expenses: { type: Type.NUMBER },
+        ticket_cost: { type: Type.NUMBER },
+        convenience_fee: { type: Type.NUMBER },
+        seat: { type: Type.STRING },
+        audi: { type: Type.STRING },
+        showtime: { type: Type.STRING },
+        date: { type: Type.STRING },
+        format: { type: Type.STRING, description: "Format name, e.g. 2D, 3D, IMAX 2D, IMAX 3D, 4DX, Dolby Atmos" },
+        theater: { type: Type.STRING, description: "Theater name to reassign the movie to" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "get_watchlist",
+    description: "The user's unwatched watchlist with priorities and release dates.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "update_gift_card",
+    description: "Edit a gift card matched by face value and/or platform: set amount_paid (actual purchase price, for discount tracking) or expiry_date.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        face_value: { type: Type.NUMBER },
+        platform: { type: Type.STRING },
+        amount_paid: { type: Type.NUMBER },
+        expiry_date: { type: Type.STRING },
       },
     },
   },
   {
-    type: "function",
-    function: {
-      name: "log_movie",
-      description:
-        "Log a WATCHED movie from conversation with everything known: title (required), date (YYYY-MM-DD), showtime (HH:MM 24h), theater name, format (2D/IMAX 2D/...), ticket_cost, convenience_fee, fnb_cost + fnb_items, other_expenses, seat, audi, rating, review. Optionally link a gift card: gc_amount_used + gc_purpose ('ticket'|'fnb') + gc_face_value to pick the card. Enriches from TMDB automatically.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          date: { type: "string" },
-          showtime: { type: "string" },
-          theater: { type: "string" },
-          format: { type: "string" },
-          ticket_cost: { type: "number" },
-          convenience_fee: { type: "number" },
-          fnb_cost: { type: "number" },
-          fnb_items: { type: "string" },
-          other_expenses: { type: "number" },
-          seat: { type: "string" },
-          audi: { type: "string" },
-          rating: { type: "number" },
-          review: { type: "string" },
-          gc_amount_used: { type: "number" },
-          gc_purpose: { type: "string" },
-          gc_face_value: { type: "number" },
-        },
-        required: ["title"],
+    name: "undo_last_edit",
+    description: "Revert the most recent edit the bot made (any table), restoring previous values from the audit log.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "rate_movie",
+    description: "Save the user's rating (1-10, halves allowed) for a logged movie, matched by title. Also recomputes its value score.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        rating: { type: Type.NUMBER },
       },
+      required: ["title", "rating"],
     },
   },
   {
-    type: "function",
-    function: {
-      name: "get_movie_details",
-      description: "Full details of one logged movie by title: review, remarks, all costs, seat, occupancy, value score, gift-card usage.",
-      parameters: {
-        type: "object",
-        properties: { title: { type: "string" } },
-        required: ["title"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "update_movie",
-      description:
-        "Edit a logged movie (matched by title). Editable: rating, review, remarks, fnb_cost, other_expenses, ticket_cost, convenience_fee, seat, audi, showtime (HH:MM), date (YYYY-MM-DD), format (by name, e.g. IMAX 2D), theater (by name). Value score recomputes automatically. Every change is audit-logged and reversible via undo_last_edit.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          rating: { type: "number" },
-          review: { type: "string" },
-          remarks: { type: "string" },
-          fnb_cost: { type: "number" },
-          other_expenses: { type: "number" },
-          ticket_cost: { type: "number" },
-          convenience_fee: { type: "number" },
-          seat: { type: "string" },
-          audi: { type: "string" },
-          showtime: { type: "string" },
-          date: { type: "string" },
-          format: { type: "string", description: "Format name, e.g. 2D, 3D, IMAX 2D, IMAX 3D, 4DX, Dolby Atmos" },
-          theater: { type: "string", description: "Theater name to reassign the movie to" },
-        },
-        required: ["title"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_watchlist",
-      description: "The user's unwatched watchlist with priorities and release dates.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "update_gift_card",
-      description: "Edit a gift card matched by face value and/or platform: set amount_paid (actual purchase price, for discount tracking) or expiry_date.",
-      parameters: {
-        type: "object",
-        properties: {
-          face_value: { type: "number" },
-          platform: { type: "string" },
-          amount_paid: { type: "number" },
-          expiry_date: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "undo_last_edit",
-      description: "Revert the most recent edit the bot made (any table), restoring previous values from the audit log.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "rate_movie",
-      description: "Save the user's rating (1-10, halves allowed) for a logged movie, matched by title. Also recomputes its value score.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          rating: { type: "number" },
-        },
-        required: ["title", "rating"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "add_to_watchlist",
-      description: "Add a movie title to the user's watchlist.",
-      parameters: {
-        type: "object",
-        properties: { title: { type: "string" } },
-        required: ["title"],
-      },
+    name: "add_to_watchlist",
+    description: "Add a movie title to the user's watchlist.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { title: { type: Type.STRING } },
+      required: ["title"],
     },
   },
 ];
@@ -960,9 +927,16 @@ interface HistoryTurn {
 }
 
 export async function converse(userText: string): Promise<string> {
-  if (!process.env.HETZNER_API_KEY) return "AI isn't configured (missing HETZNER_API_KEY).";
+  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+  if (!apiKey) return "AI isn't configured (missing GOOGLE_CLOUD_API_KEY).";
+  const ai = new GoogleGenAI({ apiKey });
 
   const history = (await getBotState<HistoryTurn[]>(HISTORY_KEY)) || [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contents: any[] = [
+    ...history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+    { role: "user", parts: [{ text: userText }] },
+  ];
 
   currentUserMessage = userText;
   const systemInstruction = [
@@ -982,74 +956,77 @@ export async function converse(userText: string): Promise<string> {
     "You may include a bare booking URL when recommending a specific show.",
   ].join("\n");
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: systemInstruction },
-    ...history.map((turn) => ({
-      role: (turn.role === "model" ? "assistant" : "user") as "assistant" | "user",
-      content: turn.text,
-    })),
-    { role: "user", content: userText },
-  ];
-
   let finalText = "";
+  let modelIndex = 0;
   for (let round = 0; round < 6; round += 1) {
-    let response;
+    const model = MODELS[modelIndex];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let response: any;
     try {
-      response = await chatCompletion({
-        model: CHAT_MODEL,
-        messages,
-        tools: TOOLS,
-        temperature: 0.2,
+      response = await ai.models.generateContent({
+        model,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+          tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+          // Every model in MODELS is a 3.x, which all take thinkingLevel;
+          // a 2.x entry would reject it and need a guard here again.
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        },
+        contents,
       });
     } catch (error) {
-      if (error instanceof InferenceError && error.status === 429) {
-        return "The inference API is rate-limited right now — try again in a minute. The buttons and /tonight, /gc, /recap still work.";
+      const status = (error as { status?: number })?.status;
+      // 429 = that model's daily free-tier quota is gone. 503 = the model is
+      // overloaded, which is routine on a just-released model: gemini-3.7-flash
+      // answered 503 "experiencing high demand" on 2 of 3 calls the day it was
+      // added here. Both mean "this model can't serve the turn", so both step
+      // down the chain rather than failing the whole message.
+      const recoverable = status === 429 || status === 503 || status === 500;
+      if (recoverable && modelIndex < MODELS.length - 1) {
+        // Switch model and restart the conversation turn cleanly — thought
+        // signatures don't transfer between models.
+        modelIndex += 1;
+        contents.length = 0;
+        contents.push(
+          ...history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+          { role: "user", parts: [{ text: userText }] }
+        );
+        continue;
       }
-      if (error instanceof InferenceError && error.status >= 500) {
-        return "The inference API is having a moment — try again shortly. The buttons and /tonight, /gc, /recap still work.";
+      if (status === 429) {
+        return "Gemini's free-tier quota is exhausted for today — the buttons and /tonight, /gc, /recap still work. Chat resets at midnight PT (or enable billing on the Google AI key for effectively unlimited use).";
+      }
+      if (recoverable) {
+        return "Every Gemini model is busy or rate-limited right now — try again in a minute. The buttons and /tonight, /gc, /recap still work.";
       }
       throw error;
     }
 
-    const message = response.choices?.[0]?.message;
-    const calls = message?.tool_calls;
-    if (message && calls && calls.length > 0) {
-      // Echo the assistant turn back verbatim: the tool results that follow are
-      // matched to it by tool_call_id.
-      messages.push({ role: "assistant", content: message.content ?? "", tool_calls: calls });
+    const calls = response.functionCalls;
+    const modelContent = response.candidates?.[0]?.content;
+    if (calls && calls.length > 0 && modelContent) {
+      // Echo the model's own content back verbatim — Gemini 3 requires the
+      // thoughtSignature attached to each functionCall part to be preserved.
+      contents.push(modelContent);
+      const responseParts = [];
       for (const call of calls) {
-        const impl = TOOL_IMPL[call.function?.name || ""];
-        // Arguments arrive as a JSON string and are not guaranteed to parse.
-        let args: Record<string, unknown> | null = {};
-        try {
-          args = call.function?.arguments
-            ? (JSON.parse(call.function.arguments) as Record<string, unknown>)
-            : {};
-        } catch {
-          args = null;
-        }
+        const impl = TOOL_IMPL[call.name || ""];
         let result: unknown;
-        if (!args) {
-          result = { error: "the arguments for that call weren't valid JSON — retry" };
-        } else if (!impl) {
-          result = { error: `unknown tool ${call.function?.name}` };
-        } else {
-          try {
-            result = await impl(args as never);
-          } catch (error) {
-            result = { error: error instanceof Error ? error.message : "tool failed" };
-          }
+        try {
+          result = impl ? await impl((call.args || {}) as never) : { error: `unknown tool ${call.name}` };
+        } catch (error) {
+          result = { error: error instanceof Error ? error.message : "tool failed" };
         }
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify({ result }),
+        responseParts.push({
+          functionResponse: { name: call.name, response: { result } },
         });
       }
+      contents.push({ role: "user", parts: responseParts });
       continue;
     }
 
-    finalText = message ? messageText(message) : "";
+    finalText = response.text || "";
     break;
   }
 

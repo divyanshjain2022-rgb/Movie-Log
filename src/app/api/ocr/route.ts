@@ -171,8 +171,9 @@ function stripDataUri(data: string): string {
 export const runtime = "edge";
 
 const MODEL_PRIORITY = [
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
   "gemini-3.5-flash",
-  "gemini-3-flash-preview",
   "gemini-3.1-flash-lite",
 ];
 
