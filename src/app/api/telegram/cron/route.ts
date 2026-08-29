@@ -50,11 +50,22 @@ async function todaysMovies(userId: string): Promise<MovieForCron[]> {
   return (data || []) as unknown as MovieForCron[];
 }
 
-// 1. Auto-capture hall occupancy at two staged points around each logged
-// show: ~10 minutes before start and ~25 minutes in (final numbers). A third
-// capture happens at log time in the webhook. Each successful capture
-// OVERWRITES (later = closer to the real turnout); failures never clear
-// existing data, so the movie keeps the best snapshot it ever got.
+// 1. Auto-capture hall occupancy in the hour before each logged show.
+//
+// PVR's seatlayout returns an empty layout the moment a show STARTS
+// ("Session Not Found" — OCCUPANCY_HANDOFF.md:48), so there is no such thing
+// as a post-show backfill. The previous version tried one capture 10 minutes
+// before and a second 25 minutes INTO the show; the second could never
+// succeed, and it sent a "couldn't capture" alert every time a show had no
+// earlier snapshot.
+//
+// So: attempt once per 15-minute bucket across the hour before showtime, and
+// let later captures overwrite earlier ones, since the closer to showtime the
+// closer to the real turnout. A missed tick — GitHub's scheduler is not
+// punctual — now costs one attempt out of five instead of the only one.
+const CAPTURE_WINDOW_MINUTES = 75;
+const CAPTURE_BUCKET_MINUTES = 15;
+
 async function occupancyTask(userId: string): Promise<string> {
   const nowMinutes = istMinutesOfDay();
   const movies = await todaysMovies(userId);
@@ -68,14 +79,29 @@ async function occupancyTask(userId: string): Promise<string> {
     if (showMinutes === null) continue;
     const delta = showMinutes - nowMinutes;
 
-    // Cron ticks every ~15 min; these windows land one attempt per stage.
-    const stage = delta >= 0 && delta <= 15 ? "pre" : delta <= -20 && delta >= -35 ? "post" : null;
-    if (!stage) continue;
+    // After the show has started there is nothing left to read. Say so once,
+    // and only when nothing was ever captured.
+    if (delta < 0) {
+      if (delta >= -35 && !movie.occupancy) {
+        const verdictKey = `occ3:${movie.id}:verdict`;
+        if (!(await getBotState<boolean>(verdictKey))) {
+          await setBotState(verdictKey, true);
+          await notify(
+            `📸 Couldn't capture <b>${esc(movie.title)}</b> — the seat map closed at showtime and nothing was read before then.`
+          );
+        }
+      }
+      continue;
+    }
 
-    const stateKey = `occ2:${movie.id}`;
-    const state = (await getBotState<{ pre?: boolean; post?: boolean }>(stateKey)) || {};
-    if (state[stage]) continue;
-    await setBotState(stateKey, { ...state, [stage]: true });
+    if (delta > CAPTURE_WINDOW_MINUTES) continue;
+
+    // One attempt per bucket, so a tick that arrives late doesn't re-fire a
+    // bucket already done and a punctual run still gets every bucket.
+    const bucket = Math.floor(delta / CAPTURE_BUCKET_MINUTES);
+    const bucketKey = `occ3:${movie.id}:${bucket}`;
+    if (await getBotState<boolean>(bucketKey)) continue;
+    await setBotState(bucketKey, true);
 
     const response = await fetch(`${SITE_URL}/api/pvr/occupancy`, {
       method: "POST",
@@ -91,22 +117,23 @@ async function occupancyTask(userId: string): Promise<string> {
       }),
     });
     const payload = await response.json().catch(() => null);
+    if (!payload?.found) continue;
 
-    if (payload?.found) {
-      await supabase
-        .from("movies")
-        .update({ occupancy: payload.occupancy, seat_map: payload.seatMap } as never)
-        .eq("id", movie.id);
-      captured += 1;
-      const label = stage === "pre" ? "10 min before showtime" : "25 min into the show";
+    // Later readings are better readings, so this always overwrites. A failed
+    // attempt never clears what an earlier one stored.
+    await supabase
+      .from("movies")
+      .update({ occupancy: payload.occupancy, seat_map: payload.seatMap } as never)
+      .eq("id", movie.id);
+    captured += 1;
+
+    // One heads-up per movie, on the first reading that lands — the later
+    // refinements are for the data, not for the phone.
+    const announcedKey = `occ3:${movie.id}:announced`;
+    if (!(await getBotState<boolean>(announcedKey))) {
+      await setBotState(announcedKey, true);
       await notify(
-        `📸 <b>${esc(movie.title)}</b> hall snapshot (${label}): ${payload.occupancy}% full.`
-      );
-    } else if (stage === "post" && movie.occupancy) {
-      // Seat map already closed — keep the earlier snapshot silently.
-    } else if (stage === "post") {
-      await notify(
-        `📸 Couldn't capture <b>${esc(movie.title)}</b> — PVR closed the seat map and no earlier snapshot exists.`
+        `📸 <b>${esc(movie.title)}</b> is ${payload.occupancy}% full, ${delta} min before showtime.`
       );
     }
   }
