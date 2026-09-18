@@ -43,7 +43,10 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
     return [
+      // Browser-side Supabase traffic, proxied because Indian ISPs block supabase.co.
+      ...(supabaseUrl ? [{ source: "/supabase/:path*", destination: `${supabaseUrl}/:path*` }] : []),
       {
         // Proxy TMDB images through /api/img to avoid CORS issues
         // (needed for html2canvas in shareable cards)
