@@ -49,7 +49,9 @@ export function ShareableCard({ movie, children }: ShareableCardProps) {
 
     setIsGenerating(true);
     try {
-      const html2canvas = (await import("html2canvas")).default;
+      // The -pro fork reads the lab()/color-mix() colours Tailwind 4 emits;
+      // html2canvas 1.4 threw on them and the card silently did nothing.
+      const html2canvas = (await import("html2canvas-pro")).default;
       const canvas = await html2canvas(cardRef.current, {
         scale: 2,
         backgroundColor: null,
@@ -59,6 +61,10 @@ export function ShareableCard({ movie, children }: ShareableCardProps) {
         proxy: "/api/img",
       });
       return canvas;
+    } catch (error) {
+      console.error(error);
+      toast.error("Couldn't create the card");
+      return null;
     } finally {
       setIsGenerating(false);
     }
