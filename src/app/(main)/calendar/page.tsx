@@ -11,6 +11,7 @@ import { useMovies } from "@/hooks";
 import { getRatingColor } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import { tmdbImage } from "@/lib/tmdb-image";
+import { SubscribeDialog } from "./subscribe-dialog";
 
 export default function CalendarPage() {
   const { movies, isLoading, error } = useMovies();
@@ -65,7 +66,7 @@ export default function CalendarPage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader title="Calendar" showBack />
+      <PageHeader title="Calendar" showBack action={<SubscribeDialog />} />
 
       <div className="p-4">
         {isLoading ? (

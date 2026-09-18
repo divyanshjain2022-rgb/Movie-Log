@@ -60,13 +60,16 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getClaims();
     const user = claims?.claims ?? null;
 
-    // API routes need a login, except the Telegram endpoints (they check their
-    // own secrets) and server calls carrying the bot secret (fetchOwnApi).
+    // API routes need a login, except the Telegram endpoints and the calendar
+    // feed (they check their own secrets) and server calls carrying the bot
+    // secret (fetchOwnApi).
     if (request.nextUrl.pathname.startsWith("/api/")) {
         const botSecret = process.env.CRON_SECRET;
         const isBotCall = Boolean(botSecret) && request.headers.get("x-bot-secret") === botSecret;
-        const isTelegram = request.nextUrl.pathname.startsWith("/api/telegram/");
-        if (!user && !isBotCall && !isTelegram) {
+        const checksOwnSecret = ["/api/telegram/", "/api/calendar/"].some((prefix) =>
+            request.nextUrl.pathname.startsWith(prefix)
+        );
+        if (!user && !isBotCall && !checksOwnSecret) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         return supabaseResponse;
