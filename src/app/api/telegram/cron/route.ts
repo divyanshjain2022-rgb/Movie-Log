@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   esc,
+  fetchOwnApi,
   getBotState,
   istDateString,
   istMinutesOfDay,
@@ -10,7 +11,6 @@ import {
   resolveBotUserId,
   serviceClient,
   setBotState,
-  SITE_URL,
 } from "@/lib/telegram";
 import { fetchPvrSearchMovies } from "@/lib/pvr/client";
 import { titleMatches } from "@/lib/pvr/personal-predictor";
@@ -104,7 +104,7 @@ async function occupancyTask(userId: string): Promise<string> {
     if (await getBotState<boolean>(bucketKey)) continue;
     await setBotState(bucketKey, true);
 
-    const response = await fetch(`${SITE_URL}/api/pvr/occupancy`, {
+    const response = await fetchOwnApi(`/api/pvr/occupancy`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -262,10 +262,7 @@ async function digestTask(): Promise<string> {
   if (last?.date === istDateString()) return "already ran";
   await setBotState(stateKey, { date: istDateString() });
 
-  const secret = process.env.CRON_SECRET;
-  const response = await fetch(`${SITE_URL}/api/pvr/recommendations?city=Lucknow`, {
-    headers: secret ? { "x-bot-secret": secret } : undefined,
-  });
+  const response = await fetchOwnApi("/api/pvr/recommendations?city=Lucknow");
   if (!response.ok) return `recs ${response.status}`;
   const payload = (await response.json()) as {
     upcoming: Array<{ title: string; releaseDate: string | null; onWatchlist?: boolean }>;
@@ -337,11 +334,7 @@ async function recapTask(userId: string): Promise<string> {
 // seat-layout endpoints. Also trims cache rows past their stale window.
 async function warmPvrTask(): Promise<string> {
   if (istMinutesOfDay() < 7 * 60 + 30) return "night — skipped";
-  const secret = process.env.CRON_SECRET;
-  const response = await fetch(
-    `${SITE_URL}/api/pvr/recommendations?city=Lucknow&quotes=skip`,
-    { headers: secret ? { "x-bot-secret": secret } : undefined }
-  );
+  const response = await fetchOwnApi("/api/pvr/recommendations?city=Lucknow&quotes=skip");
   if (!response.ok) return `warm fetch failed (${response.status})`;
   const payload = (await response.json()) as { recommendations?: unknown[] };
 
@@ -387,7 +380,7 @@ function ratingsDue(movie: MovieForRatings, now: number): boolean {
 async function saveRatings(movie: MovieForRatings): Promise<boolean> {
   const supabase = serviceClient();
   if (!supabase) return false;
-  const response = await fetch(`${SITE_URL}/api/tmdb/extras?id=${movie.tmdb_id}`, {
+  const response = await fetchOwnApi(`/api/tmdb/extras?id=${movie.tmdb_id}`, {
     signal: AbortSignal.timeout(15_000),
   });
   const payload = response.ok ? ((await response.json()) as ExtrasPayload) : null;

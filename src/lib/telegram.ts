@@ -8,6 +8,14 @@ const TELEGRAM_API = "https://api.telegram.org";
 
 export const SITE_URL = process.env.SITE_URL || "https://movie-log-eight.vercel.app";
 
+// Server-side call to this app's own API; the bot secret stands in for a login.
+export function fetchOwnApi(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const secret = process.env.CRON_SECRET;
+  if (secret) headers.set("x-bot-secret", secret);
+  return fetch(`${SITE_URL}${path}`, { ...init, headers });
+}
+
 export function botToken(): string | null {
   return process.env.TELEGRAM_BOT_TOKEN || null;
 }

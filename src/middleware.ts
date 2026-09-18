@@ -60,8 +60,20 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getClaims();
     const user = claims?.claims ?? null;
 
+    // API routes need a login, except the Telegram endpoints (they check their
+    // own secrets) and server calls carrying the bot secret (fetchOwnApi).
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+        const botSecret = process.env.CRON_SECRET;
+        const isBotCall = Boolean(botSecret) && request.headers.get("x-bot-secret") === botSecret;
+        const isTelegram = request.nextUrl.pathname.startsWith("/api/telegram/");
+        if (!user && !isBotCall && !isTelegram) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        return supabaseResponse;
+    }
+
     // Public routes that don't require auth
-    const publicRoutes = ["/login", "/auth/callback", "/api"];
+    const publicRoutes = ["/login", "/auth/callback"];
     const isPublicRoute = publicRoutes.some((route) =>
         request.nextUrl.pathname.startsWith(route)
     );

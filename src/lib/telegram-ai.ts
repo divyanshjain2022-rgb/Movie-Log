@@ -5,12 +5,12 @@
 
 import { GoogleGenAI, ThinkingLevel, Type, type FunctionDeclaration } from "@google/genai";
 import {
+  fetchOwnApi,
   getBotState,
   istDateString,
   resolveBotUserId,
   serviceClient,
   setBotState,
-  SITE_URL,
 } from "@/lib/telegram";
 import { calculateValueScore, DEFAULT_FORMULA_PARAMS, getValueTier } from "@/lib/formula";
 import type { FormulaParams } from "@/types";
@@ -381,16 +381,13 @@ async function toolRecommendations(args: {
   language?: string;
   time?: string;
 }): Promise<unknown> {
-  const secret = process.env.CRON_SECRET;
   const params = new URLSearchParams({ city: "Lucknow" });
   if (args.query) params.set("text", args.query);
   if (args.date) params.set("date", args.date);
   if (args.format) params.set("format", args.format);
   if (args.language) params.set("language", args.language);
   if (args.time) params.set("time", args.time);
-  const response = await fetch(`${SITE_URL}/api/pvr/recommendations?${params}`, {
-    headers: secret ? { "x-bot-secret": secret } : undefined,
-  });
+  const response = await fetchOwnApi(`/api/pvr/recommendations?${params}`);
   if (!response.ok) return { error: `recommendations unavailable (${response.status})` };
   const payload = (await response.json()) as {
     recommendations: Array<{
@@ -684,10 +681,10 @@ async function toolLogMovie(args: {
   // TMDB enrichment, same as ticket-photo logging.
   let tmdbFields: Record<string, unknown> = {};
   try {
-    const searchResponse = await fetch(`${SITE_URL}/api/tmdb?query=${encodeURIComponent(args.title)}`);
+    const searchResponse = await fetchOwnApi(`/api/tmdb?query=${encodeURIComponent(args.title)}`);
     const search = (await searchResponse.json()) as { results?: Array<{ tmdb_id: number }> };
     if (search.results?.[0]?.tmdb_id) {
-      const detailResponse = await fetch(`${SITE_URL}/api/tmdb?id=${search.results[0].tmdb_id}`);
+      const detailResponse = await fetchOwnApi(`/api/tmdb?id=${search.results[0].tmdb_id}`);
       if (detailResponse.ok) {
         const d = (await detailResponse.json()) as Record<string, unknown>;
         tmdbFields = {

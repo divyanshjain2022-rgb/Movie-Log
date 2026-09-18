@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   allowedChatId,
   esc,
+  fetchOwnApi,
   getBotState,
   getTelegramFileBase64,
   resolveBotUserId,
   sendMessage,
   serviceClient,
   setBotState,
-  SITE_URL,
   tg,
 } from "@/lib/telegram";
 import { istDateString } from "@/lib/telegram";
@@ -324,7 +324,7 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
   }
 
   await sendMessage(chatId, "Reading the ticket…");
-  const ocrResponse = await fetch(`${SITE_URL}/api/ocr`, {
+  const ocrResponse = await fetchOwnApi(`/api/ocr`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: file.base64, mimeType: file.mime }),
@@ -364,15 +364,15 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
   // runtime, genres, director, cast, ratings, trailer.
   let tmdbFields: Record<string, unknown> = {};
   try {
-    const searchResponse = await fetch(
-      `${SITE_URL}/api/tmdb?query=${encodeURIComponent(ticket.movie_title)}`
+    const searchResponse = await fetchOwnApi(
+      `/api/tmdb?query=${encodeURIComponent(ticket.movie_title)}`
     );
     const search = (await searchResponse.json()) as {
       results?: Array<{ tmdb_id: number }>;
     };
     const first = search.results?.[0];
     if (first?.tmdb_id) {
-      const detailResponse = await fetch(`${SITE_URL}/api/tmdb?id=${first.tmdb_id}`);
+      const detailResponse = await fetchOwnApi(`/api/tmdb?id=${first.tmdb_id}`);
       if (detailResponse.ok) {
         const d = (await detailResponse.json()) as Record<string, unknown>;
         tmdbFields = {
@@ -435,7 +435,7 @@ async function handleTicketPhoto(chatId: string, fileId: string): Promise<void> 
   let occupancyLine: string | null = null;
   if (row.date === istDateString() && ticket.showtime) {
     try {
-      const occupancyResponse = await fetch(`${SITE_URL}/api/pvr/occupancy`, {
+      const occupancyResponse = await fetchOwnApi(`/api/pvr/occupancy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -538,7 +538,7 @@ async function handleGiftCardPhoto(chatId: string, fileId: string): Promise<void
   }
 
   await sendMessage(chatId, "Reading the gift card…");
-  const response = await fetch(`${SITE_URL}/api/ocr/gift-card`, {
+  const response = await fetchOwnApi(`/api/ocr/gift-card`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: file.base64, mimeType: file.mime }),
@@ -662,9 +662,7 @@ async function handleTonight(chatId: string, query?: string): Promise<void> {
   await sendMessage(chatId, query ? `Looking up “${esc(query)}”…` : "Checking what's worth watching…");
   const params = new URLSearchParams({ city: "Lucknow" });
   if (query) params.set("text", query);
-  const response = await fetch(`${SITE_URL}/api/pvr/recommendations?${params}`, {
-    headers: { "x-bot-secret": secret },
-  });
+  const response = await fetchOwnApi(`/api/pvr/recommendations?${params}`);
   if (!response.ok) {
     await sendMessage(chatId, `Recommendations unavailable right now (HTTP ${response.status}).`);
     return;
