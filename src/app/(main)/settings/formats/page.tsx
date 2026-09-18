@@ -23,7 +23,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useFormats } from "@/hooks";
 import { formatAudiDisplay, normalizeAudiValue } from "@/lib/audi";
 import { createClient } from "@/lib/supabase/client";
@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import type { Format } from "@/types";
 
 export default function FormatsPage() {
-    const { formats, isLoading, addFormat, updateFormat, deleteFormat } = useFormats();
+    const { formats, isLoading, error, addFormat, updateFormat, deleteFormat } = useFormats();
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [editingFormat, setEditingFormat] = useState<Format | null>(null);
     const [deletingFormat, setDeletingFormat] = useState<Format | null>(null);
@@ -223,6 +223,8 @@ export default function FormatsPage() {
                         <Skeleton className="h-16" />
                         <Skeleton className="h-16" />
                     </div>
+                ) : error ? (
+                    <LoadError what="your formats" error={error} />
                 ) : formats.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-border p-8 text-center">
                         <p className="text-muted-foreground">No formats yet</p>

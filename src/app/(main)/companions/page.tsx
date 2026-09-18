@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import {
   useCompanions,
   useCreateCompanion,
@@ -18,8 +18,9 @@ import {
 import type { MovieWithRelations } from "@/types";
 
 export default function CompanionsPage() {
-  const { companions, isLoading, refetch } = useCompanions();
-  const { movies } = useMovies();
+  const { companions, isLoading, error: companionsError, refetch } = useCompanions();
+  const { movies, error: moviesError } = useMovies();
+  const loadError = companionsError ?? moviesError;
   const { createCompanion, isLoading: isCreating } = useCreateCompanion();
   const { updateCompanion } = useUpdateCompanion();
   const { deleteCompanion } = useDeleteCompanion();
@@ -127,6 +128,8 @@ export default function CompanionsPage() {
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
           </div>
+        ) : loadError ? (
+          <LoadError what="your companions" error={loadError} />
         ) : companions.length === 0 ? (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <p className="text-muted-foreground">No companions yet</p>

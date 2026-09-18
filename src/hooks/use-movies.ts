@@ -185,6 +185,40 @@ export function useMovies() {
   return { movies, isLoading, error, refetch: fetchMovies };
 }
 
+export type MovieSummary = Pick<Movie, "id" | "title" | "date" | "is_rewatch" | "fnb_cost" | "fnb_items"> & {
+  theater: { name: string } | null;
+};
+
+// The few fields pickers and the F&B list need, instead of the full log.
+export function useMovieSummaries() {
+  const [movies, setMovies] = useState<MovieSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchSummaries = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const { data, error } = await supabase
+        .from("movies")
+        .select("id,title,date,is_rewatch,fnb_cost,fnb_items,theater:theaters(name)")
+        .order("date", { ascending: false });
+      if (error) throw error;
+      setMovies((data || []) as unknown as MovieSummary[]);
+    } catch (err) {
+      setError(toError(err, "Failed to fetch movies"));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSummaries();
+  }, [fetchSummaries]);
+
+  return { movies, isLoading, error, refetch: fetchSummaries };
+}
+
 export function useMovie(id: string, initial?: MovieWithRelations | null) {
   const [movie, setMovie] = useState<MovieWithRelations | null>(initial ?? null);
   const [isLoading, setIsLoading] = useState(!initial);
@@ -212,7 +246,7 @@ export function useMovie(id: string, initial?: MovieWithRelations | null) {
           movie_companions(id, companion:companions(*))
         `)
         .eq("id", id)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       setMovie(data);

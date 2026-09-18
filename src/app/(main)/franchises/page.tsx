@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import {
   useFranchises,
   useCreateFranchise,
@@ -25,8 +25,9 @@ import {
 import { tmdbImage } from "@/lib/tmdb-image";
 
 export default function FranchisesPage() {
-  const { franchises, isLoading, refetch } = useFranchises();
-  const { movies } = useMovies();
+  const { franchises, isLoading, error: franchisesError, refetch } = useFranchises();
+  const { movies, error: moviesError } = useMovies();
+  const loadError = franchisesError ?? moviesError;
   const { createFranchise, isLoading: isCreating } = useCreateFranchise();
   const { deleteFranchise } = useDeleteFranchise();
   const [showAdd, setShowAdd] = useState(false);
@@ -96,6 +97,8 @@ export default function FranchisesPage() {
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
           </div>
+        ) : loadError ? (
+          <LoadError what="your franchises" error={loadError} />
         ) : franchises.length === 0 ? (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <p className="text-muted-foreground">No franchises yet</p>

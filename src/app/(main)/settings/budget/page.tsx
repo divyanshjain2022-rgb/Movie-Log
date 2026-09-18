@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useBudgets, useUpsertBudget, useMovies } from "@/hooks";
 import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
@@ -20,8 +20,9 @@ const MONTHS = [
 export default function BudgetPage() {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
-  const { budgets, isLoading, refetch } = useBudgets();
-  const { movies } = useMovies();
+  const { budgets, isLoading, error: budgetsError, refetch } = useBudgets();
+  const { movies, error: moviesError } = useMovies();
+  const loadError = budgetsError ?? moviesError;
   const { upsertBudget, isLoading: isSaving } = useUpsertBudget();
 
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -69,6 +70,8 @@ export default function BudgetPage() {
       <div className="p-4 space-y-6">
         {isLoading ? (
           <Skeleton className="h-40" />
+        ) : loadError ? (
+          <LoadError what="your budget" error={loadError} />
         ) : (
           <>
             {/* Month selector */}

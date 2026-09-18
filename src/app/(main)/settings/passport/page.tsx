@@ -8,14 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { formatCurrency, formatDate } from "@/lib/formula";
 import { usePassports, useCreatePassport, useUpdatePassport, useDeletePassport } from "@/hooks";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export default function PassportPage() {
-  const { passports, isLoading, refetch } = usePassports();
+  const { passports, isLoading, error, refetch } = usePassports();
   const { createPassport } = useCreatePassport();
   const { updatePassport } = useUpdatePassport();
   const { deletePassport } = useDeletePassport();
@@ -80,6 +80,15 @@ export default function PassportPage() {
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen">
+        <PageHeader title="Passports" showBack />
+        <LoadError what="your passports" error={error} />
       </div>
     );
   }

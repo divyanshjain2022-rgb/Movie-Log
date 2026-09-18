@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useMovies } from "@/hooks";
 import { formatCurrency, getRatingColor } from "@/lib/formula";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ interface CrewPageProps {
 export default function CrewPage({ params }: CrewPageProps) {
   const { name: encodedName } = use(params);
   const name = decodeURIComponent(encodedName);
-  const { movies, isLoading } = useMovies();
+  const { movies, isLoading, error } = useMovies();
 
   // Find all movies where this person was involved as crew
   const crewMovies = useMemo(() => {
@@ -80,6 +80,15 @@ export default function CrewPage({ params }: CrewPageProps) {
           <Skeleton className="h-24" />
           <Skeleton className="h-40" />
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen">
+        <PageHeader title="" showBack />
+        <LoadError what="this person's films" error={error} />
       </div>
     );
   }

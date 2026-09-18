@@ -6,14 +6,14 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useMovies } from "@/hooks";
 import { getRatingColor } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 import { tmdbImage } from "@/lib/tmdb-image";
 
 export default function CalendarPage() {
-  const { movies, isLoading } = useMovies();
+  const { movies, isLoading, error } = useMovies();
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const year = currentDate.getFullYear();
@@ -70,6 +70,8 @@ export default function CalendarPage() {
       <div className="p-4">
         {isLoading ? (
           <Skeleton className="h-[400px] rounded-xl" />
+        ) : error ? (
+          <LoadError what="your calendar" error={error} />
         ) : (
           <>
             {/* Month Navigation */}

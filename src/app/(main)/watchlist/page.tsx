@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { TMDBSearch } from "@/components/movies";
 import { PVR_CITIES } from "@/lib/pvr/cities";
 import type { PvrMovie } from "@/lib/pvr/types";
@@ -52,8 +52,9 @@ function titlesMatch(left: string, right: string): boolean {
 }
 
 export default function WatchlistPage() {
-  const { items, isLoading, refetch } = useWatchlist();
-  const { movies: allMovies, isLoading: isMoviesLoading } = useMovies();
+  const { items, isLoading, error: itemsError, refetch } = useWatchlist();
+  const { movies: allMovies, isLoading: isMoviesLoading, error: moviesError } = useMovies();
+  const loadError = itemsError ?? moviesError;
   const { createItem, isLoading: isCreating } = useCreateWatchlistItem();
   const { deleteItem } = useDeleteWatchlistItem();
   const { updateItem } = useUpdateWatchlistItem();
@@ -411,6 +412,8 @@ export default function WatchlistPage() {
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
           </div>
+        ) : loadError ? (
+          <LoadError what="your watchlist" error={loadError} />
         ) : unwatched.length === 0 && watched.length === 0 ? (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <Clock className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />

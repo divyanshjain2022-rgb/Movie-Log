@@ -4,11 +4,11 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Calendar, Film } from "lucide-react";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { TicketUpload, MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLookupData, useGiftCards, useCreateMovie, useUpdateMovie, useMovies, useFranchises, useCompanions, useSyncMovieCompanions, usePassports, useWatchlist } from "@/hooks";
+import { useLookupData, useGiftCards, useCreateMovie, useUpdateMovie, useMovieSummaries, useFranchises, useCompanions, useSyncMovieCompanions, usePassports, useWatchlist } from "@/hooks";
 import { cn } from "@/lib/utils";
 import type { MovieFormData, TicketOCRData, GiftCardUsageEntry, MovieInsert } from "@/types";
 
@@ -139,15 +139,15 @@ function compressImage(
 function NewMoviePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
-  const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
+  const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading, error: lookupError } = useLookupData();
+  const { giftCards, isLoading: giftCardsLoading, error: giftCardsError } = useGiftCards();
   const { createMovie, isLoading: isSubmitting } = useCreateMovie();
   const { updateMovie } = useUpdateMovie();
-  const { movies: allMovies } = useMovies();
-  const { items: watchlistItems, isLoading: watchlistLoading } = useWatchlist();
-  const { franchises } = useFranchises();
-  const { companions } = useCompanions();
-  const { passports } = usePassports();
+  const { movies: allMovies, error: moviesError } = useMovieSummaries();
+  const { items: watchlistItems, isLoading: watchlistLoading, error: watchlistError } = useWatchlist();
+  const { franchises, error: franchisesError } = useFranchises();
+  const { companions, error: companionsError } = useCompanions();
+  const { passports, error: passportsError } = usePassports();
   const { syncCompanions } = useSyncMovieCompanions();
 
   const watchlistSourceId = searchParams.get("watchlist");
@@ -492,6 +492,7 @@ function NewMoviePageInner() {
   };
 
   const isLoading = lookupLoading || giftCardsLoading;
+  const loadError = lookupError ?? giftCardsError ?? moviesError ?? watchlistError ?? franchisesError ?? companionsError ?? passportsError;
   const isWatchlistPrefillLoading =
     Boolean(watchlistSourceId) &&
     watchlistLoading &&
@@ -557,6 +558,8 @@ function NewMoviePageInner() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
+          ) : loadError ? (
+            <LoadError what="the details this form needs" error={loadError} />
           ) : (
             <div className="space-y-6">
               {hasWatchlistPrefill && (

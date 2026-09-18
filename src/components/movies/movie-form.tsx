@@ -37,7 +37,7 @@ import type {
   GiftCardUsageEntry,
   Franchise,
   Companion,
-  MovieWithRelations,
+  Movie,
   PassportWithUsage,
 } from "@/types";
 import { PAYMENT_METHODS, type PaymentMethodEntry } from "@/types/database";
@@ -243,7 +243,7 @@ interface MovieFormProps {
   franchises?: Franchise[];
   companions?: Companion[];
   passports?: PassportWithUsage[];
-  allMovies?: MovieWithRelations[];
+  allMovies?: Array<Pick<Movie, "id" | "title" | "date" | "is_rewatch">>;
   onSubmit: (data: MovieFormData, giftCardUsage?: GiftCardUsageEntry[]) => Promise<void>;
   isLoading?: boolean;
   isEditing?: boolean;
@@ -1115,7 +1115,7 @@ export function MovieForm({
                   <SelectItem value="none">None</SelectItem>
                   {allMovies
                     .filter((m) => !m.is_rewatch)
-                    .sort((a, b) => b.title.localeCompare(a.title))
+                    .sort((a, b) => a.title.localeCompare(b.title))
                     .map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.title} ({new Date(m.date).toLocaleDateString("en-IN", { month: "short", year: "numeric" })})

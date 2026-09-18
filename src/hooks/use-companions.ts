@@ -104,31 +104,6 @@ export function useDeleteCompanion() {
 }
 
 // Movie-companion junction management
-export function useMovieCompanions(movieId: string) {
-  const [companionIds, setCompanionIds] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetch() {
-      try {
-        setIsLoading(true);
-        const { data, error } = await supabase
-          .from("movie_companions")
-          .select("companion_id")
-          .eq("movie_id", movieId);
-
-        if (error) throw error;
-        setCompanionIds((data || []).map((d: { companion_id: string }) => d.companion_id));
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    if (movieId) fetch();
-  }, [movieId]);
-
-  return { companionIds, isLoading };
-}
-
 export function useSyncMovieCompanions() {
   const syncCompanions = useCallback(async (movieId: string, companionIds: string[]) => {
     // Delete existing

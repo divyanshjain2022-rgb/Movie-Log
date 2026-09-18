@@ -3,11 +3,11 @@
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { MovieForm, TMDBSearch } from "@/components/movies";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMovie, useMovies, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useMovieCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
+import { useMovie, useMovieSummaries, useLookupData, useGiftCards, useUpdateMovie, useFranchises, useCompanions, useSyncMovieCompanions, usePassports } from "@/hooks";
 import type { MovieFormData, GiftCardUsageEntry } from "@/types";
 
 interface TMDBMovieDetails {
@@ -39,15 +39,17 @@ interface EditMoviePageProps {
 export default function EditMoviePage({ params }: EditMoviePageProps) {
   const { id } = use(params);
   const router = useRouter();
-  const { movie, isLoading: movieLoading } = useMovie(id);
-  const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading } = useLookupData();
-  const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
+  const { movie, isLoading: movieLoading, error: movieError } = useMovie(id);
+  const { formats, theaters, moods, aspects, rewatchOptions, isLoading: lookupLoading, error: lookupError } = useLookupData();
+  const { giftCards, isLoading: giftCardsLoading, error: giftCardsError } = useGiftCards();
   const { updateMovie, isLoading: isSubmitting } = useUpdateMovie();
-  const { movies: allMovies } = useMovies();
-  const { franchises } = useFranchises();
-  const { companions } = useCompanions();
-  const { passports } = usePassports();
-  const { companionIds: initialCompanionIds } = useMovieCompanions(id);
+  const { movies: allMovies, error: moviesError } = useMovieSummaries();
+  const { franchises, error: franchisesError } = useFranchises();
+  const { companions, error: companionsError } = useCompanions();
+  const { passports, error: passportsError } = usePassports();
+  // From the movie row itself, so the form never mounts before they arrive:
+  // saving replaces the movie's companions with whatever the form holds.
+  const initialCompanionIds = (movie?.movie_companions ?? []).flatMap((mc) => (mc.companion ? [mc.companion.id] : []));
   const { syncCompanions } = useSyncMovieCompanions();
 
   const [tmdbOverrides, setTmdbOverrides] = useState<Partial<MovieFormData>>({});
@@ -165,6 +167,7 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
   };
 
   const isLoading = movieLoading || lookupLoading || giftCardsLoading;
+  const loadError = movieError ?? lookupError ?? giftCardsError ?? moviesError ?? franchisesError ?? companionsError ?? passportsError;
 
   // Convert movie data to form data format
   const initialData: Partial<MovieFormData> = movie
@@ -254,6 +257,8 @@ export default function EditMoviePage({ params }: EditMoviePageProps) {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
+          ) : loadError ? (
+            <LoadError what="this movie" error={loadError} />
           ) : !movie ? (
             <div className="flex min-h-[50vh] items-center justify-center">
               <p className="text-muted-foreground">Movie not found</p>

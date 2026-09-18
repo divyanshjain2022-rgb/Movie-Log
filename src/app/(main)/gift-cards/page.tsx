@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useGiftCards, useCreateGiftCard, useUpdateGiftCard, useDeleteGiftCard, useLookupData } from "@/hooks";
 import { useNow } from "@/hooks/use-now";
 import { daysUntil } from "@/lib/date-utils";
@@ -55,8 +55,9 @@ interface ExtractedGiftCardData {
 }
 
 export default function GiftCardsPage() {
-  const { giftCards, isLoading, refetch } = useGiftCards();
-  const { platforms } = useLookupData();
+  const { giftCards, isLoading, error: giftCardsError, refetch } = useGiftCards();
+  const { platforms, error: lookupError } = useLookupData();
+  const loadError = giftCardsError ?? lookupError;
   const { createGiftCard, isLoading: isCreating } = useCreateGiftCard();
   const { updateGiftCard, isLoading: isUpdating } = useUpdateGiftCard();
   const { deleteGiftCard, isLoading: isDeleting } = useDeleteGiftCard();
@@ -418,6 +419,8 @@ export default function GiftCardsPage() {
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
           </div>
+        ) : loadError ? (
+          <LoadError what="your gift cards" error={loadError} />
         ) : giftCards.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <CreditCard className="mx-auto h-12 w-12 text-muted-foreground" />

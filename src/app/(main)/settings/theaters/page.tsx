@@ -24,7 +24,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useFormats, useTheaters, useTheaterRatings } from "@/hooks";
 import { computeTheaterAvgRatings } from "@/hooks/use-theater-ratings";
 import {
@@ -55,9 +55,10 @@ function buildDefaultAudiByFormat(formData: FormData, formats: Format[]): AudiDe
 }
 
 export default function TheatersPage() {
-    const { theaters, isLoading, addTheater, updateTheater, deleteTheater } = useTheaters();
-    const { formats, isLoading: areFormatsLoading } = useFormats();
-    const { ratings: allRatings } = useTheaterRatings();
+    const { theaters, isLoading, error: theatersError, addTheater, updateTheater, deleteTheater } = useTheaters();
+    const { formats, isLoading: areFormatsLoading, error: formatsError } = useFormats();
+    const { ratings: allRatings, error: ratingsError } = useTheaterRatings();
+    const loadError = theatersError ?? formatsError ?? ratingsError;
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [editingTheater, setEditingTheater] = useState<Theater | null>(null);
     const [deletingTheater, setDeletingTheater] = useState<Theater | null>(null);
@@ -350,6 +351,8 @@ export default function TheatersPage() {
                         <Skeleton className="h-20" />
                         <Skeleton className="h-20" />
                     </div>
+                ) : loadError ? (
+                    <LoadError what="your theaters" error={loadError} />
                 ) : theaters.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-border p-8 text-center">
                         <MapPin className="mx-auto h-12 w-12 text-muted-foreground" />

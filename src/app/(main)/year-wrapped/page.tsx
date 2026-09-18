@@ -20,7 +20,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { useMovies, useGiftCards } from "@/hooks";
 import { formatCurrency } from "@/lib/formula";
 import { cn } from "@/lib/utils";
@@ -64,8 +64,8 @@ function StatCard({
 }
 
 export default function YearWrappedPage() {
-    const { movies, isLoading: moviesLoading } = useMovies();
-    const { giftCards, isLoading: giftCardsLoading } = useGiftCards();
+    const { movies, isLoading: moviesLoading, error: moviesError } = useMovies();
+    const { giftCards, isLoading: giftCardsLoading, error: giftCardsError } = useGiftCards();
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
     const availableYears = useMemo(() => {
@@ -279,6 +279,16 @@ export default function YearWrappedPage() {
                     <Skeleton className="h-32" />
                     <Skeleton className="h-32" />
                 </div>
+            </div>
+        );
+    }
+
+    const loadError = moviesError ?? giftCardsError;
+    if (loadError) {
+        return (
+            <div className="min-h-screen">
+                <PageHeader title="Year Wrapped" showBack />
+                <LoadError what="your year" error={loadError} />
             </div>
         );
     }

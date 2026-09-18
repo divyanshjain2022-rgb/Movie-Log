@@ -37,14 +37,14 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader, YearFilter, type YearFilterValue } from "@/components/shared";
+import { LoadError, PageHeader, YearFilter, type YearFilterValue } from "@/components/shared";
 import {
   useFnbPurchases,
   useCreateFnbPurchase,
   useUpdateFnbPurchase,
   useDeleteFnbPurchase,
   useLookupData,
-  useMovies,
+  useMovieSummaries,
   useGiftCards,
 } from "@/hooks";
 import { formatCurrency, formatDate } from "@/lib/formula";
@@ -228,10 +228,10 @@ function FnbForm({
 }
 
 export default function FnbPage() {
-  const { fnbPurchases, isLoading: fnbLoading, refetch } = useFnbPurchases();
-  const { theaters } = useLookupData();
-  const { movies, isLoading: moviesLoading } = useMovies();
-  const { giftCards } = useGiftCards();
+  const { fnbPurchases, isLoading: fnbLoading, error: fnbError, refetch } = useFnbPurchases();
+  const { theaters, error: lookupError } = useLookupData();
+  const { movies, isLoading: moviesLoading, error: moviesError } = useMovieSummaries();
+  const { giftCards, error: giftCardsError } = useGiftCards();
   const { createFnbPurchase, isLoading: isCreating } = useCreateFnbPurchase();
   const { updateFnbPurchase, isLoading: isUpdating } = useUpdateFnbPurchase();
   const { deleteFnbPurchase, isLoading: isDeleting } = useDeleteFnbPurchase();
@@ -423,6 +423,7 @@ export default function FnbPage() {
   };
 
   const isLoading = fnbLoading || moviesLoading;
+  const loadError = fnbError ?? moviesError ?? lookupError ?? giftCardsError;
 
 
   return (
@@ -560,6 +561,8 @@ export default function FnbPage() {
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
           </div>
+        ) : loadError ? (
+          <LoadError what="your F&B" error={loadError} />
         ) : allFnbEntries.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <Coffee className="mx-auto h-12 w-12 text-muted-foreground" />
