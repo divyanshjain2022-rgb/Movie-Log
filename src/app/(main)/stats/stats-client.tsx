@@ -23,6 +23,7 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formula";
+import { compareWithCrowd } from "@/lib/crowd-compare";
 
 const CHART_COLORS = {
   amber: "var(--chart-1)",
@@ -109,6 +110,14 @@ export function StatsClient({ movies }: { movies: StatsMovie[] }) {
     selectedYear === "all" || availableYears.includes(selectedYear as number)
       ? selectedYear
       : availableYears[0];
+
+  const crowd = useMemo(
+    () =>
+      compareWithCrowd(
+        effectiveYear === "all" ? movies : movies.filter((m) => new Date(m.date).getFullYear() === effectiveYear)
+      ),
+    [movies, effectiveYear]
+  );
 
   // Price fluctuation data for Insights tab
   const priceFluctuation = useMemo(() => {
@@ -1160,6 +1169,57 @@ export function StatsClient({ movies }: { movies: StatsMovie[] }) {
                           </div>
                         ))}
                       </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* You vs the crowd */}
+                {crowd && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">You vs the Crowd</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-1 text-sm">
+                        <p>
+                          {Math.abs(crowd.averageDiff) < 0.1
+                            ? "You rate films about the same as the crowd"
+                            : `You rate films ${Math.abs(crowd.averageDiff).toFixed(1)} ${crowd.averageDiff > 0 ? "higher" : "lower"} than the crowd`}
+                          <span className="text-muted-foreground"> · {crowd.count} films</span>
+                        </p>
+                        {crowd.sources.map((source) => (
+                          <p key={source.name} className="text-muted-foreground">
+                            {source.name}: {source.gap.toFixed(1)} apart on average
+                          </p>
+                        ))}
+                      </div>
+                      {(crowd.likedMore.length > 0 || crowd.likedLess.length > 0) && (
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {[
+                            { label: "You liked more", picks: crowd.likedMore, tone: "text-positive" },
+                            { label: "You liked less", picks: crowd.likedLess, tone: "text-negative" },
+                          ].map(({ label, picks, tone }) =>
+                            picks.length > 0 ? (
+                              <div key={label}>
+                                <p className={cn("mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em]", tone)}>{label}</p>
+                                <div className="space-y-1.5 text-sm">
+                                  {picks.map((p) => (
+                                    <div key={p.id} className="flex items-center justify-between gap-3">
+                                      <span className="min-w-0 truncate">{p.title}</span>
+                                      <span className="shrink-0 text-muted-foreground">
+                                        <span className={cn("font-semibold", tone)}>{p.yours.toFixed(1)}</span> vs {p.crowd.toFixed(1)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground/60">
+                        Crowd is IMDb, Letterboxd and TMDB combined, the same figure as on each movie&apos;s page.
+                      </p>
                     </CardContent>
                   </Card>
                 )}

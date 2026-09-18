@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { ExternalRatings } from "@/types";
 
 // Slim movie shape for the stats page: every field its aggregations read,
 // and nothing else — the full rows with seat_map made this the heaviest
@@ -22,6 +23,8 @@ export interface StatsMovie {
   director: string | null;
   release_date: string | null;
   tmdb_rating: number | null;
+  tmdb_vote_count: number | null;
+  external_ratings: ExternalRatings | null;
   occupancy: number | null;
   theater: { name: string } | null;
   format: { name: string } | null;
@@ -34,7 +37,8 @@ export interface StatsMovie {
 const STATS_MOVIE_SELECT = `
   id, title, date, showtime, seat,
   ticket_cost, fnb_cost, other_expenses, passport_savings, total_cost, value_score,
-  rating, runtime_minutes, genres, language, director, release_date, tmdb_rating, occupancy,
+  rating, runtime_minutes, genres, language, director, release_date, tmdb_rating, tmdb_vote_count,
+  external_ratings, occupancy,
   theater:theaters(name),
   format:formats(name),
   movie_gift_cards(amount_used, gift_card:gift_cards(discount_percent))
