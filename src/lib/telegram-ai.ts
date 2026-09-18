@@ -471,6 +471,8 @@ const MOVIE_LIST_FIELDS =
   "title,date,showtime,rating,value_score,total_cost,ticket_cost,convenience_fee,fnb_cost,fnb_items," +
   "other_expenses,passport_savings,seat,audi,occupancy,language,genres,director,runtime_minutes," +
   "tmdb_rating,certification,release_date,status,is_rewatch,watched_with,review,remarks," +
+  "imdb_rating:external_ratings->imdb->rating,letterboxd_rating:external_ratings->letterboxd->rating," +
+  "rt_score:external_ratings->rottenTomatoes->score," +
   "theater:theaters(name),format:formats(name),mood:moods(name),franchise:franchises(name)," +
   "rewatch:rewatch_options(name),strongest_part:aspects!movies_strongest_part_id_fkey(name)," +
   "weakest_part:aspects!movies_weakest_part_id_fkey(name)," +
@@ -1432,7 +1434,7 @@ const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: "get_recent_movies",
-    description: "The user's movie log, newest first: title, date, rating, value score, cost, theater, format.",
+    description: "The user's movie log, newest first: title, date, rating, value score, cost, theater, format. Outside ratings: imdb_rating (/10), letterboxd_rating (/5), rt_score (Rotten Tomatoes %).",
     parameters: {
       type: Type.OBJECT,
       properties: {
