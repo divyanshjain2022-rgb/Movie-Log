@@ -20,9 +20,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { PageHeader } from "@/components/shared";
+import { LoadError, PageHeader } from "@/components/shared";
 import { SeatMap } from "@/components/movies/seat-map";
 import { MovieExtras } from "@/components/movies/movie-extras";
+import { creditsSceneLabel } from "@/lib/credits";
 import { PhotoGallery } from "@/components/movies/photo-gallery";
 import { ShareableCard } from "@/components/movies/shareable-card";
 import { TheaterRatingForm } from "@/components/movies/theater-rating-form";
@@ -319,7 +320,16 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
     );
   }
 
-  if (error || !movie) {
+  if (error) {
+    return (
+      <div className="min-h-screen">
+        <PageHeader title="" showBack />
+        <LoadError what="this movie" error={error} />
+      </div>
+    );
+  }
+
+  if (!movie) {
     return (
       <div className="min-h-screen">
         <PageHeader title="" showBack />
@@ -329,6 +339,8 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
       </div>
     );
   }
+
+  const creditsScene = creditsSceneLabel(movie.keywords);
 
   return (
     <div className="min-h-screen">
@@ -400,6 +412,11 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
             {movie.certification && (
               <Badge variant="outline" className="mr-1 mt-1">
                 {movie.certification}
+              </Badge>
+            )}
+            {creditsScene && (
+              <Badge variant="outline" className="mr-1 mt-1 border-primary/40 text-primary">
+                {creditsScene}
               </Badge>
             )}
             {movie.genres && movie.genres.length > 0 && (
