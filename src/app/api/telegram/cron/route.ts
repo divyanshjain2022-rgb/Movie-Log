@@ -15,6 +15,7 @@ import {
 import { fetchPvrSearchMovies } from "@/lib/pvr/client";
 import { titleMatches } from "@/lib/pvr/personal-predictor";
 import { formatCurrency } from "@/lib/formula";
+import type { ExternalRatings } from "@/types";
 
 export const maxDuration = 60;
 
@@ -354,6 +355,79 @@ async function warmPvrTask(): Promise<string> {
   return `warmed ${payload.recommendations?.length ?? 0} recs`;
 }
 
+// 8. Keep IMDb, Letterboxd and Rotten Tomatoes ratings on the movie row, so
+// they outlive a broken scraper and stats and the bot can use them. Four per
+// run fills a few hundred movies in a day. After that, films released in the
+// last 120 days refresh every 3 days while their scores settle, and movies
+// that came back with no ratings at all are retried monthly.
+const RATINGS_BATCH = 4;
+const DAY_MS = 86_400_000;
+
+interface MovieForRatings {
+  id: string;
+  tmdb_id: number;
+  release_date: string | null;
+  external_ratings: ExternalRatings | null;
+}
+
+interface ExtrasPayload {
+  imdbId: string | null;
+  ratings: Pick<ExternalRatings, "imdb" | "letterboxd" | "rottenTomatoes">;
+}
+
+function ratingsDue(movie: MovieForRatings, now: number): boolean {
+  const saved = movie.external_ratings;
+  if (!saved) return true;
+  const age = now - Date.parse(saved.updatedAt);
+  if (!saved.imdb && !saved.letterboxd && !saved.rottenTomatoes) return age > 30 * DAY_MS;
+  const recent = movie.release_date && now - Date.parse(movie.release_date) < 120 * DAY_MS;
+  return Boolean(recent) && age > 3 * DAY_MS;
+}
+
+async function saveRatings(movie: MovieForRatings): Promise<boolean> {
+  const supabase = serviceClient();
+  if (!supabase) return false;
+  const response = await fetch(`${SITE_URL}/api/tmdb/extras?id=${movie.tmdb_id}`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = response.ok ? ((await response.json()) as ExtrasPayload) : null;
+  const saved = movie.external_ratings;
+  // A source that failed this time keeps its last known value.
+  const merged: ExternalRatings = {
+    imdbId: payload?.imdbId ?? saved?.imdbId ?? null,
+    imdb: payload?.ratings.imdb ?? saved?.imdb ?? null,
+    letterboxd: payload?.ratings.letterboxd ?? saved?.letterboxd ?? null,
+    rottenTomatoes: payload?.ratings.rottenTomatoes ?? saved?.rottenTomatoes ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from("movies")
+    .update({ external_ratings: merged } as never)
+    .eq("id", movie.id);
+  return !error && payload !== null;
+}
+
+async function ratingsTask(userId: string): Promise<string> {
+  const supabase = serviceClient();
+  if (!supabase) return "no client";
+  const { data, error } = await supabase
+    .from("movies")
+    .select("id,tmdb_id,release_date,external_ratings")
+    .eq("user_id", userId)
+    .not("tmdb_id", "is", null);
+  if (error) return `select failed: ${error.message}`;
+
+  const now = Date.now();
+  const due = ((data || []) as unknown as MovieForRatings[])
+    .filter((movie) => ratingsDue(movie, now))
+    .sort((a, b) => (a.external_ratings?.updatedAt || "").localeCompare(b.external_ratings?.updatedAt || ""))
+    .slice(0, RATINGS_BATCH);
+  if (due.length === 0) return "all current";
+
+  const saved = await Promise.all(due.map((movie) => saveRatings(movie).catch(() => false)));
+  return `saved ${saved.filter(Boolean).length}/${due.length}`;
+}
+
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const provided =
@@ -377,6 +451,7 @@ export async function GET(request: NextRequest) {
     ["digest", () => digestTask()],
     ["recap", () => recapTask(userId)],
     ["warmPvr", () => warmPvrTask()],
+    ["ratings", () => ratingsTask(userId)],
   ];
   for (const [name, task] of tasks) {
     try {

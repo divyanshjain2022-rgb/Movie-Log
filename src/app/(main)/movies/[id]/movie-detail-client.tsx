@@ -486,6 +486,7 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
           <div className="mb-4">
             <MovieExtras
               tmdbId={movie.tmdb_id}
+              saved={movie.external_ratings}
               onCombined={setCrowdRating}
             />
           </div>

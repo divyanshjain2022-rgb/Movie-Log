@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { User } from "lucide-react";
+import { formatDate } from "@/lib/formula";
+import type { ExternalRatings } from "@/types";
 
 interface CastMember {
   name: string;
@@ -65,12 +67,15 @@ function RatingTile({
 
 export function MovieExtras({
   tmdbId,
+  saved,
   onCombined,
 }: {
   tmdbId: number;
+  saved?: ExternalRatings | null;
   onCombined?: (rating: number | null) => void;
 }) {
   const [data, setData] = useState<ExtrasData | null>(null);
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,17 +87,31 @@ export function MovieExtras({
           setData(extras);
           onCombined?.(extras.combined?.rating ?? null);
         }
+        setSettled(true);
       })
       .catch(() => {
-        // Best-effort enrichment — the page works fine without it.
+        // Best-effort enrichment; saved ratings cover a failed lookup.
+        if (!controller.signal.aborted) setSettled(true);
       });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tmdbId]);
 
-  if (!data) return null;
+  if (!settled || (!data && !saved)) return null;
 
-  const { cast, ratings, combined } = data;
+  const cast = data?.cast ?? [];
+  const combined = data?.combined ?? null;
+  // A source the live lookup couldn't reach falls back to its saved value.
+  const ratings = {
+    imdb: data?.ratings.imdb ?? saved?.imdb ?? null,
+    letterboxd: data?.ratings.letterboxd ?? saved?.letterboxd ?? null,
+    rottenTomatoes: data?.ratings.rottenTomatoes ?? saved?.rottenTomatoes ?? null,
+    tmdb: data?.ratings.tmdb ?? null,
+  };
+  const usedSaved =
+    (!data?.ratings.imdb && ratings.imdb) ||
+    (!data?.ratings.letterboxd && ratings.letterboxd) ||
+    (!data?.ratings.rottenTomatoes && ratings.rottenTomatoes);
   const hasRatings =
     ratings.imdb || ratings.letterboxd || ratings.rottenTomatoes || ratings.tmdb;
 
@@ -182,6 +201,11 @@ export function MovieExtras({
               </span>{" "}
               — aggregated from {formatVotes(combined.votes)?.replace(" votes", "")} voters
               across the web.
+            </p>
+          )}
+          {usedSaved && saved && (
+            <p className="mt-2 text-xs text-muted-foreground/60">
+              Live lookup failed, so some ratings are from {formatDate(saved.updatedAt)}.
             </p>
           )}
         </section>

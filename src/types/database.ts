@@ -12,6 +12,16 @@ export interface PaymentMethodEntry {
   amount: number;
 }
 
+// Outside ratings stored on movies.external_ratings (migration 012).
+// Letterboxd is out of 5, IMDb out of 10, Rotten Tomatoes a percentage.
+export interface ExternalRatings {
+  imdbId: string | null;
+  imdb: { rating: number; votes: number | null } | null;
+  letterboxd: { rating: number; votes: number | null } | null;
+  rottenTomatoes: { score: number; certified: boolean } | null;
+  updatedAt: string;
+}
+
 // Snapshot of a PVR seat layout captured at log time (stored on movies.seat_map).
 export interface MovieSeatSnapshot {
   capturedAt: string;
@@ -115,6 +125,8 @@ export interface Database {
           // Occupancy snapshot (migration 010)
           occupancy: number | null;
           seat_map: MovieSeatSnapshot | null;
+          // Outside ratings (migration 012)
+          external_ratings: ExternalRatings | null;
         };
         Insert: {
           id?: string;
@@ -171,6 +183,7 @@ export interface Database {
           passport_id?: string | null;
           occupancy?: number | null;
           seat_map?: MovieSeatSnapshot | null;
+          external_ratings?: ExternalRatings | null;
         };
         Update: {
           id?: string;
@@ -227,6 +240,7 @@ export interface Database {
           passport_id?: string | null;
           occupancy?: number | null;
           seat_map?: MovieSeatSnapshot | null;
+          external_ratings?: ExternalRatings | null;
         };
       };
       fnb_purchases: {
