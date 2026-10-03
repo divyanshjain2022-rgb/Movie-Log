@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+
+function languageName(code: string | null | undefined): string | null {
+  if (!code) return null;
+  try {
+    return languageNames.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 
@@ -95,7 +107,7 @@ export async function GET(request: NextRequest) {
         title: movie.title,
         runtime_minutes: movie.runtime,
         genres: movie.genres?.map((g: { name: string }) => g.name) || [],
-        language: movie.original_language,
+        language: languageName(movie.original_language),
         director: director?.name || null,
         poster_url: movie.poster_path
           ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
