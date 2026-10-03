@@ -763,7 +763,7 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
               </span>
               <span className={cn(!costToggles.bookingFee && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.convenience_fee)}</span>
             </label>
-            {movie.fnb_cost && movie.fnb_cost > 0 && (
+            {((movie.fnb_cost ?? 0) > 0 || !!movie.fnb_items) && (
               <label className="flex items-center justify-between cursor-pointer">
                 <span className="flex items-center gap-2">
                   <input
@@ -776,10 +776,10 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
                     F&B {movie.fnb_items && `(${movie.fnb_items})`}
                   </span>
                 </span>
-                <span className={cn(!costToggles.fnb && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.fnb_cost)}</span>
+                <span className={cn(!costToggles.fnb && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.fnb_cost ?? 0)}</span>
               </label>
             )}
-            {movie.other_expenses && movie.other_expenses > 0 && (
+            {(movie.other_expenses ?? 0) > 0 && (
               <label className="flex items-center justify-between cursor-pointer">
                 <span className="flex items-center gap-2">
                   <input
@@ -790,7 +790,7 @@ export function MovieDetailClient({ id, initialMovie, rewatches }: MovieDetailCl
                   />
                   <span className={cn(costToggles.other ? "text-muted-foreground" : "text-muted-foreground/30 line-through")}>Other Expenses</span>
                 </span>
-                <span className={cn(!costToggles.other && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.other_expenses)}</span>
+                <span className={cn(!costToggles.other && "text-muted-foreground/30 line-through")}>{formatCurrency(movie.other_expenses ?? 0)}</span>
               </label>
             )}
 
