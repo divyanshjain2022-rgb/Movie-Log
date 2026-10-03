@@ -7,6 +7,7 @@ import {
 import { findPvrCity, todayInIndia } from "@/lib/pvr/cities";
 import { titleMatches } from "@/lib/pvr/personal-predictor";
 import type { PvrShow } from "@/lib/pvr/types";
+import { serviceClient } from "@/lib/telegram";
 import type { MovieSeatSnapshot } from "@/types";
 
 interface OccupancyRequest {
@@ -70,6 +71,23 @@ function searchQueries(title: string): string[] {
   return Array.from(new Set([full, main, firstWords].filter((q) => q.length >= 3)));
 }
 
+// Keep a copy of why a capture failed; the toast is gone once dismissed.
+async function logFailure(body: OccupancyRequest, date: string, reason: string) {
+  try {
+    await serviceClient()
+      ?.from("occupancy_failures")
+      .insert({
+        title: body.title ?? null,
+        theater: body.theaterName ?? null,
+        show_date: date,
+        showtime: body.showtime ?? null,
+        reason,
+      });
+  } catch {
+    // Logging must never break the capture response.
+  }
+}
+
 export async function POST(request: NextRequest) {
   let body: OccupancyRequest;
   try {
@@ -88,6 +106,10 @@ export async function POST(request: NextRequest) {
   const targetTheater = body.theaterName ? norm(body.theaterName) : null;
   const targetFormat = body.format ? norm(body.format) : null;
   const targetAudi = audiNumber(body.audi);
+  const fail = async (reason: string) => {
+    await logFailure(body, date, reason);
+    return NextResponse.json({ found: false, reason });
+  };
 
   try {
     // 1. Find all PVR movies whose title matches (a title can map to several ids,
@@ -101,7 +123,7 @@ export async function POST(request: NextRequest) {
       if (matchedMovies.length > 0) break;
     }
     if (matchedMovies.length === 0) {
-      return NextResponse.json({ found: false, reason: "Movie isn't currently listed at PVR" });
+      return fail("Movie isn't currently listed at PVR");
     }
 
     // 2. Gather every bookable show across the matching ids. Theater is a
@@ -136,10 +158,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (candidateShows.length === 0) {
-      return NextResponse.json({
-        found: false,
-        reason: `PVR lists no bookable shows for "${matchedMovies[0].title}" on ${date}`,
-      });
+      return fail(`PVR lists no bookable shows for "${matchedMovies[0].title}" on ${date}`);
     }
 
     // 3. Score: theater dominates (exact token match beats everything except a
@@ -170,18 +189,17 @@ export async function POST(request: NextRequest) {
         .filter(Boolean)
         .sort()
         .slice(0, 8);
-      return NextResponse.json({
-        found: false,
-        reason: `No show matching ${targetTime || "your ticket"} at ${
+      return fail(
+        `No show matching ${targetTime || "your ticket"} at ${
           body.theaterName || "your theater"
         } — PVR lists ${availableTimes.join(", ") || "no times"} (${
           Array.from(new Set(candidateShows.map((s) => s.cinemaName))).slice(0, 3).join("; ")
-        })`,
-      });
+        })`
+      );
     }
 
     if (!show.encrypted) {
-      return NextResponse.json({ found: false, reason: "Show has no live seat data" });
+      return fail("Show has no live seat data");
     }
 
     // 4. Snapshot the live seat layout.
@@ -199,10 +217,7 @@ export async function POST(request: NextRequest) {
     // PVR returns an empty layout (HTTP 200, "Session Not Found") once a show has
     // started — the seat map / occupancy is only available while booking is open.
     if (totalSeats === 0) {
-      return NextResponse.json({
-        found: false,
-        reason: "PVR closes the seat map once the show starts — occupancy is only available before showtime.",
-      });
+      return fail("PVR closes the seat map once the show starts — occupancy is only available before showtime.");
     }
     const occupancyPct = totalSeats > 0 ? Math.round((soldSeats / totalSeats) * 1000) / 10 : 0;
 
@@ -228,8 +243,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ found: true, occupancy: occupancyPct, seatMap: snapshot });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to capture occupancy";
+    await logFailure(body, date, `Error: ${message}`);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to capture occupancy" },
+      { error: message },
       { status: 500 }
     );
   }
