@@ -89,11 +89,24 @@ function isSequelToken(token: string): boolean {
   );
 }
 
+// PVR cuts titles at 50 characters ("...AND THE CASTLE OF T").
+const PVR_TITLE_LIMIT = 50;
+
+function truncatedTitleMatches(a: string, b: string): boolean {
+  const [cut, full] =
+    a.trim().length === PVR_TITLE_LIMIT ? [a, b] : b.trim().length === PVR_TITLE_LIMIT ? [b, a] : [null, null];
+  if (!cut || !full) return false;
+  const prefix = normalizeKey(cut).split(" ").slice(0, -1);
+  if (prefix.length < 3) return false;
+  return ` ${normalizeKey(full)} `.startsWith(` ${prefix.join(" ")} `);
+}
+
 export function titleMatches(a: string, b: string): boolean {
   const left = normalizeKey(a);
   const right = normalizeKey(b);
   if (!left || !right) return false;
   if (left === right) return true;
+  if (truncatedTitleMatches(a, b)) return true;
 
   // Fuzzy fallback: one title containing the other on token boundaries covers
   // punctuation/subtitle noise ("Spider-Man Brand New Day" vs "SPIDERMAN BRAND

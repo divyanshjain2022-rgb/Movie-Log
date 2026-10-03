@@ -62,6 +62,14 @@ function audiNumber(value: string | null | undefined): string | null {
   return m ? String(Number(m[1])) : null;
 }
 
+// Full title, then the part before a subtitle, then the first two words.
+function searchQueries(title: string): string[] {
+  const full = title.trim();
+  const main = full.split(/\s*[:\-–(]\s*/)[0].trim();
+  const firstWords = full.split(/\s+/).slice(0, 2).join(" ");
+  return Array.from(new Set([full, main, firstWords].filter((q) => q.length >= 3)));
+}
+
 export async function POST(request: NextRequest) {
   let body: OccupancyRequest;
   try {
@@ -84,8 +92,14 @@ export async function POST(request: NextRequest) {
   try {
     // 1. Find all PVR movies whose title matches (a title can map to several ids,
     //    e.g. a dead duplicate + the live one) — we'll try each until one yields shows.
-    const search = await fetchPvrSearchMovies({ city, text: body.title });
-    const matchedMovies = search.data.filter((m) => titleMatches(m.title, body.title!));
+    //    PVR's search finds nothing for a query longer than its own 50-char
+    //    title, so fall back to shorter queries.
+    let matchedMovies: Awaited<ReturnType<typeof fetchPvrSearchMovies>>["data"] = [];
+    for (const text of searchQueries(body.title)) {
+      const search = await fetchPvrSearchMovies({ city, text });
+      matchedMovies = search.data.filter((m) => titleMatches(m.title, body.title!));
+      if (matchedMovies.length > 0) break;
+    }
     if (matchedMovies.length === 0) {
       return NextResponse.json({ found: false, reason: "Movie isn't currently listed at PVR" });
     }
