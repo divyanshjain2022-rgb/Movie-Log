@@ -100,7 +100,7 @@ export function SeatMap({
           <p className="mb-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground/70">
             Screen
           </p>
-          <div className="overflow-x-auto pb-1">
+          <div className="overflow-x-auto py-1">
             <div className="mx-auto w-fit space-y-1">
               {rows.map((row, rowIndex) => (
                 <div key={`${row.label ?? rowIndex}`} className="flex items-center gap-1.5">
